@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -26,13 +27,31 @@ import {
 import { syncFromEnv } from "./sync.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const USER_ENV_FILE = path.join(
+  process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
+  "kb25",
+  ".env"
+);
 
+// A checkout's own .env files win, then the per-user one. The per-user file is
+// what the bundled plugin relies on: installed, it runs from the client's
+// plugin cache, where paths relative to this file lead nowhere.
 loadEnvFile(path.join(__dirname, "..", "..", ".env"));
 loadEnvFile(path.join(__dirname, "..", ".env"));
+loadEnvFile(USER_ENV_FILE);
 
 const KB_DIR = path.resolve(
-  process.env.KB_DIR ?? path.join(__dirname, "..", "..", "kb")
+  expandHome(process.env.KB_DIR ?? path.join(__dirname, "..", "..", "kb"))
 );
+// Refuse to start rather than serve an empty KB: a client would show no spaces,
+// and a kb_create_space would write into whatever directory this resolved to.
+if (!fs.existsSync(KB_DIR)) {
+  console.error(
+    `kb25: no knowledge base at ${KB_DIR}. Set KB_DIR to its absolute path in ` +
+      `${USER_ENV_FILE} or in the environment.`
+  );
+  process.exit(1);
+}
 const SITE_TITLE = process.env.SITE_TITLE ?? "Knowledge Base";
 /**
  * The `by=` line on a note this server writes. Fixed, not a tool parameter: the
@@ -99,6 +118,12 @@ function loadEnvFile(filePath: string): void {
     const value = rawValue.replace(/^(['"])(.*)\1$/, "$2");
     process.env[key] = value;
   }
+}
+
+function expandHome(filePath: string): string {
+  if (filePath === "~") return os.homedir();
+  if (filePath.startsWith("~/")) return path.join(os.homedir(), filePath.slice(2));
+  return filePath;
 }
 
 function cleanSlug(slug: string): string {
