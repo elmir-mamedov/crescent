@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "kb25": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/../app/node_modules/.bin/tsx",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/../app/src/mcp.ts"],
-      "env": {
-        "KB_DIR": "${CLAUDE_PLUGIN_ROOT}/../kb"
-      }
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/mcp.mjs"]
     }
   }
 }

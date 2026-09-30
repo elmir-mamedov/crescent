@@ -1,7 +1,8 @@
 # KB Viewer
 
 A lean web viewer/editor for the markdown knowledge base in `../kb`. Node +
-TypeScript + Fastify. No build step — TypeScript runs directly via `tsx`.
+TypeScript + Fastify. No build step — TypeScript runs directly via `tsx` (the
+kb25 plugin's bundled MCP server aside; see below).
 
 ## Run
 
@@ -26,7 +27,7 @@ pointing everyone at one exposed process.
 
 | Var          | Default        | Meaning                                  |
 |--------------|----------------|------------------------------------------|
-| `KB_DIR`     | `../kb`        | Path to the content folder.              |
+| `KB_DIR`     | `../kb`        | Path to the content folder. The MCP server also reads it from `~/.config/kb25/.env`. |
 | `PORT`       | `4000`         | Port to listen on.                       |
 | `HOST`       | `localhost`    | Bind address. Leave it — a wider bind exposes the login form (see Run). |
 | `SITE_TITLE` | `Knowledge Base` | Name shown in the sidebar/title.       |
@@ -141,11 +142,36 @@ args = ["/Users/elmir.mamedov/dev/flux/app/src/mcp.ts"]
 KB_DIR = "/Users/elmir.mamedov/dev/flux/kb"
 ```
 
+### As the kb25 plugin
+
+`kb25-plugin/` is a Claude plugin: the page-authoring skill plus this MCP server,
+bundled into one file (`kb25-plugin/server/mcp.mjs`) so that it runs on plain
+`node` once installed, without this checkout or its `node_modules`. Rebuild it
+after changing server code and commit the result:
+
+```bash
+cd app
+npm run build:plugin
+```
+
+An installed plugin runs from the client's plugin cache, so it cannot find `kb/`
+relative to itself. Tell it once per machine where the knowledge base lives:
+
+```bash
+mkdir -p ~/.config/kb25
+echo 'KB_DIR=/absolute/path/to/kb' > ~/.config/kb25/.env
+```
+
+The server reads that file after the checkout's own `.env` files, and a real
+environment variable still wins over all of them. When `KB_DIR` does not exist
+it refuses to start, rather than serve an empty knowledge base.
+
 ## Scripts
 
 - `npm run dev` — watch + reload.
 - `npm start` — run once.
 - `npm run typecheck` — type-check with `tsc --noEmit`.
+- `npm run build:plugin` — bundle the MCP server into `kb25-plugin/server/`.
 
 ## Not yet (later steps)
 

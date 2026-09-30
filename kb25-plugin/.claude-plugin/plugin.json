@@ -2,7 +2,7 @@
   "name": "kb25",
   "displayName": "KB25",
   "description": "Knowledge-base authoring skills plus the kb25 MCP server (read/write access to the Markdown knowledge base).",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Elmir Mamedov"
   },

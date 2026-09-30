@@ -14,8 +14,9 @@ Run commands from `app/`:
 - `npm run dev` starts the viewer with `tsx watch` at `http://localhost:4000`.
 - `npm start` runs the server once without watch mode.
 - `npm run typecheck` runs `tsc --noEmit`; use this as the primary verification step.
+- `npm run build:plugin` bundles the MCP server into the kb25 plugin.
 
-There is no separate build step; TypeScript runs directly through `tsx`.
+There is no build step for development; TypeScript runs directly through `tsx`. The one exception is the kb25 plugin: an installed plugin runs `kb25-plugin/server/mcp.mjs`, a single-file bundle of `src/mcp.ts`, because it is copied into the client's plugin cache without this checkout or its `node_modules`. Whenever server code changes, run `npm run build:plugin` and commit the rebuilt bundle with the change.
 
 ## Coding Style & Naming Conventions
 
