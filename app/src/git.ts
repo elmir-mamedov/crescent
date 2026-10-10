@@ -1,8 +1,32 @@
+import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+
+/** Whether a command runs and exits 0. */
+function succeeds(cmd: string, args: string[], cwd?: string): Promise<boolean> {
+  return execFileAsync(cmd, args, { cwd }).then(
+    () => true,
+    () => false
+  );
+}
+
+/**
+ * Whether git can be run at all. On macOS without the Command Line Tools,
+ * /usr/bin/git is a stub that pops an install dialog when run, so it is ruled
+ * out before git is ever invoked; a git elsewhere on PATH (Homebrew) still counts.
+ */
+async function detectGit(): Promise<boolean> {
+  if (process.platform === "darwin" && !(await succeeds("xcode-select", ["-p"]))) {
+    const dirs = (process.env.PATH ?? "").split(path.delimiter);
+    if (!dirs.some((dir) => dir && dir !== "/usr/bin" && fs.existsSync(path.join(dir, "git")))) {
+      return false;
+    }
+  }
+  return succeeds("git", ["--version"]);
+}
 
 /** One commit that touched a page, as reported by {@link makeGit}'s `fileCommits`. */
 export interface CommitMeta {
@@ -59,6 +83,16 @@ function parseFileCommits(stdout: string): CommitMeta[] {
  * audited commit in the correct per-space repo.
  */
 export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
+  /**
+   * Asked once. Saving never depends on git: without it (a fresh Windows or Mac
+   * laptop) writes still land on disk, just with no commit and no history.
+   */
+  let gitInstalled: Promise<boolean> | undefined;
+  function hasGit(): Promise<boolean> {
+    gitInstalled ??= detectGit();
+    return gitInstalled;
+  }
+
   /** Path of fsPath relative to the KB root (forward slashes). Throws if outside the KB. */
   function kbRelPath(fsPath: string): string {
     const relPath = path.relative(kbDir, fsPath);
@@ -125,6 +159,8 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
     mode: "only" | "all"
   ): Promise<string | null> {
     if (rels.length === 0) return null;
+    // No git, or a space created while git was missing: nothing to commit into.
+    if (!(await hasGit()) || !fs.existsSync(path.join(repoRoot, ".git"))) return null;
 
     const { stdout: status } = await execFileAsync(
       "git",
@@ -183,11 +219,20 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
     return commitGrouped(fsPaths, message, "all");
   }
 
-  /** Initialize a fresh git repo on branch `main` for a newly created space. */
+  /**
+   * Initialize a fresh git repo on branch `main` for a newly created space; a
+   * no-op without git. A fresh laptop often has no git identity either, and
+   * commit refuses without one, so give this repo (never the global config) one.
+   */
   async function initSpaceRepo(spaceKey: string): Promise<void> {
+    if (!(await hasGit())) return;
     const repoRoot = path.join(kbDir, spaceKey);
     await execFileAsync("git", ["init"], { cwd: repoRoot });
     await execFileAsync("git", ["branch", "-m", "main"], { cwd: repoRoot });
+    if (!(await succeeds("git", ["config", "user.email"], repoRoot))) {
+      await execFileAsync("git", ["config", "user.name", "KB25"], { cwd: repoRoot });
+      await execFileAsync("git", ["config", "user.email", "kb25@localhost"], { cwd: repoRoot });
+    }
   }
 
   /**
@@ -196,6 +241,7 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
    * {@link gitUpdated}: a non-repo or untracked file yields `[]` rather than throwing.
    */
   async function fileCommits(fsPath: string): Promise<CommitMeta[]> {
+    if (!(await hasGit())) return [];
     try {
       const repoRoot = spaceRepoRoot(fsPath);
       const rel = relInRepo(fsPath);
@@ -227,6 +273,7 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
    * Best-effort: returns "" on any failure.
    */
   async function showWordDiff(fsPath: string, sha: string, pathAtCommit: string): Promise<string> {
+    if (!(await hasGit())) return "";
     try {
       const repoRoot = spaceRepoRoot(fsPath);
       const target = pathAtCommit || relInRepo(fsPath);
@@ -242,6 +289,7 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
   }
 
   return {
+    hasGit,
     kbRelPath,
     spaceRepoRoot,
     commitFiles,

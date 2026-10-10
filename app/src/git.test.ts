@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { Content } from "./content.js";
 import { makeGit } from "./git.js";
@@ -114,5 +115,71 @@ test("commitMovedPaths still commits real file moves alongside a space-root no-o
     assert.equal(status, "", "working tree should be clean after committing the rename");
   } finally {
     await kb.cleanup();
+  }
+});
+
+/** Run `fn` with some env vars overridden, restoring the originals afterwards. */
+async function withEnv(overrides: Record<string, string>, fn: () => Promise<void>) {
+  const saved = Object.fromEntries(Object.keys(overrides).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, overrides);
+  try {
+    await fn();
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+test("without git, a space can still be created and saved, just uncommitted", async () => {
+  const kb: TempKb = await makeTempKb();
+  const emptyBin = await fs.mkdtemp(path.join(os.tmpdir(), "kb25-nogit-"));
+  try {
+    let slug = "";
+    await withEnv({ PATH: emptyBin }, async () => {
+      const content = new Content(kb.dir);
+      const g = makeGit(kb.dir);
+      const mutation = await content.createSpace("Notes");
+      slug = mutation.slug;
+      await g.initSpaceRepo(slug);
+      const created = await content.createPage(slug, "First", "# First\n");
+      assert.equal(await g.commitFiles([created.fsPath], "Create page via test"), null);
+      assert.deepEqual(await g.fileCommits(created.fsPath), []);
+    });
+    assert.equal(await isGitRepo(path.join(kb.dir, slug)), false);
+  } finally {
+    await kb.cleanup();
+    await fs.rm(emptyBin, { recursive: true, force: true });
+  }
+});
+
+test("a new space repo gets a local git identity only when none is configured", async () => {
+  const kb: TempKb = await makeTempKb();
+  const cfgDir = await fs.mkdtemp(path.join(os.tmpdir(), "kb25-gitcfg-"));
+  const localEmail = async (slug: string) => {
+    try {
+      return await git(path.join(kb.dir, slug), "config", "--local", "user.email");
+    } catch {
+      return "";
+    }
+  };
+  try {
+    const empty = path.join(cfgDir, "empty");
+    await fs.writeFile(empty, "");
+    await withEnv({ GIT_CONFIG_GLOBAL: empty, GIT_CONFIG_NOSYSTEM: "1" }, async () => {
+      const { slug } = await seedSpace(kb.dir, "Fresh Laptop");
+      assert.equal(await localEmail(slug), "kb25@localhost");
+    });
+
+    const configured = path.join(cfgDir, "configured");
+    await fs.writeFile(configured, "[user]\n\tname = Me\n\temail = me@example.com\n");
+    await withEnv({ GIT_CONFIG_GLOBAL: configured, GIT_CONFIG_NOSYSTEM: "1" }, async () => {
+      const { slug } = await seedSpace(kb.dir, "Dev Laptop");
+      assert.equal(await localEmail(slug), "");
+    });
+  } finally {
+    await kb.cleanup();
+    await fs.rm(cfgDir, { recursive: true, force: true });
   }
 });

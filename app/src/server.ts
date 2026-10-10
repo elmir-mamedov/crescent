@@ -346,6 +346,7 @@ app.get("/_vendor/mermaid/*", async (req, reply) => {
 
 /** Best-effort git commit date+time for a file; falls back to null. */
 async function gitUpdated(fsPath: string): Promise<string | null> {
+  if (!(await git.hasGit())) return null;
   try {
     // History lives in the file's per-space repo, not at the KB root.
     const repoRoot = git.spaceRepoRoot(fsPath);
