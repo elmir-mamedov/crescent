@@ -8,6 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "mcp": "tsx src/mcp.ts",
     "build:plugin": "node scripts/build-plugin.mjs",
+    "package:plugin": "npm run build:plugin && node scripts/package-plugin.mjs",
     "harvest": "tsx src/harvest/harvest.ts",
     "migrate:ids": "tsx src/migrate-ids.ts",
     "start": "tsx src/server.ts",

@@ -146,12 +146,22 @@ KB_DIR = "/Users/elmir.mamedov/dev/flux/kb"
 
 `kb25-plugin/` is a Claude plugin: the page-authoring skill plus this MCP server,
 bundled into one file (`kb25-plugin/server/mcp.mjs`) so that it runs on plain
-`node` once installed, without this checkout or its `node_modules`. Rebuild it
-after changing server code and commit the result:
+`node` once installed, without this checkout or its `node_modules`. The bundle is
+a build output, git-ignored and never committed, so build it before installing
+or reinstalling the plugin from this checkout:
 
 ```bash
 cd app
 npm run build:plugin
+```
+
+To give the plugin to someone else (for example to install in Cowork), package
+it. This rebuilds the bundle and writes `dist/kb25-<version>.zip`, taking the
+version from `kb25-plugin/.claude-plugin/plugin.json` — bump it for each release:
+
+```bash
+cd app
+npm run package:plugin
 ```
 
 An installed plugin runs from the client's plugin cache, so it cannot find `kb/`
@@ -172,6 +182,7 @@ it refuses to start, rather than serve an empty knowledge base.
 - `npm start` — run once.
 - `npm run typecheck` — type-check with `tsc --noEmit`.
 - `npm run build:plugin` — bundle the MCP server into `kb25-plugin/server/`.
+- `npm run package:plugin` — rebuild the bundle and zip the plugin into `dist/`.
 
 ## Not yet (later steps)
 
