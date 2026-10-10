@@ -4,14 +4,18 @@
 // server keeps running after the tab closes, so the next launch is instant; it
 // stops at logout.
 //
+// This is the developer launcher: it runs this checkout's src/ through tsx.
+// Everyone else installs a packaged copy with the one-line installer in the
+// root README.md (installer/install.sh, installer/install.ps1).
+//
 // Re-run after moving the checkout or switching Node versions: the launcher
 // records the absolute path of the node binary that installed it, because an
 // app started from Finder does not get the shell's PATH (or nvm).
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sh, writeMacApp } from "../installer/mac-app.mjs";
 
 if (process.platform !== "darwin") {
   console.error("KB25.app is a macOS launcher; on other systems run `npm start`.");
@@ -29,7 +33,7 @@ const bundle = path.join(os.homedir(), "Applications", "KB25.app");
 const logPath = path.join(os.homedir(), "Library", "Logs", "kb25-viewer.log");
 const port = process.env.PORT ?? "4000";
 
-const launcher = `#!/bin/sh
+const script = `#!/bin/sh
 URL="http://localhost:${port}"
 LOG=${sh(logPath)}
 # The server shells out to git, and Finder hands apps a bare PATH.
@@ -54,53 +58,6 @@ fi
 exec open "$URL"
 `;
 
-const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleName</key><string>KB25</string>
-  <key>CFBundleDisplayName</key><string>KB25</string>
-  <key>CFBundleIdentifier</key><string>local.kb25.viewer</string>
-  <key>CFBundleExecutable</key><string>KB25</string>
-  <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>LSUIElement</key><true/>
-</dict>
-</plist>
-`;
-
-fs.rmSync(bundle, { recursive: true, force: true });
-fs.mkdirSync(path.join(bundle, "Contents", "MacOS"), { recursive: true });
 fs.mkdirSync(path.dirname(logPath), { recursive: true });
-fs.writeFileSync(path.join(bundle, "Contents", "Info.plist"), infoPlist);
-fs.writeFileSync(path.join(bundle, "Contents", "MacOS", "KB25"), launcher, { mode: 0o755 });
-writeIcon(path.join(bundle, "Contents", "Resources", "AppIcon.icns"));
-// Have Finder, the Dock and Spotlight pick up the rebuilt bundle and its icon.
-execFileSync(
-  "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
-  ["-f", bundle]
-);
+writeMacApp({ bundle, script, iconPng: path.join(appDir, "public", "favicon-512x512.png") });
 console.log(`Installed ${bundle}. Open it from Spotlight: Cmd+Space, "KB25".`);
-
-/** Build the app icon from the viewer's favicon with the stock sips and iconutil. */
-function writeIcon(icnsPath) {
-  const source = path.join(appDir, "public", "favicon-512x512.png");
-  const iconset = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kb25-icon-")), "AppIcon.iconset");
-  fs.mkdirSync(iconset);
-  for (const size of [16, 32, 128, 256, 512]) {
-    for (const scale of [1, 2]) {
-      const px = String(size * scale);
-      const name = `icon_${size}x${size}${scale === 2 ? "@2x" : ""}.png`;
-      execFileSync("sips", ["-z", px, px, source, "--out", path.join(iconset, name)], { stdio: "ignore" });
-    }
-  }
-  fs.mkdirSync(path.dirname(icnsPath), { recursive: true });
-  execFileSync("iconutil", ["-c", "icns", iconset, "-o", icnsPath]);
-  fs.rmSync(path.dirname(iconset), { recursive: true, force: true });
-}
-
-/** Single-quote a value for /bin/sh. */
-function sh(value) {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
