@@ -1166,3 +1166,14 @@ test("Help documents section linking and the pin syntax", () => {
   assert.match(html, /Linking to a section/);
   assert.match(html, /\{#my-anchor\}/);
 });
+
+test("views: with sign-in off the corner keeps its tools but drops Log out", () => {
+  const html = spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView);
+  assert.match(html, /class="session-corner"/);
+  assert.match(html, /data-help-open/);
+  assert.match(html, /data-theme-toggle/);
+  assert.doesNotMatch(html, /\/_logout/);
+
+  const signedIn = spacesLayout({ siteTitle: "KB", spaces: [], username: "alice" } as SpacesView);
+  assert.match(signedIn, /action="\/_logout"/);
+});

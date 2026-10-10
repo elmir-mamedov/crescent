@@ -20,6 +20,7 @@ import {
 } from "./content.js";
 import { makeGit } from "./git.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
+import { isLoopbackHost } from "./loopback.js";
 import { envFlag, envNumber, syncFromEnv } from "./sync.js";
 import { parseWordDiff } from "./diff.js";
 import { createRenderer, noteSegments, sourceBlocks, type Section } from "./markdown.js";
@@ -101,9 +102,20 @@ const PUBLIC_FILES = [
   "kb25.svg",
 ];
 const PUBLIC_PATHS = new Set(PUBLIC_FILES.map((file) => `/${file}`));
-const AUTH_USERNAME = requireEnv("AUTH_USERNAME");
-const AUTH_PASSWORD = requireEnv("AUTH_PASSWORD");
-const AUTH_SESSION_SECRET = requireEnv("AUTH_SESSION_SECRET");
+// Sign-in off, for a personal install only this machine can reach (the
+// one-line installer sets it). Refused on a wider bind, where it would publish
+// the whole KB, editable, to the network. Off, AUTH_USERNAME is "", which the
+// views read as "no account": no username, no Log out.
+const AUTH_DISABLED = envFlag("AUTH_DISABLED");
+if (AUTH_DISABLED && !isLoopbackHost(HOST)) {
+  console.error(`AUTH_DISABLED needs a loopback HOST such as localhost, not "${HOST}".`);
+  process.exit(1);
+}
+const AUTH_USERNAME = AUTH_DISABLED ? "" : requireEnv("AUTH_USERNAME");
+const AUTH_PASSWORD = AUTH_DISABLED ? "" : requireEnv("AUTH_PASSWORD");
+const AUTH_SESSION_SECRET = AUTH_DISABLED
+  ? crypto.randomBytes(32).toString("base64url")
+  : requireEnv("AUTH_SESSION_SECRET");
 const SESSION_COOKIE = "kb_session";
 const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 
@@ -278,6 +290,7 @@ function clearSessionCookie(req: FastifyRequest): string {
 }
 
 app.addHook("onRequest", async (req, reply) => {
+  if (AUTH_DISABLED) return;
   const reqPath = requestPath(req);
   if (reqPath === "/_login") return;
   if (PUBLIC_PATHS.has(reqPath)) return; // site icons load before sign-in
@@ -711,7 +724,7 @@ async function renderDeletePage(slug: string): Promise<{ status: number; html: s
 
 app.get("/_login", async (req, reply) => {
   const next = safeRedirectPath(queryString(req.query, "next"));
-  if (currentUser(req)) return reply.redirect(next);
+  if (AUTH_DISABLED || currentUser(req)) return reply.redirect(next);
 
   return reply.type("text/html").send(
     loginLayout({
@@ -723,6 +736,7 @@ app.get("/_login", async (req, reply) => {
 
 app.post("/_login", async (req, reply) => {
   const next = safeRedirectPath(formString(req.body, "next"));
+  if (AUTH_DISABLED) return reply.redirect(next, 303);
   const username = formString(req.body, "username") ?? "";
   const password = formString(req.body, "password") ?? "";
 

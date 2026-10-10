@@ -427,9 +427,12 @@ function instructionsLink(spaceKey: string): string {
   </a>`;
 }
 
-/** Dashboard + theme toggle + Help + username + Log out pinned to the top-right corner. */
+/**
+ * Dashboard + theme toggle + Help + username + Log out pinned to the top-right
+ * corner. Every page that draws it is past sign-in; with sign-in off there is
+ * no username, so the corner keeps its tools and drops only the session part.
+ */
 function sessionCorner(username?: string | null, spaceKey = ""): string {
-  if (!username) return "";
   return `<div class="session-corner">
     ${instructionsLink(spaceKey)}
     ${dashboardLink(spaceKey)}
