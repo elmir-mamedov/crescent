@@ -14,6 +14,13 @@ npm run dev      # http://localhost:4000, auto-reloads on file changes
 npm run mcp      # stdio MCP server for local agent/client integrations
 ```
 
+On macOS, `npm run app:install` adds `~/Applications/KB25.app`, so the viewer
+opens like any other app (Cmd+Space, "KB25"). It starts the server if it is not
+already running and shows the viewer in its own Edge or Chrome window; the
+server keeps running in the background until logout and logs to
+`~/Library/Logs/kb25-viewer.log`. Re-run it after moving the checkout or
+switching Node versions.
+
 It binds to `localhost` only, so nothing outside this machine can reach it.
 Keep it that way. Sign-in is one static username/password: repeated wrong
 answers cost that caller a cooldown, which slows guessing without making the
@@ -180,6 +187,7 @@ it refuses to start, rather than serve an empty knowledge base.
 
 - `npm run dev` — watch + reload.
 - `npm start` — run once.
+- `npm run app:install` — install the `KB25.app` launcher (macOS).
 - `npm run typecheck` — type-check with `tsc --noEmit`.
 - `npm run build:plugin` — bundle the MCP server into `kb25-plugin/server/`.
 - `npm run package:plugin` — rebuild the bundle and zip the plugin into `dist/`.

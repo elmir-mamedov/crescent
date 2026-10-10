@@ -13,6 +13,7 @@ Run commands from `app/`:
 - `npm install` installs runtime and TypeScript tooling.
 - `npm run dev` starts the viewer with `tsx watch` at `http://localhost:4000`.
 - `npm start` runs the server once without watch mode.
+- `npm run app:install` installs `~/Applications/KB25.app` (macOS), a Spotlight-launchable app that starts the server if needed and opens the viewer in its own window.
 - `npm run typecheck` runs `tsc --noEmit`; use this as the primary verification step.
 - `npm run build:plugin` bundles the MCP server into the kb25 plugin.
 - `npm run package:plugin` rebuilds that bundle and zips the plugin into `dist/kb25-<version>.zip`.
