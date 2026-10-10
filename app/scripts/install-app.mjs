@@ -7,6 +7,7 @@
 // Re-run after moving the checkout or switching Node versions: the launcher
 // records the absolute path of the node binary that installed it, because an
 // app started from Finder does not get the shell's PATH (or nvm).
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -61,6 +62,7 @@ const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
   <key>CFBundleDisplayName</key><string>KB25</string>
   <key>CFBundleIdentifier</key><string>local.kb25.viewer</string>
   <key>CFBundleExecutable</key><string>KB25</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSUIElement</key><true/>
@@ -73,7 +75,30 @@ fs.mkdirSync(path.join(bundle, "Contents", "MacOS"), { recursive: true });
 fs.mkdirSync(path.dirname(logPath), { recursive: true });
 fs.writeFileSync(path.join(bundle, "Contents", "Info.plist"), infoPlist);
 fs.writeFileSync(path.join(bundle, "Contents", "MacOS", "KB25"), launcher, { mode: 0o755 });
+writeIcon(path.join(bundle, "Contents", "Resources", "AppIcon.icns"));
+// Have Finder, the Dock and Spotlight pick up the rebuilt bundle and its icon.
+execFileSync(
+  "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+  ["-f", bundle]
+);
 console.log(`Installed ${bundle}. Open it from Spotlight: Cmd+Space, "KB25".`);
+
+/** Build the app icon from the viewer's favicon with the stock sips and iconutil. */
+function writeIcon(icnsPath) {
+  const source = path.join(appDir, "public", "favicon-512x512.png");
+  const iconset = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kb25-icon-")), "AppIcon.iconset");
+  fs.mkdirSync(iconset);
+  for (const size of [16, 32, 128, 256, 512]) {
+    for (const scale of [1, 2]) {
+      const px = String(size * scale);
+      const name = `icon_${size}x${size}${scale === 2 ? "@2x" : ""}.png`;
+      execFileSync("sips", ["-z", px, px, source, "--out", path.join(iconset, name)], { stdio: "ignore" });
+    }
+  }
+  fs.mkdirSync(path.dirname(icnsPath), { recursive: true });
+  execFileSync("iconutil", ["-c", "icns", iconset, "-o", icnsPath]);
+  fs.rmSync(path.dirname(iconset), { recursive: true, force: true });
+}
 
 /** Single-quote a value for /bin/sh. */
 function sh(value) {
