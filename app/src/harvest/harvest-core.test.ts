@@ -33,6 +33,8 @@ test("underRepo matches the root and descendants but not sibling prefixes", () =
   assert.equal(underRepo("/repo/kb25", "/repo/kb25/app"), true);
   assert.equal(underRepo("/repo/kb25", "/repo/kb25-app"), false);
   assert.equal(underRepo("/repo/kb25", undefined), false);
+  assert.equal(underRepo("C:\\repo\\kb25", "C:\\repo\\kb25\\app"), true);
+  assert.equal(underRepo("C:\\repo\\kb25", "C:\\repo\\kb25-app"), false);
 });
 
 test("isKb25Session requires most located turns to be inside the repo", async () => {

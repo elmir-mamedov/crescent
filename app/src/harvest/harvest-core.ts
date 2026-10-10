@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import path from "node:path";
 import { extractSignals } from "./signals.js";
 import type { Task } from "./segmenter.js";
 import type { HarvestEvent } from "./event-schema.js";
@@ -19,10 +18,15 @@ export function encodeProjectDir(absPath: string): string {
   return absPath.replace(/[^a-zA-Z0-9]/g, "-");
 }
 
-/** A path is inside the repo if it is the root or a descendant of it. */
+/**
+ * A path is inside the repo if it is the root or a descendant of it. Either
+ * separator counts: a transcript's cwd is written by whichever system recorded
+ * it, not necessarily the one harvesting.
+ */
 export function underRepo(repoRoot: string, p: string | undefined): boolean {
-  if (!p) return false;
-  return p === repoRoot || p.startsWith(repoRoot + path.sep);
+  if (!p || !p.startsWith(repoRoot)) return false;
+  const next = p.charAt(repoRoot.length);
+  return next === "" || next === "/" || next === "\\";
 }
 
 /** Guard against a resumed session that `cd`'d away: most turns must be in the repo. */
