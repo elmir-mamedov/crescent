@@ -1,8 +1,8 @@
 // Installs ~/Applications/KB25.app, a launcher for the web viewer that
 // Spotlight and Launchpad pick up. Opening it starts the server when it is not
-// already running, then shows the viewer in its own window (Edge or Chrome in
-// app mode, else the default browser). The server keeps running after the
-// window closes, so the next launch is instant; it stops at logout.
+// already running, then opens the viewer as a tab in the default browser. The
+// server keeps running after the tab closes, so the next launch is instant; it
+// stops at logout.
 //
 // Re-run after moving the checkout or switching Node versions: the launcher
 // records the absolute path of the node binary that installed it, because an
@@ -50,11 +50,6 @@ if ! up; then
   done
 fi
 
-for browser in "Microsoft Edge" "Google Chrome"; do
-  if [ -d "/Applications/$browser.app" ]; then
-    exec open -na "$browser" --args --app="$URL"
-  fi
-done
 exec open "$URL"
 `;
 
