@@ -17,8 +17,15 @@ Run commands from `app/`:
 - `npm run typecheck` runs `tsc --noEmit`; use this as the primary verification step.
 - `npm run build:plugin` bundles the MCP server into the kb25 plugin.
 - `npm run package:plugin` rebuilds that bundle and zips the plugin into `dist/kb25-<version>.zip`.
+- `npm run build:release` builds `dist/kb25.zip`, what the one-line installer downloads.
 
 There is no build step for development; TypeScript runs directly through `tsx`. The one exception is the kb25 plugin: an installed plugin runs `kb25-plugin/server/mcp.mjs`, a single-file bundle of `src/mcp.ts`, because it is copied into the client's plugin cache without this checkout or its `node_modules`. The bundle is a build output and is git-ignored — never commit it. Run `npm run build:plugin` before reinstalling the plugin from this checkout, and `npm run package:plugin` to produce the zip you hand to people; bump the version in `kb25-plugin/.claude-plugin/plugin.json` when you ship a new one.
+
+## Installer & Releases
+
+People who are not developers install KB25 with the one-liners in the root `README.md`. `app/installer/install.sh` (macOS) and `app/installer/install.ps1` (Windows) download a private Node.js and the latest release's `kb25.zip`, then run `app/installer/setup.mjs`, one wizard for both systems, where every question is a `[Y/n]`. An installed copy runs with sign-in off (`AUTH_DISABLED=1`, loopback only) and keeps working without git. Keep the wizard's questions few and Enter-safe; anything a person must type is a bug.
+
+To release: bump `version` in `app/package.json`, commit, then tag and push the tag (`git tag v0.3.0 && git push origin v0.3.0`) when asked to push. `.github/workflows/release.yml` builds the zip, installs it for real on macOS and Windows runners (`app/scripts/smoke-installed.mjs`), and only then publishes the GitHub Release the one-liners download. `.github/workflows/ci.yml` runs typecheck and tests on Linux, macOS and Windows for every push.
 
 ## Coding Style & Naming Conventions
 
@@ -49,4 +56,4 @@ Pull requests should include a short summary, verification steps, affected paths
 
 ## Security & Configuration Tips
 
-Configuration is via environment variables: `KB_DIR`, `PORT`, `HOST`, `SITE_TITLE`, the required `AUTH_USERNAME` / `AUTH_PASSWORD` / `AUTH_SESSION_SECRET`, and the optional `TRUST_PROXY`. The default `HOST=localhost` binds loopback only, so the viewer is reachable from this machine and nowhere else; keep it there. Sign-in is one static credential pair behind a failed-attempt cooldown, so a wider bind publishes a guessable form, in cleartext unless something in front of it terminates TLS. Do not commit secrets from `.env`.
+Configuration is via environment variables: `KB_DIR`, `PORT`, `HOST`, `SITE_TITLE`, the required `AUTH_USERNAME` / `AUTH_PASSWORD` / `AUTH_SESSION_SECRET` (or `AUTH_DISABLED=1` instead, which the server refuses unless `HOST` is loopback), and the optional `TRUST_PROXY`. The default `HOST=localhost` binds loopback only, so the viewer is reachable from this machine and nowhere else; keep it there. Sign-in is one static credential pair behind a failed-attempt cooldown, so a wider bind publishes a guessable form, in cleartext unless something in front of it terminates TLS. Do not commit secrets from `.env`.
