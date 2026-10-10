@@ -1,0 +1,78 @@
+name: Release
+
+# Push a tag vX.Y.Z matching app/package.json's version: this builds kb25.zip,
+# installs it for real on macOS and Windows, and only then publishes it, with
+# install.sh and install.ps1, as the GitHub Release the one-liners download.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+        working-directory: app
+      - name: Tag matches app/package.json
+        run: test "v$(node -p "require('./app/package.json').version")" = "$GITHUB_REF_NAME"
+      - run: npm run build:release
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            dist/kb25.zip
+            dist/install.sh
+            dist/install.ps1
+
+  test-install:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      KB25_YES: "1"
+      KB25_NO_BROWSER: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - name: Install (macOS)
+        if: runner.os == 'macOS'
+        run: KB25_ZIP="$PWD/release/kb25.zip" bash release/install.sh
+      - name: Install (Windows, as `irm | iex` would)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:KB25_ZIP = "$PWD\release\kb25.zip"
+          Get-Content release\install.ps1 -Raw | Invoke-Expression
+      - name: Smoke test and uninstall
+        run: node app/scripts/smoke-installed.mjs
+
+  publish:
+    needs: test-install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - run: >
+          gh release create "$GITHUB_REF_NAME"
+          release/kb25.zip release/install.sh release/install.ps1
+          --repo "$GITHUB_REPOSITORY" --title "KB25 $GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
