@@ -36,7 +36,8 @@ drop them in, or capture the tab), and press **Send**. Leave your email if
 you'd like a reply.
 
 A report goes to the developer of KB25 and nobody else. Along with what you
-write, it carries KB25's version, your operating system and your browser.
+write, it carries KB25's version, your operating system, your browser and the
+size of its window.
 The page you were on, recent errors and the end of KB25's log go only if you
 tick them, and **What else is sent** shows exactly what that is before you
 send. If you're offline, KB25 keeps the report and sends it later.

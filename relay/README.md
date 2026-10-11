@@ -1,5 +1,11 @@
 # KB25 feedback relay
 
+> **Legacy.** KB25 now sends feedback through the shared relay built from
+> [`@elmir-mamedov/feedback`](https://github.com/elmir-mamedov/feedback) (the
+> private `elmir-mamedov/feedback-relay` repo). This Worker keeps running for
+> copies of KB25 0.3.0 and earlier, which post to it; retire it once they
+> have updated.
+
 A Cloudflare Worker that turns feedback sent from KB25's **Send feedback**
 dialog into issues in the private repo
 [`elmir-mamedov/kb25-feedback`](https://github.com/elmir-mamedov/kb25-feedback).
