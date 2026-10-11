@@ -235,16 +235,29 @@ function expandHome(file) {
   return file;
 }
 
+/**
+ * The first port from `from` that is free on both loopback addresses. The
+ * server binds "localhost", which is 127.0.0.1 and ::1, and probing "localhost"
+ * itself only tries the first of them: a port another program holds on the
+ * other (Jekyll's 127.0.0.1:4000, say) would pass, KB25 would then fail to
+ * start, and the launcher would open that program in its place.
+ */
 async function freePort(from) {
   for (let port = from; port < from + 100; port++) {
-    const free = await new Promise((resolve) => {
-      const probe = net.createServer();
-      probe.once("error", () => resolve(false));
-      probe.listen(port, "localhost", () => probe.close(() => resolve(true)));
-    });
-    if (free) return port;
+    if ((await canListen(port, "127.0.0.1")) && (await canListen(port, "::1"))) return port;
   }
   throw new Error(`No free port between ${from} and ${from + 99}.`);
+}
+
+/** Whether `port` is free on `host`. A machine without IPv6 counts as free on ::1. */
+function canListen(port, host) {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once("error", (error) =>
+      resolve(error.code === "EADDRNOTAVAIL" || error.code === "EAFNOSUPPORT")
+    );
+    probe.listen(port, host, () => probe.close(() => resolve(true)));
+  });
 }
 
 /** KB25 in Spotlight (macOS) or the Start menu (Windows), with the KB25 icon. */
