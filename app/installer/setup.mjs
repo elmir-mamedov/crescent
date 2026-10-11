@@ -68,6 +68,7 @@ async function main() {
 
   const version = readVersion(staged);
   const installed = staged === p.app ? version : readVersion(p.app);
+  if (UPDATING && !installed) throw new Error("KB25 isn't installed here, so there is nothing to update.");
   if (installed === version) {
     console.log(`KB25 ${version} is already up to date.`);
     if (staged !== p.app) fs.rmSync(staged, { recursive: true, force: true });

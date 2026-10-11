@@ -53,6 +53,8 @@
   Write-Host 'KB25 installer'
   if (Test-Path (Join-Path $kbHome 'app')) {
     if (-not (Ask 'KB25 is already installed. Check for an update?')) { return }
+  } elseif ($env:KB25_UPDATE) {
+    throw "KB25 isn't installed in $kbHome, so there is nothing to update."
   } else {
     if (-not (Ask 'This installs KB25 for you only. No admin rights needed. Continue?')) { return }
   }

@@ -36,6 +36,9 @@ main() {
   echo "KB25 installer"
   if [ -d "$home/app" ]; then
     ask "KB25 is already installed. Check for an update?" || exit 0
+  elif [ -n "${KB25_UPDATE:-}" ]; then
+    echo "KB25 isn't installed in $home, so there is nothing to update."
+    exit 1
   else
     ask "This installs KB25 for you only. No admin password needed. Continue?" || exit 0
   fi
