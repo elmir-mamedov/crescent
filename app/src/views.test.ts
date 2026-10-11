@@ -1177,3 +1177,14 @@ test("views: with sign-in off the corner keeps its tools but drops Log out", () 
   const signedIn = spacesLayout({ siteTitle: "KB", spaces: [], username: "alice" } as SpacesView);
   assert.match(signedIn, /action="\/_logout"/);
 });
+
+test("views: every page with the corner carries a hidden update card that asks /_update", () => {
+  for (const html of [
+    spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),
+    layout(pageView()),
+  ]) {
+    assert.match(html, /<div class="update-card" data-update role="status" aria-live="polite" hidden><\/div>/);
+    assert.match(html, /fetch\("\/_update"/);
+    assert.doesNotMatch(html, /\.innerHTML\s*=\s*s\./, "server text never goes in as HTML");
+  }
+});

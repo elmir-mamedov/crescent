@@ -42,6 +42,8 @@ pointing everyone at one exposed process.
 | `AUTH_PASSWORD` | required   | Password for browser sign-in.            |
 | `AUTH_SESSION_SECRET` | required | Secret used to sign session cookies. |
 | `TRUST_PROXY` | off          | Believe `x-forwarded-*`. Only behind a real reverse proxy. |
+| `KB25_UPDATE_CHECK` | on    | Installed copies check GitHub for a newer release (at most every 6 hours) and offer an Update button. `0` turns that off. |
+| `KB25_RELEASES_URL` | the GitHub releases | Where that check and the update look. For testing updates against a local copy. |
 
 ```bash
 KB_DIR=/path/to/kb PORT=8080 SITE_TITLE="Team Wiki" npm start

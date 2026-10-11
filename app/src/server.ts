@@ -38,6 +38,7 @@ import {
   type NoteKind,
 } from "./notes.js";
 import { searchPages, searchTokens, type SearchHit } from "./search.js";
+import { DEFAULT_RELEASES_URL, findInstall, makeUpdater } from "./update.js";
 import {
   CHAR_CAP,
   ensureSpaceInstructions,
@@ -1790,6 +1791,25 @@ app.get("/_diff/*", async (req, reply) => {
   const { status, html } = await renderDiffPage(slug, revIndex);
   return reply.code(status).type("text/html").send(html);
 });
+
+// In-app updates, for an installed copy only: a checkout has no VERSION or
+// private Node, so neither route exists there and the page's update card,
+// finding no /_update, stays hidden. KB25_UPDATE_CHECK=0 turns the check off.
+const install = /^(0|false|no|off)$/i.test(process.env.KB25_UPDATE_CHECK?.trim() ?? "")
+  ? null
+  : findInstall(__dirname);
+if (install) {
+  const updater = makeUpdater({
+    install,
+    releasesUrl: process.env.KB25_RELEASES_URL || DEFAULT_RELEASES_URL,
+  });
+  app.get("/_update", async (_req, reply) => reply.send(await updater.status()));
+  app.post("/_update", async (_req, reply) => {
+    const started = await updater.start();
+    if (!started.ok) return reply.code(409).send({ error: started.reason });
+    return reply.code(202).send(await updater.status());
+  });
+}
 
 // Any page by slug (supports nested paths).
 app.get("/*", async (req, reply) => {

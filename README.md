@@ -30,8 +30,12 @@ to it, so Claude can find, read and write your pages.
 
 ## Update or remove
 
-Run the same line again. It updates KB25 when there's a new version; when
-there isn't, it offers to remove KB25. Removing keeps your pages.
+When a new version is out, KB25 says so in the top-right corner of the
+viewer: click **Update** and it installs in the background, then the page
+reloads on the new version. Your pages and settings stay as they are.
+
+You can also run the same line again. It updates KB25 when there's a new
+version; when there isn't, it offers to remove KB25. Removing keeps your pages.
 
 ## For developers
 

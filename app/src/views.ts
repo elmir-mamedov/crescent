@@ -440,8 +440,10 @@ function sessionCorner(username?: string | null, spaceKey = ""): string {
     <button type="button" class="button secondary" data-help-open>Help</button>
     ${sessionActions(username)}
   </div>
+<div class="update-card" data-update role="status" aria-live="polite" hidden></div>
 ${HELP_DIALOG}
-<script>${HELP_SCRIPT}</script>`;
+<script>${HELP_SCRIPT}</script>
+<script>${UPDATE_SCRIPT}</script>`;
 }
 
 /**
@@ -1245,6 +1247,116 @@ const HELP_SCRIPT = `
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
   });
+})();
+`;
+
+/**
+ * The update card under the corner. An installed copy answers GET /_update
+ * (see update.ts); anywhere else that is a 404 page and the card stays hidden.
+ * Update starts the installer, then polls until the server comes back on the
+ * new version and reloads; the reloaded page says to restart Claude clients,
+ * whose MCP servers keep running the old code until they restart. Server text
+ * only ever goes in via textContent.
+ */
+const UPDATE_SCRIPT = `
+(() => {
+  const card = document.querySelector("[data-update]");
+  if (!card || !window.fetch) return;
+  const DISMISSED = "kb25.update.dismissed";
+  const DONE = "kb25.update.done";
+  const store = {
+    get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+    set(key, value) { try { localStorage.setItem(key, value); } catch {} },
+    remove(key) { try { localStorage.removeItem(key); } catch {} },
+  };
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  };
+  const button = (label, variant, onClick) => {
+    const node = el("button", "button " + variant, label);
+    node.type = "button";
+    node.addEventListener("click", onClick);
+    return node;
+  };
+  const actions = (...buttons) => {
+    const row = el("div", "update-actions");
+    row.append(...buttons);
+    return row;
+  };
+  const show = (...children) => { card.replaceChildren(...children); card.hidden = false; };
+  const hide = () => { card.hidden = true; card.replaceChildren(); };
+
+  async function getStatus() {
+    const res = await fetch("/_update", { headers: { accept: "application/json" }, cache: "no-store" });
+    if (!res.ok || !(res.headers.get("content-type") || "").includes("json")) return null;
+    return res.json();
+  }
+
+  function offer(s) {
+    const notes = el("a", "update-notes", "What's new");
+    notes.href = s.notesUrl;
+    notes.target = "_blank";
+    notes.rel = "noopener";
+    show(
+      el("p", "update-title", "KB25 " + s.latest + " is available"),
+      notes,
+      actions(
+        button("Later", "secondary", () => { store.set(DISMISSED, s.latest); hide(); }),
+        button("Update", "primary", () => update(s))
+      )
+    );
+  }
+
+  function failed(s, reason) {
+    show(
+      el("p", "update-title", "The update didn't finish"),
+      el("p", "update-text", reason || "Details are in " + s.logFile + "."),
+      actions(button("Close", "secondary", hide))
+    );
+  }
+
+  async function update(s) {
+    show(el("p", "update-title", "Updating KB25…"), el("p", "update-text", "This page reloads when it's done."));
+    let res = null;
+    try { res = await fetch("/_update", { method: "POST" }); } catch {}
+    if (!res || res.status !== 202) {
+      const body = res ? await res.json().catch(() => ({})) : {};
+      return failed(s, body.error);
+    }
+    const deadline = Date.now() + 5 * 60 * 1000;
+    const poll = async () => {
+      let now = null;
+      try { now = await getStatus(); } catch {} // the server is restarting
+      if (now && now.current === s.latest) {
+        store.set(DONE, s.latest);
+        location.reload();
+      } else if ((now && now.state === "failed") || Date.now() > deadline) {
+        failed(s);
+      } else {
+        setTimeout(poll, 1500);
+      }
+    };
+    setTimeout(poll, 1500);
+  }
+
+  getStatus().then((s) => {
+    if (!s) return;
+    const done = store.get(DONE);
+    if (done) {
+      store.remove(DONE);
+      if (done === s.current) {
+        return show(
+          el("p", "update-title", "KB25 is updated to " + done),
+          el("p", "update-text", "If the Claude app or Claude Code is open, restart it to use the new version there."),
+          actions(button("OK", "secondary", hide))
+        );
+      }
+    }
+    if (s.available && s.state !== "updating" && store.get(DISMISSED) !== s.latest) offer(s);
+  }).catch(() => {});
 })();
 `;
 
@@ -3495,6 +3607,17 @@ body.dragging-page .space-current{
   padding:0; color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
 }
 .help-dialog::backdrop{background:var(--backdrop)}
+/* Sits just under .session-corner (top:12px, 34px tall), on every signed-in
+   page; hidden unless an installed copy has an update to offer. */
+.update-card{
+  position:fixed; top:56px; right:16px; z-index:50; width:min(320px, calc(100vw - 32px));
+  padding:14px 16px; border:1px solid var(--line); border-radius:10px;
+  background:var(--surface); color:var(--fg); box-shadow:var(--shadow-lg);
+}
+.update-title{margin:0; font-size:14px; font-weight:600}
+.update-text{margin:6px 0 0; color:var(--muted); font-size:13px; overflow-wrap:anywhere}
+.update-notes{display:inline-block; margin-top:4px; font-size:13px}
+.update-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:12px}
 .help-head{
   display:flex; align-items:center; justify-content:space-between; gap:12px;
   margin:0; padding:16px 20px; border-bottom:1px solid var(--line);
