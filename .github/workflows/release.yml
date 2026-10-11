@@ -33,6 +33,7 @@ jobs:
             dist/kb25.zip
             dist/install.sh
             dist/install.ps1
+            dist/VERSION
 
   test-install:
     needs: build
@@ -59,6 +60,24 @@ jobs:
         run: |
           $env:KB25_ZIP = "$PWD\release\kb25.zip"
           Get-Content release\install.ps1 -Raw | Invoke-Expression
+      # The viewer's Update button runs the installer with no terminal and
+      # nobody to answer: it must stop the server, swap the app in and start
+      # the server again without asking anything. Posing as 0.0.0 makes the
+      # same zip count as an update.
+      - name: Update without a terminal (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          echo 0.0.0 > "$HOME/Library/Application Support/KB25/app/VERSION"
+          env -u KB25_YES KB25_UPDATE=1 KB25_ZIP="$PWD/release/kb25.zip" bash release/install.sh < /dev/null
+      - name: Update without a terminal (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Set-Content "$env:LOCALAPPDATA\KB25\app\VERSION" '0.0.0'
+          Remove-Item Env:KB25_YES
+          $env:KB25_UPDATE = '1'
+          $env:KB25_ZIP = "$PWD\release\kb25.zip"
+          Get-Content release\install.ps1 -Raw | Invoke-Expression
       - name: Smoke test and uninstall
         run: node app/scripts/smoke-installed.mjs
 
@@ -72,7 +91,7 @@ jobs:
           path: release
       - run: >
           gh release create "$GITHUB_REF_NAME"
-          release/kb25.zip release/install.sh release/install.ps1
+          release/kb25.zip release/install.sh release/install.ps1 release/VERSION
           --repo "$GITHUB_REPOSITORY" --title "KB25 $GITHUB_REF_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

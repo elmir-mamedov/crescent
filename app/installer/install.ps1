@@ -9,6 +9,8 @@
 #
 # For testing: KB25_HOME overrides the install folder, KB25_ZIP installs a
 # local kb25.zip instead of the latest release, KB25_YES=1 takes every default.
+# KB25_UPDATE=1 is the viewer's Update button: no questions (installer\setup.mjs
+# keeps every earlier choice and restarts the server).
 
 # One script block, so a download cut short can never run half a script, and
 # `return` (never `exit`, which would close the window `iex` runs in) ends it.
@@ -22,7 +24,7 @@
   $kbHome = if ($env:KB25_HOME) { $env:KB25_HOME } else { Join-Path $env:LOCALAPPDATA 'KB25' }
 
   function Ask($question) {
-    if ($env:KB25_YES) { return $true }
+    if ($env:KB25_YES -or $env:KB25_UPDATE) { return $true }
     $reply = Read-Host "$question [Y/n]"
     return -not ($reply -match '^\s*[nN]')
   }

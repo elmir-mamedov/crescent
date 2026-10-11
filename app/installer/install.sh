@@ -10,6 +10,8 @@
 #
 # For testing: KB25_HOME overrides the install folder, KB25_ZIP installs a
 # local kb25.zip instead of the latest release, KB25_YES=1 takes every default.
+# KB25_UPDATE=1 is the viewer's Update button: no terminal, and no questions
+# (installer/setup.mjs keeps every earlier choice and restarts the server).
 set -euo pipefail
 
 # Everything lives in a function called on the last line, so a download cut
@@ -73,7 +75,7 @@ main() {
   unzip -q "$tmp/kb25.zip" -d "$home/app.new"
 
   # `curl | bash` feeds this script on stdin, so the questions read the keyboard.
-  if [ -n "${KB25_YES:-}" ]; then
+  if [ -n "${KB25_YES:-}${KB25_UPDATE:-}" ]; then
     "$home/node/bin/node" "$home/app.new/installer/setup.mjs"
   else
     "$home/node/bin/node" "$home/app.new/installer/setup.mjs" < /dev/tty
@@ -81,7 +83,7 @@ main() {
 }
 
 ask() {
-  [ -n "${KB25_YES:-}" ] && return 0
+  [ -n "${KB25_YES:-}${KB25_UPDATE:-}" ] && return 0
   local reply
   printf '%s [Y/n] ' "$1" > /dev/tty
   read -r reply < /dev/tty || reply=""

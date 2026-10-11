@@ -1,6 +1,7 @@
 // Builds what the one-line installer downloads: dist/kb25.zip, plus copies of
-// installer/install.sh and installer/install.ps1 to publish next to it. The
-// release workflow runs this on a version tag and attaches all three to a
+// installer/install.sh and installer/install.ps1 to publish next to it, and
+// dist/VERSION, which installed copies read to learn a newer release is out.
+// The release workflow runs this on a version tag and attaches all four to a
 // GitHub Release.
 //
 // The zip needs nothing but Node to run: the server and the MCP server are
@@ -17,7 +18,7 @@ const distDir = path.join(appDir, "..", "dist");
 const out = path.join(distDir, "release");
 const { version } = JSON.parse(fs.readFileSync(path.join(appDir, "package.json"), "utf8"));
 
-for (const stale of ["release", "kb25.zip", "install.sh", "install.ps1"]) {
+for (const stale of ["release", "kb25.zip", "install.sh", "install.ps1", "VERSION"]) {
   fs.rmSync(path.join(distDir, stale), { recursive: true, force: true });
 }
 
@@ -64,4 +65,5 @@ execFileSync("zip", ["-r", "-q", "-X", path.join(distDir, "kb25.zip"), ".", "-x"
 for (const file of ["install.sh", "install.ps1"]) {
   fs.copyFileSync(path.join(appDir, "installer", file), path.join(distDir, file));
 }
-console.log(`Built dist/kb25.zip (KB25 ${version}) with install.sh and install.ps1.`);
+fs.writeFileSync(path.join(distDir, "VERSION"), `${version}\n`);
+console.log(`Built dist/kb25.zip (KB25 ${version}) with install.sh, install.ps1 and VERSION.`);

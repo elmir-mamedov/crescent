@@ -5,6 +5,9 @@
 //
 // Non-interactive switches, for CI: KB25_YES=1 takes every default,
 // KB25_UNINSTALL=1 removes KB25, KB25_NO_BROWSER=1 is passed on to the launcher.
+// KB25_UPDATE=1 is the viewer's Update button: it answers no to every question,
+// because an update changes the app and never the choices made at install, and
+// it restarts the server in the background instead of opening a browser.
 import { execFileSync, execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
@@ -28,6 +31,7 @@ import { removeMacApp, sh, writeMacApp } from "./mac-app.mjs";
 /** The release this wizard came with: KB25_HOME/app.new, or app/ when run from an install. */
 const staged = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const p = paths();
+const UPDATING = Boolean(process.env.KB25_UPDATE);
 
 const MAC_APP = path.join(os.homedir(), "Applications", "KB25.app");
 const START_MENU_LINK = path.join(
@@ -80,15 +84,30 @@ async function main() {
   await connectClaudeDesktop();
   await connectClaudeCode();
 
+  if (UPDATING) {
+    // The server was stopped before the app was swapped; start it again on the
+    // new version for the page that is waiting on it.
+    const { KB25_UPDATE, ...env } = process.env;
+    launch({ ...env, KB25_NO_BROWSER: "1" });
+    console.log("Starting KB25 again in the background.");
+    return;
+  }
   const where = isMac ? 'Spotlight (Cmd+Space, type "KB25")' : 'the Start menu (type "KB25")';
   console.log(`\nAll set! Open KB25 any time from ${where}.`);
-  if (await ask("Open KB25 now?")) {
-    spawn(p.node, [p.launcher], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-  }
+  if (await ask("Open KB25 now?")) launch(process.env);
+}
+
+/** Run the launcher, which starts the server unless it answers already. */
+function launch(env) {
+  spawn(p.node, [p.launcher], { detached: true, stdio: "ignore", windowsHide: true, env }).unref();
 }
 
 async function ask(question, defaultYes = true) {
   const hint = defaultYes ? "[Y/n]" : "[y/N]";
+  if (UPDATING) {
+    console.log(`${question} ${hint} → no (updating)`);
+    return false;
+  }
   if (process.env.KB25_YES) {
     console.log(`${question} ${hint} → ${defaultYes ? "yes" : "no"}`);
     return defaultYes;
