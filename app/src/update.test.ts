@@ -64,6 +64,7 @@ test("an installed layout is found, with the platform's Node", async () => {
         node: dir.node,
         launcher: path.join(dir.home, "app", "installer", "launcher.mjs"),
         logFile: path.join(dir.home, "update.log"),
+        pidFile: path.join(dir.home, "server.pid"),
       });
     } finally {
       await dir.cleanup();
@@ -91,6 +92,7 @@ function install(home: string, version = "0.2.0"): Install {
     node: "/kb25/node/bin/node",
     launcher: "/kb25/app/installer/launcher.mjs",
     logFile: path.join(home, "update.log"),
+    pidFile: path.join(home, "server.pid"),
   };
 }
 

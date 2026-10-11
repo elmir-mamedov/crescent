@@ -1795,10 +1795,9 @@ app.get("/_diff/*", async (req, reply) => {
 // In-app updates, for an installed copy only: a checkout has no VERSION or
 // private Node, so neither route exists there and the page's update card,
 // finding no /_update, stays hidden. KB25_UPDATE_CHECK=0 turns the check off.
-const install = /^(0|false|no|off)$/i.test(process.env.KB25_UPDATE_CHECK?.trim() ?? "")
-  ? null
-  : findInstall(__dirname);
-if (install) {
+const install = findInstall(__dirname);
+const updateCheck = !/^(0|false|no|off)$/i.test(process.env.KB25_UPDATE_CHECK?.trim() ?? "");
+if (install && updateCheck) {
   const updater = makeUpdater({
     install,
     releasesUrl: process.env.KB25_RELEASES_URL || DEFAULT_RELEASES_URL,
@@ -1835,6 +1834,11 @@ if (sync) {
 
 try {
   await app.listen({ host: HOST, port: PORT });
+  // An installed copy records its own pid, and only once it holds the port.
+  // When two launches race (a double-click, or an update restarting KB25 as
+  // it is opened), the losing server never gets here, so updates and removal
+  // always stop the server that is actually answering.
+  if (install) fs.writeFileSync(install.pidFile, String(process.pid));
   console.log(`KB viewer running at http://${HOST}:${PORT}  (content: ${KB_DIR})`);
 } catch (err) {
   console.error(err);

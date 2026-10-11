@@ -26,7 +26,8 @@ if (!(await isUp(url))) {
     stdio: ["ignore", log, log],
     windowsHide: true,
   });
-  fs.writeFileSync(p.pidFile, String(server.pid));
+  // No server.pid here: the server writes it once it holds the port, so a
+  // second launch's server, which loses the port, never replaces it.
   server.unref();
 
   const deadline = Date.now() + 20_000;

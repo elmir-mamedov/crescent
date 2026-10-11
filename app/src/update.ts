@@ -25,6 +25,8 @@ export interface Install {
   launcher: string;
   /** Where the update's installer output goes, for the page to point at. */
   logFile: string;
+  /** The running server's pid, which updates and removal stop it by. */
+  pidFile: string;
 }
 
 /**
@@ -49,7 +51,14 @@ export function findInstall(
     return null;
   }
   if (!version || !fs.existsSync(node) || !fs.existsSync(launcher)) return null;
-  return { version, home, node, launcher, logFile: path.join(home, "update.log") };
+  return {
+    version,
+    home,
+    node,
+    launcher,
+    logFile: path.join(home, "update.log"),
+    pidFile: path.join(home, "server.pid"),
+  };
 }
 
 /** Order two x.y.z versions numerically: negative, zero or positive. */
