@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
@@ -23,6 +24,7 @@ import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
 import { crossSiteRefusal, isLoopbackHost } from "./loopback.js";
 import { envFlag, envNumber, syncFromEnv } from "./sync.js";
 import { parseWordDiff } from "./diff.js";
+import { DEFAULT_FEEDBACK_URL, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedback } from "./feedback.js";
 import { createRenderer, noteSegments, sourceBlocks, type Section } from "./markdown.js";
 import { collectNotes, groupNotesByPage, summarizeNotes } from "./note-index.js";
 import {
@@ -1809,6 +1811,27 @@ if (install && updateCheck) {
     return reply.code(202).send(await updater.status());
   });
 }
+
+// Feedback to the developer (feedback.ts). GET answers what a report would
+// carry besides the person's own words, for the dialog to show before
+// sending; POST sends it through the relay, or queues it when the relay is
+// out of reach. KB25_FEEDBACK_URL points it elsewhere, e.g. at `wrangler dev`.
+const feedback = makeFeedback({
+  endpoint: process.env.KB25_FEEDBACK_URL || DEFAULT_FEEDBACK_URL,
+  outboxDir: install
+    ? path.join(install.home, "feedback-outbox")
+    : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "kb25", "feedback-outbox"),
+  version: install?.version ?? checkoutVersion(__dirname),
+  install: install ? "installed" : "checkout",
+  logFiles: install ? [path.join(install.home, "kb25.log"), install.logFile] : [],
+});
+feedback.startRetrying();
+app.get("/_feedback", async (_req, reply) => reply.send(await feedback.preview()));
+app.post("/_feedback", { bodyLimit: FEEDBACK_BODY_LIMIT }, async (req, reply) => {
+  const result = await feedback.submit(req.body);
+  if (result.status === "refused") return reply.code(400).send({ error: result.error });
+  return reply.code(result.status === "sent" ? 200 : 202).send(result);
+});
 
 // Any page by slug (supports nested paths).
 app.get("/*", async (req, reply) => {
