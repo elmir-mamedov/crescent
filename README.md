@@ -30,7 +30,7 @@ to it, so Claude can find, read and write your pages.
 
 ## Update or remove
 
-When a new version is out, KB25 says so in the top-right corner of the
+When a new version is out, KB25 says so in the bottom-right corner of the
 viewer: click **Update** and it installs in the background, then the page
 reloads on the new version. Your pages and settings stay as they are.
 

@@ -1251,12 +1251,12 @@ const HELP_SCRIPT = `
 `;
 
 /**
- * The update card under the corner. An installed copy answers GET /_update
- * (see update.ts); anywhere else that is a 404 page and the card stays hidden.
- * Update starts the installer, then polls until the server comes back on the
- * new version and reloads; the reloaded page says to restart Claude clients,
- * whose MCP servers keep running the old code until they restart. Server text
- * only ever goes in via textContent.
+ * The update card in the bottom-right corner. An installed copy answers
+ * GET /_update (see update.ts); anywhere else that is a 404 page and the card
+ * stays hidden. Update starts the installer, then polls until the server comes
+ * back on the new version and reloads; the reloaded page says to restart
+ * Claude clients, whose MCP servers keep running the old code until they
+ * restart. Server text only ever goes in via textContent.
  */
 const UPDATE_SCRIPT = `
 (() => {
@@ -3607,10 +3607,11 @@ body.dragging-page .space-current{
   padding:0; color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
 }
 .help-dialog::backdrop{background:var(--backdrop)}
-/* Sits just under .session-corner (top:12px, 34px tall), on every signed-in
-   page; hidden unless an installed copy has an update to offer. */
+/* Bottom-right on every signed-in page, out of the way of the corner tools
+   and the page; hidden unless an installed copy has an update to offer. The
+   copy-link toast (bottom-center, z-index 60) still shows above it. */
 .update-card{
-  position:fixed; top:56px; right:16px; z-index:50; width:min(320px, calc(100vw - 32px));
+  position:fixed; bottom:16px; right:16px; z-index:50; width:min(320px, calc(100vw - 32px));
   padding:14px 16px; border:1px solid var(--line); border-radius:10px;
   background:var(--surface); color:var(--fg); box-shadow:var(--shadow-lg);
 }
