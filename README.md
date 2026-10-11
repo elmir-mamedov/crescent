@@ -22,7 +22,8 @@ irm https://github.com/elmir-mamedov/kb/releases/latest/download/install.ps1 | i
 That's all. No admin password, and nothing else to install first. Afterwards,
 open **KB25** like any other app: Spotlight on a Mac (Cmd+Space, type "KB25"),
 the Start menu on Windows. Your pages are kept in a `KB25` folder in your home
-folder.
+folder. If you already have a knowledge base from the kb25 plugin, the
+installer offers to use it where it is instead.
 
 If you use the Claude app or Claude Code, the installer offers to connect KB25
 to it, so Claude can find, read and write your pages.

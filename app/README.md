@@ -181,7 +181,8 @@ echo 'KB_DIR=/absolute/path/to/kb' > ~/.config/kb25/.env
 
 The server reads that file after the checkout's own `.env` files, and a real
 environment variable still wins over all of them. When `KB_DIR` does not exist
-it refuses to start, rather than serve an empty knowledge base.
+it refuses to start, rather than serve an empty knowledge base. The KB25
+installer reads that file too, and offers to use the knowledge base it names.
 
 ## Scripts
 

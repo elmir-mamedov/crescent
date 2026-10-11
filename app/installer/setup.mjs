@@ -42,6 +42,12 @@ const CLAUDE_DESKTOP_DIR = isMac
   ? path.join(os.homedir(), "Library", "Application Support", "Claude")
   : path.join(process.env.APPDATA ?? "", "Claude");
 const CLAUDE_DESKTOP_CONFIG = path.join(CLAUDE_DESKTOP_DIR, "claude_desktop_config.json");
+/** Where the kb25 plugin's MCP server reads KB_DIR from, the same path src/mcp.ts uses. */
+const PLUGIN_ENV_FILE = path.join(
+  process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
+  "kb25",
+  ".env"
+);
 const SKILL_DIR = path.join(os.homedir(), ".claude", "skills", "kb-page-authoring");
 /** Marks a skill folder as ours, so removal never deletes someone's own skill. */
 const SKILL_MARKER = ".installed-by-kb25";
@@ -113,14 +119,34 @@ function replaceApp() {
   fs.rmSync(old, { recursive: true, force: true });
 }
 
-/** Write KB25_HOME/.env on first install; keep it, and the pages, on every later run. */
+/**
+ * Write KB25_HOME/.env on first install; keep it, and the pages, on every later
+ * run. Until KB25 holds a space, offer a knowledge base set up before it.
+ */
 async function ensureSettings() {
-  const existing = readEnvFile(p.envFile).KB_DIR;
-  if (existing) {
-    fs.mkdirSync(existing, { recursive: true });
-    return existing;
+  const current = readEnvFile(p.envFile).KB_DIR;
+  if (current && spaces(current).length > 0) return current;
+  const adopted = await adoptExistingKb(current);
+
+  if (current) {
+    if (!adopted) {
+      fs.mkdirSync(current, { recursive: true });
+      return current;
+    }
+    const lines = fs.readFileSync(p.envFile, "utf8").split(/\r?\n/);
+    fs.writeFileSync(
+      p.envFile,
+      lines.map((line) => (/^\s*KB_DIR\s*=/.test(line) ? `KB_DIR=${adopted}` : line)).join("\n")
+    );
+    await stopServer(p); // it still serves the empty folder
+    try {
+      fs.rmdirSync(current); // fails, harmlessly, unless the folder is empty
+    } catch {}
+    console.log("If the Claude app or Claude Code is open, restart it to see these pages there.");
+    return adopted;
   }
-  const kbDir = path.join(os.homedir(), "KB25");
+
+  const kbDir = adopted ?? path.join(os.homedir(), "KB25");
   fs.mkdirSync(kbDir, { recursive: true });
   fs.writeFileSync(
     p.envFile,
@@ -134,6 +160,59 @@ async function ensureSettings() {
     ].join("\n")
   );
   return kbDir;
+}
+
+/** Offer each knowledge base set up before KB25 in turn; the one accepted, or null. */
+async function adoptExistingKb(current) {
+  for (const dir of existingKbs(current)) {
+    const names = spaces(dir);
+    const shown =
+      names.length > 4 ? `${names.slice(0, 4).join(", ")} and ${names.length - 4} more` : names.join(", ");
+    const count = `${names.length} ${names.length === 1 ? "space" : "spaces"}`;
+    console.log(`Found a knowledge base at ${tildify(dir)} (${count}: ${shown}).`);
+    if (await ask("Use it for KB25?")) return dir;
+  }
+  return null;
+}
+
+/**
+ * Knowledge bases named by the kb25 plugin's settings, or by a hand-written
+ * Claude app entry (which connectClaudeDesktop is about to replace), that hold
+ * at least one space and are not `current`.
+ */
+function existingKbs(current) {
+  const named = [
+    readEnvFile(PLUGIN_ENV_FILE).KB_DIR,
+    readClaudeDesktopConfig()?.mcpServers?.kb25?.env?.KB_DIR,
+  ];
+  const found = new Set();
+  for (const dir of named) {
+    if (typeof dir !== "string" || !path.isAbsolute(expandHome(dir))) continue;
+    const resolved = path.resolve(expandHome(dir));
+    if (current && resolved === path.resolve(current)) continue;
+    if (spaces(resolved).length > 0) found.add(resolved);
+  }
+  return [...found];
+}
+
+/** A knowledge base's spaces: its top-level folders, minus those content.ts skips. */
+function spaces(dir) {
+  try {
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !/^[._]/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** Read a leading ~ as the home folder, as the MCP server does for KB_DIR. */
+function expandHome(file) {
+  if (file === "~") return os.homedir();
+  if (file.startsWith("~/")) return path.join(os.homedir(), file.slice(2));
+  return file;
 }
 
 async function freePort(from) {
