@@ -28,6 +28,19 @@ installer offers to use it where it is instead.
 If you use the Claude app or Claude Code, the installer offers to connect KB25
 to it, so Claude can find, read and write your pages.
 
+## Send feedback
+
+Found a bug, or have an idea? Click the speech bubble in the top-right corner
+of the viewer. Write what happened, add screenshots if they help (paste them,
+drop them in, or capture the tab), and press **Send**. Leave your email if
+you'd like a reply.
+
+A report goes to the developer of KB25 and nobody else. Along with what you
+write, it carries KB25's version, your operating system and your browser.
+The page you were on, recent errors and the end of KB25's log go only if you
+tick them, and **What else is sent** shows exactly what that is before you
+send. If you're offline, KB25 keeps the report and sends it later.
+
 ## Update or remove
 
 When a new version is out, KB25 says so in the bottom-right corner of the

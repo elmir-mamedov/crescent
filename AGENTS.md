@@ -6,6 +6,8 @@ This repository contains a lean Markdown knowledge-base viewer. Application code
 
 Knowledge-base content lives in `kb/`. Each top-level folder under `kb/` is a **space** and its own git repo (`kb/<space>/.git`); `kb/` itself is not versioned. Folders are navigation sections, `index.md` files are section landing pages, and leaf pages use lowercase hyphenated filenames such as `kb/engineering/runbooks/deploy.md`. Assets belong under each space's own `kb/<space>/_assets/` and are referenced with the portable relative form `_assets/file.png` (rewritten to `/<space>/_assets/file.png` at render time). Root files such as `first-step.md` and `knowledge-base-plan.md` are planning/spec notes.
 
+`relay/` is the feedback relay, a Cloudflare Worker with its own `package.json`: the viewer's feedback dialog posts to `app/src/feedback.ts`, which sends the report to the Worker, which files it as an issue in the private `elmir-mamedov/kb25-feedback` repo. `relay/src/report.ts` defines the report format and limits for both sides; the app imports it, so change limits there. Run `npm run typecheck` and `npm test` in `relay/` after touching it, and `npm run deploy` there to ship it (`relay/README.md` covers the token).
+
 ## Build, Test, and Development Commands
 
 Run commands from `app/`:

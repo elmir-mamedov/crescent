@@ -44,6 +44,7 @@ pointing everyone at one exposed process.
 | `TRUST_PROXY` | off          | Believe `x-forwarded-*`. Only behind a real reverse proxy. |
 | `KB25_UPDATE_CHECK` | on    | Installed copies check GitHub for a newer release (at most every 6 hours) and offer an Update button. `0` turns that off. |
 | `KB25_RELEASES_URL` | the GitHub releases | Where that check and the update look. For testing updates against a local copy. |
+| `KB25_FEEDBACK_URL` | the KB25 relay | Where the feedback dialog sends reports (see [`../relay/`](../relay/README.md)). For testing against `wrangler dev`. |
 
 ```bash
 KB_DIR=/path/to/kb PORT=8080 SITE_TITLE="Team Wiki" npm start
@@ -73,6 +74,11 @@ writes those headers itself.
 - Auto-commits saved page changes in the `kb/` Git repo as
   `Update <path>.md via web`.
 - Serves attachments from `kb/_assets/` at `/_assets/...`.
+- Sends feedback to the developer from the corner's speech-bubble dialog:
+  a message, screenshots and opt-in diagnostics, through the relay in
+  [`../relay/`](../relay/README.md). Reports that can't go yet wait in a
+  `feedback-outbox` folder (in KB25's home when installed, else
+  `~/.config/kb25/`) and are retried.
 
 ## MCP server
 
