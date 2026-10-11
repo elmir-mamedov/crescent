@@ -3594,6 +3594,13 @@ body.dragging-page .space-current{
 .prose th,.prose td{border:1px solid var(--line); padding:6px 10px; text-align:left}
 /* height:auto keeps a width-sized image undistorted when max-width shrinks it. */
 .prose img{max-width:100%; height:auto}
+/* Diagrams are usually drawn in black on a transparent background meant for a
+   white page, so in dark mode their lines and labels vanish into --bg. Back
+   every image with a light panel there, dimmed slightly to cut the glare. */
+:root[data-theme="dark"] .prose img{background:#f0f3f6; padding:8px; border-radius:6px; filter:brightness(.9)}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .prose img{background:#f0f3f6; padding:8px; border-radius:6px; filter:brightness(.9)}
+}
 .wikilink{border-bottom:1px dotted var(--accent)}
 /* Inline notes.
    Only annotated blocks become positioning contexts, so an unannotated page
