@@ -437,13 +437,16 @@ function sessionCorner(username?: string | null, spaceKey = ""): string {
     ${instructionsLink(spaceKey)}
     ${dashboardLink(spaceKey)}
     ${themeToggle()}
+    ${FEEDBACK_BUTTON}
     <button type="button" class="button secondary" data-help-open>Help</button>
     ${sessionActions(username)}
   </div>
 <div class="update-card" data-update role="status" aria-live="polite" hidden></div>
 ${HELP_DIALOG}
+${FEEDBACK_DIALOG}
 <script>${HELP_SCRIPT}</script>
-<script>${UPDATE_SCRIPT}</script>`;
+<script>${UPDATE_SCRIPT}</script>
+<script>${FEEDBACK_SCRIPT}</script>`;
 }
 
 /**
@@ -1246,6 +1249,388 @@ const HELP_SCRIPT = `
   openBtn.addEventListener("click", () => {
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
+  });
+})();
+`;
+
+/** Speech bubble in the top-right corner that opens the feedback dialog. */
+const FEEDBACK_BUTTON = `<button type="button" class="feedback-button" data-feedback-open aria-label="Send feedback" title="Send feedback — report a bug or suggest an idea to the KB25 developer">
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+  </button>`;
+
+/**
+ * Feedback dialog: what the person writes, the images they add, and an
+ * opt-in list of what else goes with it, previewed exactly. FEEDBACK_SCRIPT
+ * fills the dynamic parts; GET/POST /_feedback (feedback.ts) do the rest.
+ */
+const FEEDBACK_DIALOG = `<dialog class="feedback-dialog" data-feedback-dialog aria-labelledby="feedback-title">
+  <div class="help-head">
+    <h2 id="feedback-title">Send feedback</h2>
+    <button type="button" class="help-close" aria-label="Close" data-feedback-close>&times;</button>
+  </div>
+  <form class="feedback-body" data-feedback-form novalidate>
+    <p class="feedback-intro">Report a bug, suggest an idea or ask a question. It goes to the developer of KB25, and nothing is sent until you press Send.</p>
+    <fieldset class="feedback-kinds">
+      <legend class="feedback-label">What is it?</legend>
+      <label><input type="radio" name="kind" value="bug" checked /> Bug</label>
+      <label><input type="radio" name="kind" value="idea" /> Idea</label>
+      <label><input type="radio" name="kind" value="question" /> Question</label>
+    </fieldset>
+    <label class="feedback-label" for="feedback-message">Message</label>
+    <textarea id="feedback-message" rows="6" maxlength="10000" placeholder="What happened, and what did you expect instead?" data-feedback-message></textarea>
+    <div class="feedback-drop" data-feedback-drop>
+      <div class="feedback-thumbs" data-feedback-thumbs></div>
+      <p class="feedback-hint">Paste or drop screenshots here, <button type="button" class="feedback-link" data-feedback-pick>choose images</button><span data-feedback-capture-wrap hidden>, or <button type="button" class="feedback-link" data-feedback-capture>capture this tab</button></span>. Up to 5.</p>
+      <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden data-feedback-file />
+    </div>
+    <label class="feedback-label" for="feedback-email">Your email <span class="feedback-optional">(optional, if you'd like a reply)</span></label>
+    <input type="email" id="feedback-email" maxlength="254" autocomplete="email" data-feedback-email />
+    <details class="feedback-details">
+      <summary>What else is sent</summary>
+      <p class="feedback-hint">KB25's version, your operating system and your browser always go with a report. Tick anything else that could help:</p>
+      <div class="feedback-checks">
+        <label><input type="checkbox" data-feedback-page /> This page's address <code data-feedback-page-path></code></label>
+        <label data-feedback-errors-row hidden><input type="checkbox" checked data-feedback-errors /> <span data-feedback-errors-label>Errors KB25 ran into in this tab</span></label>
+        <label data-feedback-logs-row hidden><input type="checkbox" data-feedback-logs /> The last lines of KB25's log</label>
+      </div>
+      <pre class="feedback-preview" data-feedback-preview></pre>
+    </details>
+    <p class="feedback-status" data-feedback-status role="status" aria-live="polite"></p>
+    <div class="feedback-actions">
+      <button type="button" class="button secondary" data-feedback-close>Close</button>
+      <button type="submit" class="button primary" data-feedback-send>Send</button>
+    </div>
+  </form>
+  <div class="feedback-body" data-feedback-done hidden>
+    <p class="feedback-done-title" data-feedback-done-title></p>
+    <p class="feedback-intro" data-feedback-done-text></p>
+    <div class="feedback-actions">
+      <button type="button" class="button primary" data-feedback-close>Done</button>
+    </div>
+  </div>
+</dialog>`;
+
+/**
+ * The feedback dialog's behaviour. Images come from paste, drop, the file
+ * picker or a one-frame capture of this tab (getDisplayMedia, with the dialog
+ * closed so it isn't in the shot), and are shrunk here so a Retina screenshot
+ * fits the relay's limits. Errors the page hits are kept per tab (session
+ * storage) so a report can carry the ones from before the dialog opened.
+ * Closing keeps the draft; only a send clears it. Text from the server and
+ * from the person only ever goes in via textContent.
+ */
+const FEEDBACK_SCRIPT = `
+(() => {
+  const ERRORS = "kb25.feedback.errors";
+  const EMAIL = "kb25.feedback.email";
+  const safe = (fn, fallback) => { try { return fn(); } catch { return fallback; } };
+  const recentErrors = () => safe(() => JSON.parse(sessionStorage.getItem(ERRORS) || "[]"), []);
+  const rememberError = (text) => {
+    const entry = new Date().toISOString().slice(11, 19) + " " + location.pathname + " " + String(text).slice(0, 800);
+    safe(() => sessionStorage.setItem(ERRORS, JSON.stringify(recentErrors().concat(entry).slice(-10))));
+  };
+  window.addEventListener("error", (e) => {
+    if (!e.message) return; // a resource that failed to load, not a script error
+    const where = e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : "";
+    rememberError(e.message + where);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    const reason = e.reason && e.reason.message ? e.reason.message : e.reason;
+    rememberError("Unhandled rejection: " + reason);
+  });
+
+  const dialog = document.querySelector("[data-feedback-dialog]");
+  const openBtn = document.querySelector("[data-feedback-open]");
+  if (!dialog || !openBtn || !window.fetch || typeof dialog.showModal !== "function") {
+    if (openBtn) openBtn.hidden = true;
+    return;
+  }
+  const $ = (selector) => dialog.querySelector(selector);
+  const form = $("[data-feedback-form]");
+  const done = $("[data-feedback-done]");
+  const message = $("[data-feedback-message]");
+  const email = $("[data-feedback-email]");
+  const thumbs = $("[data-feedback-thumbs]");
+  const drop = $("[data-feedback-drop]");
+  const fileInput = $("[data-feedback-file]");
+  const pageBox = $("[data-feedback-page]");
+  const errorsBox = $("[data-feedback-errors]");
+  const logsBox = $("[data-feedback-logs]");
+  const preview = $("[data-feedback-preview]");
+  const status = $("[data-feedback-status]");
+  const sendBtn = $("[data-feedback-send]");
+  const PLACEHOLDERS = {
+    bug: "What happened, and what did you expect instead?",
+    idea: "What would you like KB25 to do?",
+    question: "What would you like to know?",
+  };
+  const MAX_EDGE = 2400;
+  const KEEP_AS_IS = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+  let limits = { message: 10000, images: 5, imageBytes: 2 * 1024 * 1024, totalImageBytes: 6 * 1024 * 1024 };
+  let info = null;
+  let images = []; // { blob, url }
+  let sending = false;
+
+  const kind = () => (form.querySelector("input[name=kind]:checked") || {}).value || "bug";
+  const setStatus = (text, isError) => {
+    status.textContent = text || "";
+    status.classList.toggle("is-error", Boolean(isError));
+  };
+
+  function renderPreview() {
+    const rows = [];
+    if (info) {
+      rows.push("KB25     " + info.version + " (" + info.install + ")");
+      rows.push("OS       " + info.os);
+      rows.push("Node     " + info.node);
+    }
+    rows.push("Browser  " + navigator.userAgent);
+    if (pageBox.checked) rows.push("Page     " + location.pathname);
+    const errors = recentErrors();
+    if (errorsBox.checked && errors.length) rows.push("", "Errors in this tab:", ...errors);
+    if (logsBox.checked && info && info.logs) rows.push("", info.logs);
+    preview.textContent = rows.join("\\n");
+  }
+
+  function renderThumbs() {
+    thumbs.replaceChildren(...images.map((image, i) => {
+      const figure = document.createElement("figure");
+      figure.className = "feedback-thumb";
+      const img = document.createElement("img");
+      img.src = image.url;
+      img.alt = "Screenshot " + (i + 1);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "\\u00d7";
+      remove.setAttribute("aria-label", "Remove screenshot " + (i + 1));
+      remove.addEventListener("click", () => {
+        URL.revokeObjectURL(image.url);
+        images.splice(i, 1);
+        renderThumbs();
+        setStatus("");
+      });
+      figure.append(img, remove);
+      return figure;
+    }));
+  }
+
+  const toBlob = (canvas, type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+
+  /** The image as it will be sent: as is when it's already small, else shrunk and re-encoded. */
+  async function prepare(blob) {
+    let bitmap;
+    try { bitmap = await createImageBitmap(blob); } catch { throw new Error("That file isn't an image KB25 can read."); }
+    const edge = Math.max(bitmap.width, bitmap.height);
+    if (KEEP_AS_IS.includes(blob.type) && blob.size <= 1024 * 1024 && edge <= MAX_EDGE) {
+      bitmap.close();
+      return blob;
+    }
+    const scale = Math.min(1, MAX_EDGE / edge);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; // JPEG has no transparency
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const webp = await toBlob(canvas, "image/webp", 0.92);
+    if (webp && webp.type === "image/webp") return webp; // Safari can't encode WebP
+    const jpeg = await toBlob(canvas, "image/jpeg", 0.9);
+    if (!jpeg) throw new Error("That image couldn't be prepared.");
+    return jpeg;
+  }
+
+  async function addImages(blobs) {
+    for (const blob of blobs) {
+      if (images.length >= limits.images) return setStatus("A report can carry up to " + limits.images + " images.", true);
+      let prepared;
+      try { prepared = await prepare(blob); } catch (err) { return setStatus(err.message, true); }
+      if (prepared.size > limits.imageBytes) return setStatus("That image is too large, even shrunk. Try a smaller one.", true);
+      const total = images.reduce((sum, image) => sum + image.blob.size, prepared.size);
+      if (total > limits.totalImageBytes) return setStatus("These images add up to too much. Remove one to add another.", true);
+      images.push({ blob: prepared, url: URL.createObjectURL(prepared) });
+      renderThumbs();
+      setStatus("");
+    }
+  }
+
+  async function captureTab() {
+    dialog.close(); // out of the shot
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: "browser" },
+        audio: false,
+        preferCurrentTab: true,
+        selfBrowserSurface: "include",
+        surfaceSwitching: "exclude",
+      });
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.srcObject = stream;
+      await video.play();
+      await new Promise((resolve) => setTimeout(resolve, 300)); // a fresh frame, without the dialog
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      const shot = await toBlob(canvas, "image/png");
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      stream = null;
+      dialog.showModal();
+      if (shot) await addImages([shot]);
+    } catch (err) {
+      if (!dialog.open) dialog.showModal();
+      // NotAllowedError is the person choosing not to share: nothing to say.
+      if (!err || err.name !== "NotAllowedError") setStatus("The tab couldn't be captured. Try a screenshot instead.", true);
+    } finally {
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+    }
+  }
+
+  const toBase64 = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).slice(String(reader.result).indexOf(",") + 1));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+
+  function showDone(title, text) {
+    $("[data-feedback-done-title]").textContent = title;
+    $("[data-feedback-done-text]").textContent = text;
+    form.hidden = true;
+    done.hidden = false;
+  }
+
+  function reset() {
+    images.forEach((image) => URL.revokeObjectURL(image.url));
+    images = [];
+    renderThumbs();
+    message.value = "";
+    pageBox.checked = false;
+    logsBox.checked = false;
+    setStatus("");
+  }
+
+  async function send(event) {
+    event.preventDefault();
+    if (sending) return;
+    if (!message.value.trim()) {
+      setStatus("Write a message first.", true);
+      return message.focus();
+    }
+    const address = email.value.trim();
+    if (address && !email.checkValidity()) {
+      setStatus("That email address doesn't look right.", true);
+      return email.focus();
+    }
+    sending = true;
+    sendBtn.disabled = true;
+    setStatus("Sending\\u2026");
+    try {
+      const body = {
+        kind: kind(),
+        message: message.value,
+        email: address || undefined,
+        images: await Promise.all(images.map(async (image) => ({ type: image.blob.type, data: await toBase64(image.blob) }))),
+        browser: navigator.userAgent,
+        page: pageBox.checked ? location.pathname : undefined,
+        errors: errorsBox.checked && recentErrors().length ? recentErrors() : undefined,
+        includeLogs: logsBox.checked,
+      };
+      let res = null;
+      try {
+        res = await fetch("/_feedback", {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify(body),
+        });
+      } catch {}
+      const answer = res ? await res.json().catch(() => ({})) : {};
+      if (res && (res.status === 200 || res.status === 202)) {
+        safe(() => address ? localStorage.setItem(EMAIL, address) : localStorage.removeItem(EMAIL));
+        if (errorsBox.checked) safe(() => sessionStorage.removeItem(ERRORS));
+        reset();
+        if (res.status === 200) {
+          showDone("Thanks, it's sent.", address
+            ? "If there's a reply, it goes to " + address + "."
+            : "It went without a reply address, so there's no way to answer it, but it will be read.");
+        } else {
+          showDone("Saved, and sent later.", "KB25 couldn't reach the feedback service just now. It keeps trying in the background while it's running.");
+        }
+      } else {
+        setStatus(answer.error || (res ? "That didn't go through (" + res.status + "). Try again." : "KB25 didn't answer. Is it still running?"), true);
+      }
+    } finally {
+      sending = false;
+      sendBtn.disabled = false;
+    }
+  }
+
+  async function open() {
+    form.hidden = false;
+    done.hidden = true;
+    if (!email.value) email.value = safe(() => localStorage.getItem(EMAIL), "") || "";
+    $("[data-feedback-page-path]").textContent = location.pathname;
+    const errors = recentErrors();
+    $("[data-feedback-errors-row]").hidden = !errors.length;
+    $("[data-feedback-errors-label]").textContent = "Errors KB25 ran into in this tab (" + errors.length + ")";
+    renderPreview();
+    dialog.showModal();
+    message.focus();
+    try {
+      const res = await fetch("/_feedback", { headers: { accept: "application/json" }, cache: "no-store" });
+      if (res.ok) {
+        info = await res.json();
+        limits = info.limits || limits;
+        $("[data-feedback-logs-row]").hidden = !info.logs;
+        renderPreview();
+      }
+    } catch {}
+  }
+
+  openBtn.addEventListener("click", open);
+  dialog.querySelectorAll("[data-feedback-close]").forEach((btn) => btn.addEventListener("click", () => dialog.close()));
+  form.addEventListener("submit", send);
+  form.addEventListener("change", (event) => {
+    if (event.target.name === "kind") message.placeholder = PLACEHOLDERS[kind()];
+    renderPreview();
+  });
+  $("[data-feedback-pick]").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    addImages(Array.from(fileInput.files || []));
+    fileInput.value = "";
+  });
+  if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === "function") {
+    $("[data-feedback-capture-wrap]").hidden = false;
+    $("[data-feedback-capture]").addEventListener("click", captureTab);
+  }
+  dialog.addEventListener("paste", (event) => {
+    const data = event.clipboardData;
+    if (!data) return;
+    const files = (data.files && data.files.length
+      ? Array.from(data.files)
+      : Array.from(data.items || []).filter((item) => item.kind === "file").map((item) => item.getAsFile())
+    ).filter((file) => file && file.type.startsWith("image/"));
+    if (!files.length) return; // text goes where it was pasted
+    event.preventDefault();
+    addImages(files);
+  });
+  dialog.addEventListener("dragover", (event) => {
+    if (!event.dataTransfer || !Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    drop.classList.add("is-over");
+  });
+  dialog.addEventListener("dragleave", (event) => {
+    if (!dialog.contains(event.relatedTarget)) drop.classList.remove("is-over");
+  });
+  dialog.addEventListener("drop", (event) => {
+    if (!event.dataTransfer || !event.dataTransfer.files.length) return;
+    event.preventDefault();
+    drop.classList.remove("is-over");
+    addImages(Array.from(event.dataTransfer.files).filter((f) => f.type.startsWith("image/")));
   });
 })();
 `;
@@ -3591,13 +3976,13 @@ body.dragging-page .space-current{
   display:flex; align-items:center; gap:8px}
 /* The corner's two icon buttons share one box; only the theme toggle swaps its
    glyph, so the rules below it stay on that class alone. */
-.theme-toggle,.dash-button,.instructions-button{
+.theme-toggle,.dash-button,.instructions-button,.feedback-button{
   display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto;
   width:34px; height:34px; padding:0; border:1px solid var(--line); border-radius:6px;
   background:var(--surface); color:var(--fg-secondary); cursor:pointer;
 }
-.theme-toggle:hover,.dash-button:hover,.instructions-button:hover{background:var(--surface-hover-2); color:var(--fg)}
-.dash-button svg,.instructions-button svg{display:block}
+.theme-toggle:hover,.dash-button:hover,.instructions-button:hover,.feedback-button:hover{background:var(--surface-hover-2); color:var(--fg)}
+.dash-button svg,.instructions-button svg,.feedback-button svg{display:block}
 .theme-toggle .theme-icon{display:block}
 .theme-toggle .icon-moon{display:none}
 :root[data-theme="dark"] .theme-toggle .icon-sun{display:none}
@@ -3607,6 +3992,65 @@ body.dragging-page .space-current{
   padding:0; color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
 }
 .help-dialog::backdrop{background:var(--backdrop)}
+.feedback-dialog{
+  width:min(560px,92vw); max-height:92vh; overflow:auto; border:1px solid var(--line); border-radius:10px;
+  padding:0; color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
+}
+.feedback-dialog::backdrop{background:var(--backdrop)}
+.feedback-body{display:flex; flex-direction:column; gap:12px; padding:16px 20px 20px}
+.feedback-body[hidden]{display:none}
+.feedback-intro{margin:0; color:var(--fg-secondary); font-size:14px; line-height:1.5}
+.feedback-label{font-size:13px; font-weight:600; margin-bottom:-6px; padding:0}
+.feedback-optional{font-weight:400; color:var(--muted)}
+.feedback-kinds{display:flex; flex-wrap:wrap; gap:6px; border:0; padding:0; margin:0}
+.feedback-kinds legend{margin-bottom:8px}
+.feedback-kinds label{
+  position:relative; padding:4px 12px; border:1px solid var(--line); border-radius:999px;
+  color:var(--fg-secondary); font-size:13px; cursor:pointer;
+}
+.feedback-kinds input{position:absolute; opacity:0; pointer-events:none}
+.feedback-kinds label:hover{background:var(--surface-hover-2)}
+.feedback-kinds label:has(input:checked){background:var(--active-bg); border-color:var(--accent); color:var(--accent)}
+.feedback-kinds label:has(input:focus-visible){outline:2px solid var(--focus-ring); outline-offset:1px}
+.feedback-body textarea,.feedback-body input[type=email]{
+  display:block; width:100%; box-sizing:border-box; border:1px solid var(--line); border-radius:6px;
+  padding:8px 10px; color:var(--fg); background:var(--bg); font-family:inherit; font-size:14px; line-height:1.5;
+}
+.feedback-body textarea{min-height:120px; resize:vertical}
+.feedback-body textarea:focus,.feedback-body input[type=email]:focus{outline:2px solid var(--focus-ring-soft); border-color:var(--focus-ring)}
+.feedback-drop{border:1px dashed var(--line); border-radius:8px; padding:10px 12px}
+.feedback-drop.is-over{border-color:var(--accent); background:var(--active-bg)}
+.feedback-hint{margin:0; color:var(--muted); font-size:13px; line-height:1.5}
+.feedback-link{border:0; padding:0; background:none; color:var(--accent); font:inherit; cursor:pointer; text-decoration:underline}
+.feedback-thumbs{display:flex; flex-wrap:wrap; gap:8px}
+.feedback-thumbs:not(:empty){margin-bottom:8px}
+.feedback-thumb{
+  position:relative; margin:0; width:96px; height:72px; overflow:hidden;
+  border:1px solid var(--line); border-radius:6px; background:var(--code-bg);
+}
+.feedback-thumb img{display:block; width:100%; height:100%; object-fit:cover}
+.feedback-thumb button{
+  position:absolute; top:4px; right:4px; width:22px; height:22px; padding:0;
+  border:0; border-radius:50%; background:rgba(0,0,0,.65); color:#fff;
+  font-size:15px; line-height:22px; cursor:pointer;
+}
+.feedback-details summary{cursor:pointer; color:var(--fg-secondary); font-size:13px}
+.feedback-details[open] summary{margin-bottom:8px}
+.feedback-checks{display:flex; flex-direction:column; gap:6px; margin:10px 0}
+.feedback-checks label{display:flex; align-items:baseline; gap:6px; color:var(--fg-secondary); font-size:13px}
+.feedback-checks label[hidden]{display:none}
+.feedback-checks code{font-size:12px; overflow-wrap:anywhere}
+.feedback-preview{
+  margin:0; max-height:180px; overflow:auto; padding:8px 10px; white-space:pre-wrap; overflow-wrap:anywhere;
+  border:1px solid var(--line); border-radius:6px; background:var(--code-bg); color:var(--fg-secondary);
+  font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+.feedback-status{margin:0; color:var(--muted); font-size:13px}
+.feedback-status:empty{display:none}
+.feedback-status.is-error{color:var(--error-fg)}
+.feedback-actions{display:flex; justify-content:flex-end; gap:8px}
+.feedback-actions .button:disabled{opacity:.6; cursor:default}
+.feedback-done-title{margin:0; font-size:16px; font-weight:600}
 /* Bottom-right on every signed-in page, out of the way of the corner tools
    and the page; hidden unless an installed copy has an update to offer. The
    copy-link toast (bottom-center, z-index 60) still shows above it. */
@@ -4042,7 +4486,7 @@ body.dragging-page .space-current{
   .sidebar{width:auto; flex:none; height:auto; position:static; border-right:none;
     border-bottom:1px solid var(--line)}
   /* iOS Safari zooms the viewport when focusing an input under 16px. */
-  .sidebar-search-input{font-size:16px}
+  .sidebar-search-input,.feedback-body textarea,.feedback-body input[type=email]{font-size:16px}
   .content{padding:20px}
   .page-head{display:block}
   .actions{margin-bottom:16px}

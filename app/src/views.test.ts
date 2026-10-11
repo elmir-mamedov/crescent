@@ -1188,3 +1188,19 @@ test("views: every page with the corner carries a hidden update card that asks /
     assert.doesNotMatch(html, /\.innerHTML\s*=\s*s\./, "server text never goes in as HTML");
   }
 });
+
+test("views: every page with the corner offers feedback, through /_feedback", () => {
+  for (const html of [
+    spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),
+    layout(pageView()),
+  ]) {
+    assert.match(html, /<button type="button" class="feedback-button" data-feedback-open aria-label="Send feedback"/);
+    assert.match(html, /<dialog class="feedback-dialog" data-feedback-dialog/);
+    assert.match(html, /fetch\("\/_feedback"/);
+    // Every extra is opt-in except the errors, which are KB25's own.
+    assert.match(html, /<input type="checkbox" data-feedback-page \/>/);
+    assert.match(html, /<input type="checkbox" data-feedback-logs \/>/);
+    const script = html.slice(html.indexOf('const ERRORS = "kb25.feedback.errors"'));
+    assert.doesNotMatch(script.slice(0, script.indexOf("</script>")), /innerHTML/, "text only ever goes in via textContent");
+  }
+});
