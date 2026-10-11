@@ -3,6 +3,8 @@
 name = "kb25-feedback"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
+# For node:buffer, whose native base64 encodes the images for GitHub.
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 GITHUB_REPO = "elmir-mamedov/kb25-feedback"

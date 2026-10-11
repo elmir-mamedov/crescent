@@ -32,14 +32,12 @@ export const LIMITS = {
   logs: 20_000,
 } as const;
 
-/** The largest request body a valid report can make, with room for the JSON around it. */
-export const MAX_BODY_BYTES =
-  Math.ceil((LIMITS.totalImageBytes * 4) / 3) + 4 * LIMITS.message + LIMITS.logs + 64 * 1024;
+/** The largest request body a valid report can make: its images, and room for the text around them. */
+export const MAX_BODY_BYTES = LIMITS.totalImageBytes + 4 * LIMITS.message + LIMITS.logs + 64 * 1024;
 
 export interface ReportImage {
   type: ImageType;
-  /** Base64, no data: prefix. */
-  data: string;
+  data: Uint8Array;
 }
 
 export interface Diagnostics {
@@ -67,7 +65,18 @@ export type Parsed = { ok: true; report: Report } | { ok: false; error: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+function startsWith(data: Uint8Array, bytes: number[], at = 0): boolean {
+  return data.length >= at + bytes.length && bytes.every((byte, i) => data[at + i] === byte);
+}
+
+/** How each image type starts, to turn away a file that only claims to be one. */
+const SIGNATURES: Record<ImageType, (data: Uint8Array) => boolean> = {
+  "image/png": (data) => startsWith(data, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  "image/jpeg": (data) => startsWith(data, [0xff, 0xd8, 0xff]),
+  "image/gif": (data) => startsWith(data, [0x47, 0x49, 0x46, 0x38]),
+  "image/webp": (data) => startsWith(data, [0x52, 0x49, 0x46, 0x46]) && startsWith(data, [0x57, 0x45, 0x42, 0x50], 8),
+};
 
 class Invalid extends Error {}
 
@@ -90,23 +99,16 @@ function optionalText(value: unknown, name: string, max: number): string | undef
   return text(value, name, max);
 }
 
-/** Bytes a base64 string decodes to. */
-export function base64Bytes(data: string): number {
-  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
-  return Math.floor((data.length * 3) / 4) - padding;
-}
-
 function image(value: unknown, index: number): ReportImage {
   const name = `Image ${index + 1}`;
-  if (!isObject(value)) fail(`${name} is malformed.`);
+  if (!isObject(value) || !(value.data instanceof Uint8Array) || !value.data.length) fail(`${name} is malformed.`);
   if (typeof value.type !== "string" || !Object.hasOwn(IMAGE_TYPES, value.type)) {
     fail(`${name} must be a PNG, JPEG, WebP or GIF.`);
   }
-  if (typeof value.data !== "string" || !value.data || value.data.length % 4 || !BASE64.test(value.data)) {
-    fail(`${name} is not base64.`);
-  }
-  if (base64Bytes(value.data) > LIMITS.imageBytes) fail(`${name} is larger than 2 MB.`);
-  return { type: value.type as ImageType, data: value.data };
+  const type = value.type as ImageType;
+  if (value.data.length > LIMITS.imageBytes) fail(`${name} is larger than 2 MB.`);
+  if (!SIGNATURES[type](value.data)) fail(`${name} isn't the ${IMAGE_TYPES[type].toUpperCase()} it claims to be.`);
+  return { type, data: value.data };
 }
 
 function diagnostics(value: unknown): Diagnostics {
@@ -130,7 +132,10 @@ function diagnostics(value: unknown): Diagnostics {
   };
 }
 
-/** Check an untrusted request body; a refusal says what to fix, for the sender to show. */
+/**
+ * Check an untrusted report, its images as bytes; a refusal says what to fix,
+ * for the sender to show.
+ */
 export function parseReport(body: unknown): Parsed {
   try {
     if (!isObject(body)) fail("The report is malformed.");
@@ -146,7 +151,7 @@ export function parseReport(body: unknown): Parsed {
     if (!Array.isArray(rawImages)) fail("Images are malformed.");
     if (rawImages.length > LIMITS.images) fail(`A report carries at most ${LIMITS.images} images.`);
     const images = rawImages.map(image);
-    const total = images.reduce((sum, img) => sum + base64Bytes(img.data), 0);
+    const total = images.reduce((sum, img) => sum + img.data.length, 0);
     if (total > LIMITS.totalImageBytes) fail("The images add up to more than 6 MB.");
     return {
       ok: true,
@@ -163,6 +168,42 @@ export function parseReport(body: unknown): Parsed {
     if (error instanceof Invalid) return { ok: false, error: error.message };
     throw error;
   }
+}
+
+/**
+ * A report as it travels to the relay: multipart, its text as JSON in a
+ * "report" field and each image as an "image" file, in order. Raw bytes, not
+ * base64 inside JSON: parsing megabytes of JSON would cost the Worker far
+ * more CPU than the runtime's own multipart parser does.
+ */
+export function reportForm(report: Report): FormData {
+  const { images, ...text } = report;
+  const form = new FormData();
+  form.append("report", JSON.stringify(text));
+  images.forEach((img, i) => {
+    form.append("image", new Blob([img.data as Uint8Array<ArrayBuffer>], { type: img.type }), `${i + 1}.${IMAGE_TYPES[img.type]}`);
+  });
+  return form;
+}
+
+/** The report a reportForm() body carries, checked. */
+export async function readReportForm(form: FormData): Promise<Parsed> {
+  const text = form.get("report");
+  let body: unknown;
+  try {
+    body = typeof text === "string" ? JSON.parse(text) : undefined;
+  } catch {
+    body = undefined;
+  }
+  if (!isObject(body)) return { ok: false, error: "The report is malformed." };
+  const images = await Promise.all(
+    form
+      .getAll("image")
+      .map(async (file) =>
+        typeof file === "string" ? file : { type: file.type, data: new Uint8Array(await file.arrayBuffer()) }
+      )
+  );
+  return parseReport({ ...body, images });
 }
 
 /** Where a report's image is committed in the feedback repo. */

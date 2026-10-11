@@ -1,11 +1,5 @@
-import {
-  MAX_BODY_BYTES,
-  imagePath,
-  issueBody,
-  issueTitle,
-  parseReport,
-  type Report,
-} from "./report.ts";
+import { Buffer } from "node:buffer";
+import { MAX_BODY_BYTES, imagePath, issueBody, issueTitle, readReportForm, type Report } from "./report.ts";
 
 /**
  * The feedback relay: KB25 copies POST /reports here, and each report becomes
@@ -51,13 +45,16 @@ export default {
       return json(429, { error: "Too many reports from here. Try again in a minute." });
     }
 
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return json(400, { error: "The report is not JSON." });
+    if (!request.headers.get("content-type")?.startsWith("multipart/form-data")) {
+      return json(415, { error: "Send the report as multipart/form-data." });
     }
-    const parsed = parseReport(body);
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      return json(400, { error: "The report is malformed." });
+    }
+    const parsed = await readReportForm(form);
     if (!parsed.ok) return json(400, { error: parsed.error });
 
     try {
@@ -70,7 +67,7 @@ export default {
   },
 };
 
-function github(env: Env, method: string, path: string, body: unknown): Promise<Response> {
+function github(env: Env, method: string, path: string, body: string): Promise<Response> {
   return fetch(`https://api.github.com/repos/${env.GITHUB_REPO}${path}`, {
     method,
     headers: {
@@ -80,7 +77,7 @@ function github(env: Env, method: string, path: string, body: unknown): Promise<
       "user-agent": "kb25-feedback-relay",
       "x-github-api-version": "2022-11-28",
     },
-    body: JSON.stringify(body),
+    body,
   });
 }
 
@@ -97,7 +94,12 @@ async function failure(response: Response, what: string): Promise<Error> {
  */
 async function commitImage(env: Env, report: Report, index: number): Promise<string> {
   const path = imagePath(report, index);
-  const body = { message: `Add image ${index + 1} of report ${report.id}`, content: report.images[index].data };
+  const { data } = report.images[index];
+  // Spliced in rather than passed through JSON.stringify, which would scan the
+  // megabytes of base64 again for characters it never contains.
+  const content = Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("base64");
+  const message = JSON.stringify(`Add image ${index + 1} of report ${report.id}`);
+  const body = `{"message":${message},"content":"${content}"}`;
   for (let attempt = 0; ; attempt++) {
     const response = await github(env, "PUT", `/contents/${path}`, body);
     if (response.ok || response.status === 422) break;
@@ -112,11 +114,12 @@ async function commitImage(env: Env, report: Report, index: number): Promise<str
 async function fileIssue(report: Report, env: Env): Promise<number> {
   const urls: string[] = [];
   for (let i = 0; i < report.images.length; i++) urls.push(await commitImage(env, report, i));
-  const response = await github(env, "POST", "/issues", {
-    title: issueTitle(report),
-    body: issueBody(report, urls),
-    labels: [report.kind],
-  });
+  const response = await github(
+    env,
+    "POST",
+    "/issues",
+    JSON.stringify({ title: issueTitle(report), body: issueBody(report, urls), labels: [report.kind] })
+  );
   if (!response.ok) throw await failure(response, "issue");
   const issue = (await response.json()) as { number: number };
   return issue.number;

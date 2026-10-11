@@ -4,7 +4,7 @@
     "module": "es2022",
     "moduleResolution": "bundler",
     "lib": ["es2022"],
-    "types": ["@cloudflare/workers-types"],
+    "types": ["@cloudflare/workers-types", "node"],
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
@@ -12,6 +12,5 @@
     "erasableSyntaxOnly": true,
     "skipLibCheck": true
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src"]
 }

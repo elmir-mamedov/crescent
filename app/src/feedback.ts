@@ -2,7 +2,14 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { LIMITS, MAX_BODY_BYTES, parseReport, type Parsed, type Report } from "../../relay/src/report.js";
+import {
+  LIMITS,
+  MAX_BODY_BYTES,
+  parseReport,
+  reportForm,
+  type Parsed,
+  type Report,
+} from "../../relay/src/report.js";
 
 /**
  * Feedback to the developer. The viewer's feedback dialog posts here; this
@@ -18,8 +25,8 @@ import { LIMITS, MAX_BODY_BYTES, parseReport, type Parsed, type Report } from ".
 
 export const DEFAULT_FEEDBACK_URL = "https://kb25-feedback.elmir-together.workers.dev/reports";
 
-/** What POST /_feedback may carry: the report, plus the JSON around it. */
-export const FEEDBACK_BODY_LIMIT = MAX_BODY_BYTES;
+/** What POST /_feedback may carry: the dialog sends images as base64, a third larger than the bytes. */
+export const FEEDBACK_BODY_LIMIT = MAX_BODY_BYTES + Math.ceil(LIMITS.totalImageBytes / 3);
 
 const SEND_TIMEOUT_MS = 60 * 1000;
 const FIRST_RETRY_MS = 30 * 1000;
@@ -129,6 +136,18 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Images as JSON carries them (the dialog's body, an outbox file), base64,
+ * turned into the bytes a report holds. Anything else passes through for
+ * parseReport to refuse in its own words.
+ */
+function decodeImages(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((img) =>
+    isObject(img) && typeof img.data === "string" ? { type: img.type, data: Buffer.from(img.data, "base64") } : img
+  );
+}
+
 export function makeFeedback(options: FeedbackOptions): Feedback {
   const { endpoint, outboxDir } = options;
   const fetchImpl = options.fetch ?? fetch;
@@ -147,7 +166,7 @@ export function makeFeedback(options: FeedbackOptions): Feedback {
       kind: input.kind,
       message: input.message,
       email: input.email,
-      images: input.images,
+      images: decodeImages(input.images),
       diagnostics: {
         ...facts(),
         browser: input.browser,
@@ -164,8 +183,7 @@ export function makeFeedback(options: FeedbackOptions): Feedback {
     try {
       response = await fetchImpl(endpoint, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(report),
+        body: reportForm(report),
         signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       });
     } catch {
@@ -192,8 +210,9 @@ export function makeFeedback(options: FeedbackOptions): Feedback {
   function queue(report: Report): void {
     fs.mkdirSync(outboxDir, { recursive: true });
     const file = path.join(outboxDir, `${report.id}.json`);
+    const images = report.images.map((img) => ({ type: img.type, data: Buffer.from(img.data).toString("base64") }));
     // Written aside and renamed in, so a flush never reads half a report.
-    fs.writeFileSync(`${file}.tmp`, JSON.stringify(report));
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...report, images }));
     fs.renameSync(`${file}.tmp`, file);
   }
 
@@ -205,7 +224,8 @@ export function makeFeedback(options: FeedbackOptions): Feedback {
     for (const { file } of files) {
       let parsed: Parsed;
       try {
-        parsed = parseReport(JSON.parse(fs.readFileSync(file, "utf8")));
+        const stored: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+        parsed = parseReport(isObject(stored) ? { ...stored, images: decodeImages(stored.images) } : stored);
       } catch {
         parsed = { ok: false, error: "unreadable" };
       }

@@ -8,11 +8,23 @@ import { checkoutVersion, describeOs, logTail, makeFeedback, type FeedbackOption
 const ENDPOINT = "https://relay.test/reports";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** A fetch that answers with `answers` in turn (the last one repeats), recording each report. */
+/**
+ * A fetch that answers with `answers` in turn (the last one repeats),
+ * recording each report it was sent: the multipart text, plus each image's
+ * type and bytes.
+ */
 function fakeRelay(...answers: (Response | Error)[]) {
   const reports: Record<string, any>[] = [];
   const impl = (async (_url: string | URL | Request, init?: RequestInit) => {
-    reports.push(JSON.parse(String(init?.body)));
+    const form = init?.body as FormData;
+    const report = JSON.parse(String(form.get("report")));
+    report.images = await Promise.all(
+      form.getAll("image").map(async (file) => ({
+        type: (file as File).type,
+        data: Buffer.from(await (file as File).arrayBuffer()),
+      }))
+    );
+    reports.push(report);
     const answer = answers.length > 1 ? answers.shift()! : answers[0];
     if (answer instanceof Error) throw answer;
     return answer.clone();
@@ -61,7 +73,7 @@ test("a report goes to the relay with what the server knows added", async () => 
     const [report] = relay.reports;
     assert.match(report.id, UUID);
     assert.equal(report.kind, "bug");
-    assert.deepEqual(report.images, [{ type: "image/png", data: "iVBORw0KGgo=" }]);
+    assert.deepEqual(report.images, [{ type: "image/png", data: Buffer.from("iVBORw0KGgo=", "base64") }]);
     assert.equal(report.diagnostics.version, "0.2.0");
     assert.equal(report.diagnostics.install, "installed");
     assert.equal(report.diagnostics.node, process.version);
@@ -149,6 +161,7 @@ test("a flush sends the outbox oldest first, keeping the same report ids", async
       retried.map((r) => r.id),
       firstTry
     );
+    assert.deepEqual(retried[0].images, relay.reports[0].images, "images survive the outbox byte for byte");
     assert.deepEqual(await s.queued(), []);
   } finally {
     await s.cleanup();
