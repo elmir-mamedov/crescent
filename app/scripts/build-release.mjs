@@ -6,7 +6,8 @@
 //
 // The zip needs nothing but Node to run: the server and the MCP server are
 // each bundled into one file, laid out so the paths server.ts already uses
-// (../public, ../node_modules/mermaid/dist, ../../.env) resolve unchanged.
+// (../public, ../node_modules/mermaid/dist, ../node_modules/@elmir-mamedov/
+// feedback/dist, ../../.env) resolve unchanged.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -52,6 +53,11 @@ copy(path.join(appDir, "public"), "public");
 copy(
   path.join(appDir, "node_modules", "mermaid", "dist", "mermaid.min.js"),
   path.join("node_modules", "mermaid", "dist", "mermaid.min.js")
+);
+// The feedback dialog's browser modules (views.ts loads /_vendor/feedback/...).
+copy(
+  path.join(appDir, "node_modules", "@elmir-mamedov", "feedback", "dist"),
+  path.join("node_modules", "@elmir-mamedov", "feedback", "dist")
 );
 for (const file of ["common.mjs", "launcher.mjs", "mac-app.mjs", "setup.mjs"]) {
   copy(path.join(appDir, "installer", file), path.join("installer", file));

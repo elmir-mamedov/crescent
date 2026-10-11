@@ -18,6 +18,7 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@elmir-mamedov/feedback": "github:elmir-mamedov/feedback#v0.2.1",
     "@fastify/static": "^7.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "fastify": "^4.28.1",

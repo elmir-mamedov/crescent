@@ -2,108 +2,111 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { newReportId, parseReport, readReportBody, reportForm, type Report } from "@elmir-mamedov/feedback";
 import { makeTempKb } from "./test-helpers.js";
-import { checkoutVersion, describeOs, logTail, makeFeedback, type FeedbackOptions } from "./feedback.js";
+import { checkoutVersion, makeFeedback, migrateOutbox, type FeedbackOptions } from "./feedback.js";
 
-const ENDPOINT = "https://relay.test/reports";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const RELAY = "https://relay.test";
 
 /**
  * A fetch that answers with `answers` in turn (the last one repeats),
- * recording each report it was sent: the multipart text, plus each image's
- * type and bytes.
+ * recording where each report went and the report itself.
  */
 function fakeRelay(...answers: (Response | Error)[]) {
-  const reports: Record<string, any>[] = [];
-  const impl = (async (_url: string | URL | Request, init?: RequestInit) => {
-    const form = init?.body as FormData;
-    const report = JSON.parse(String(form.get("report")));
-    report.images = await Promise.all(
-      form.getAll("image").map(async (file) => ({
-        type: (file as File).type,
-        data: Buffer.from(await (file as File).arrayBuffer()),
-      }))
-    );
-    reports.push(report);
+  const reports: Report[] = [];
+  const urls: string[] = [];
+  const impl = (async (url: string | URL | Request, init?: RequestInit) => {
+    urls.push(String(url));
+    const encoded = new Response(init?.body);
+    const parsed = await readReportBody(await encoded.arrayBuffer(), encoded.headers.get("content-type")!);
+    if (!parsed.ok) throw new Error(`the fake relay got a bad report: ${parsed.error}`);
+    reports.push(parsed.report);
     const answer = answers.length > 1 ? answers.shift()! : answers[0];
     if (answer instanceof Error) throw answer;
     return answer.clone();
   }) as typeof fetch;
-  return { impl, reports };
+  return { impl, reports, urls };
 }
 
 const created = () => new Response(JSON.stringify({ ok: true, issue: 1 }), { status: 201 });
-const refused = (error: string) => new Response(JSON.stringify({ error }), { status: 400 });
 
-/** A feedback sender over a throwaway outbox and logs folder. */
+/** Feedback over a throwaway outbox and logs folder. */
 async function setup(fetchImpl: typeof fetch, overrides: Partial<FeedbackOptions> = {}) {
   const tmp = await makeTempKb();
   const outboxDir = path.join(tmp.dir, "outbox");
-  const feedback = makeFeedback({
-    endpoint: ENDPOINT,
+  const options: FeedbackOptions = {
+    relay: RELAY,
     outboxDir,
-    version: "0.2.0",
+    version: "0.4.0",
     install: "installed",
-    logFiles: [path.join(tmp.dir, "kb25.log"), path.join(tmp.dir, "update.log")],
+    logFiles: [path.join(tmp.dir, "kb25.log")],
     fetch: fetchImpl,
     home: "/Users/someone",
     ...overrides,
-  });
+  };
   const queued = async () => (await fs.readdir(outboxDir).catch(() => [] as string[])).sort();
-  return { feedback, dir: tmp.dir, outboxDir, queued, cleanup: tmp.cleanup };
+  return { feedback: makeFeedback(options), options, dir: tmp.dir, outboxDir, queued, cleanup: tmp.cleanup };
 }
 
-const input = (overrides: Record<string, unknown> = {}) => ({
-  kind: "bug",
-  message: "Search finds nothing",
-  email: "someone@example.com",
-  images: [{ type: "image/png", data: "iVBORw0KGgo=" }],
-  browser: "Mozilla/5.0",
-  page: "/engineering/deploy",
-  errors: ["TypeError: x is undefined"],
-  includeLogs: false,
-  ...overrides,
+/** What the dialog posts, valid or not: a report as multipart bytes, and its content type. */
+async function dialogBody(overrides: Partial<Report> = {}): Promise<[Uint8Array, string]> {
+  const report: Report = {
+    id: newReportId(),
+    kind: "bug",
+    message: "Search finds nothing",
+    images: [{ type: "image/png", data: Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) }],
+    version: "whatever the page said",
+    facts: { Browser: "Mozilla/5.0", Page: "/engineering/deploy", OS: "what the page said" },
+    ...overrides,
+  };
+  const encoded = new Response(reportForm(report));
+  return [new Uint8Array(await encoded.arrayBuffer()), encoded.headers.get("content-type")!];
+}
+
+test("the dialog is told what the server adds, the log tail with the home folder hidden", async () => {
+  const s = await setup(fakeRelay(created()).impl);
+  try {
+    let info = s.feedback.info();
+    assert.equal(info.version, "0.4.0");
+    assert.deepEqual(Object.keys(info.facts), ["Install", "OS", "Node"]);
+    assert.equal(info.facts.Install, "installed");
+    assert.equal(info.facts.Node, process.version);
+    assert.equal(info.logs, null, "no log yet");
+    assert.equal(info.queued, 0);
+    await fs.writeFile(path.join(s.dir, "kb25.log"), "started from /Users/someone/KB25\n");
+    info = s.feedback.info();
+    assert.equal(info.logs, "== kb25.log ==\nstarted from ~/KB25");
+  } finally {
+    await s.cleanup();
+  }
 });
 
-test("a report goes to the relay with what the server knows added", async () => {
+test("a report goes to KB25's path on the relay, with the server's own facts", async () => {
   const relay = fakeRelay(created());
   const s = await setup(relay.impl);
   try {
-    assert.deepEqual(await s.feedback.submit(input()), { status: "sent" });
+    assert.deepEqual(await s.feedback.submit(...(await dialogBody())), { status: "sent" });
+    assert.deepEqual(relay.urls, [`${RELAY}/v1/kb25/reports`]);
     const [report] = relay.reports;
-    assert.match(report.id, UUID);
-    assert.equal(report.kind, "bug");
-    assert.deepEqual(report.images, [{ type: "image/png", data: Buffer.from("iVBORw0KGgo=", "base64") }]);
-    assert.equal(report.diagnostics.version, "0.2.0");
-    assert.equal(report.diagnostics.install, "installed");
-    assert.equal(report.diagnostics.node, process.version);
-    assert.equal(report.diagnostics.page, "/engineering/deploy");
-    assert.equal(report.diagnostics.logs, undefined, "logs only when asked");
+    assert.equal(report.version, "0.4.0");
+    assert.equal(report.facts.OS, s.feedback.info().facts.OS);
+    assert.equal(report.facts.Install, "installed");
+    assert.equal(report.facts.Page, "/engineering/deploy", "what only the page knows stays");
+    assert.equal(report.images.length, 1);
     assert.deepEqual(await s.queued(), []);
   } finally {
     await s.cleanup();
   }
 });
 
-test("the log tail goes only when asked, with the home folder hidden", async () => {
+test("a body that isn't a report is refused, unsent and unqueued", async () => {
   const relay = fakeRelay(created());
   const s = await setup(relay.impl);
   try {
-    await fs.writeFile(path.join(s.dir, "kb25.log"), "started from /Users/someone/KB25\n");
-    await s.feedback.submit(input({ includeLogs: true }));
-    assert.equal(relay.reports[0].diagnostics.logs, "== kb25.log ==\nstarted from ~/KB25");
-  } finally {
-    await s.cleanup();
-  }
-});
-
-test("a report the relay would refuse is refused here, unsent and unqueued", async () => {
-  const relay = fakeRelay(created());
-  const s = await setup(relay.impl);
-  try {
-    const result = await s.feedback.submit(input({ message: "   " }));
-    assert.deepEqual(result, { status: "refused", error: "The message is empty." });
-    assert.equal((await s.feedback.submit("nonsense")).status, "refused");
+    const result = await s.feedback.submit(new TextEncoder().encode("{}"), "application/json");
+    assert.deepEqual(result, { status: "refused", error: "The report is malformed." });
+    const [empty, type] = await dialogBody({ message: "   " });
+    assert.equal((await s.feedback.submit(empty, type)).status, "refused");
     assert.equal(relay.reports.length, 0);
     assert.deepEqual(await s.queued(), []);
   } finally {
@@ -111,146 +114,86 @@ test("a report the relay would refuse is refused here, unsent and unqueued", asy
   }
 });
 
-test("the relay's own refusal reaches the person, and nothing is queued", async () => {
-  const s = await setup(fakeRelay(refused("The images add up to more than 6 MB.")).impl);
-  try {
-    assert.deepEqual(await s.feedback.submit(input()), {
-      status: "refused",
-      error: "The images add up to more than 6 MB.",
-    });
-    assert.deepEqual(await s.queued(), []);
-  } finally {
-    await s.cleanup();
-  }
-});
-
-test("offline, rate-limited or a relay failure: the report waits in the outbox", async () => {
-  const relay = fakeRelay(
-    new TypeError("fetch failed"),
-    new Response("{}", { status: 429 }),
-    new Response("{}", { status: 502 })
-  );
-  const s = await setup(relay.impl);
-  try {
-    for (let i = 0; i < 3; i++) assert.deepEqual(await s.feedback.submit(input()), { status: "queued" });
-    const files = await s.queued();
-    assert.equal(files.length, 3);
-    assert.ok(files.every((name) => UUID.test(name.replace(/\.json$/, ""))));
-    assert.equal((await s.feedback.preview()).queued, 3);
-  } finally {
-    await s.cleanup();
-  }
-});
-
-test("a flush sends the outbox oldest first, keeping the same report ids", async () => {
-  const relay = fakeRelay(new TypeError("fetch failed"), new TypeError("fetch failed"), created());
-  const s = await setup(relay.impl);
-  try {
-    await s.feedback.submit(input({ message: "first" }));
-    await new Promise((resolve) => setTimeout(resolve, 15)); // distinct mtimes
-    await s.feedback.submit(input({ message: "second" }));
-    const firstTry = relay.reports.map((r) => r.id);
-
-    assert.equal(await s.feedback.flush(), 2);
-    const retried = relay.reports.slice(2);
-    assert.deepEqual(
-      retried.map((r) => r.message),
-      ["first", "second"]
-    );
-    assert.deepEqual(
-      retried.map((r) => r.id),
-      firstTry
-    );
-    assert.deepEqual(retried[0].images, relay.reports[0].images, "images survive the outbox byte for byte");
-    assert.deepEqual(await s.queued(), []);
-  } finally {
-    await s.cleanup();
-  }
-});
-
-test("a flush stops at the first report that still can't go, and drops refused ones", async () => {
-  const relay = fakeRelay(
-    new TypeError("fetch failed"),
-    new TypeError("fetch failed"),
-    refused("The report id is malformed."),
-    new TypeError("fetch failed")
-  );
-  const s = await setup(relay.impl);
-  const warn = console.warn;
-  console.warn = () => {};
-  try {
-    await s.feedback.submit(input({ message: "first" }));
-    await new Promise((resolve) => setTimeout(resolve, 15));
-    await s.feedback.submit(input({ message: "second" }));
-    assert.equal(await s.feedback.flush(), 0);
-    // The first was refused and dropped; the second is still unreachable and kept.
-    const [left] = await s.queued();
-    const kept = JSON.parse(await fs.readFile(path.join(s.outboxDir, left), "utf8"));
-    assert.equal(kept.message, "second");
-  } finally {
-    console.warn = warn;
-    await s.cleanup();
-  }
-});
-
-test("a successful send also flushes what was waiting", async () => {
+test("a report the relay can't take waits in the outbox and goes on the next flush", async () => {
   const relay = fakeRelay(new TypeError("fetch failed"), created());
   const s = await setup(relay.impl);
   try {
-    await s.feedback.submit(input({ message: "queued" }));
-    await s.feedback.submit(input({ message: "fresh" }));
-    await s.feedback.flush(); // joins the flush the send started
-    assert.deepEqual(
-      relay.reports.map((r) => r.message),
-      ["queued", "fresh", "queued"]
-    );
+    assert.deepEqual(await s.feedback.submit(...(await dialogBody())), { status: "queued" });
+    assert.equal(s.feedback.info().queued, 1);
+    assert.equal(await s.feedback.flush(), 1);
+    assert.equal(relay.reports[1].id, relay.reports[0].id, "the same report, so the same image paths");
     assert.deepEqual(await s.queued(), []);
   } finally {
     await s.cleanup();
   }
 });
 
-test("the preview shows what the server adds, and the relay's limits", async () => {
-  const s = await setup(fakeRelay(created()).impl);
-  try {
-    let preview = await s.feedback.preview();
-    assert.equal(preview.version, "0.2.0");
-    assert.equal(preview.logs, null, "no log yet");
-    assert.equal(preview.queued, 0);
-    assert.equal(preview.limits.images, 5);
-    await fs.writeFile(path.join(s.dir, "update.log"), "updated\n");
-    preview = await s.feedback.preview();
-    assert.equal(preview.logs, "== update.log ==\nupdated");
-  } finally {
-    await s.cleanup();
-  }
-});
-
-test("the log tail keeps the last whole lines, each cut to length", async () => {
+test("reports KB25 0.3.0 queued in the old format are converted, keeping their order", async () => {
   const tmp = await makeTempKb();
   try {
-    const file = path.join(tmp.dir, "kb25.log");
-    const lines = Array.from({ length: 100 }, (_, i) => `line ${i}`);
-    lines.push("x".repeat(400));
-    await fs.writeFile(file, lines.join("\r\n") + "\n");
-    const tail = logTail([file, path.join(tmp.dir, "missing.log")], "")!.split("\n");
-    assert.equal(tail[0], "== kb25.log ==");
-    assert.equal(tail.length, 41);
-    assert.equal(tail[1], "line 61");
-    assert.equal(tail[40], `${"x".repeat(300)}…`);
-    assert.equal(logTail([path.join(tmp.dir, "missing.log")]), null);
+    const dir = path.join(tmp.dir, "outbox");
+    await fs.mkdir(dir);
+    const old = {
+      id: newReportId(),
+      kind: "bug",
+      message: "queued by 0.3.0",
+      email: "someone@example.com",
+      images: [{ type: "image/png", data: "iVBORw0KGgo=" }],
+      diagnostics: {
+        version: "0.3.0",
+        install: "installed",
+        os: "macOS (Darwin 25.6.0, arm64)",
+        node: "v24.1.0",
+        browser: "Mozilla/5.0",
+        errors: ["TypeError: x is undefined"],
+        logs: "== kb25.log ==\nready",
+      },
+    };
+    const file = path.join(dir, `${old.id}.json`);
+    await fs.writeFile(file, JSON.stringify(old));
+    const when = new Date("2026-10-01T12:00:00Z");
+    await fs.utimes(file, when, when);
+    await fs.writeFile(path.join(dir, "broken.json"), "{not json");
+
+    assert.equal(migrateOutbox(dir), 1);
+    assert.equal((await fs.stat(file)).mtime.getTime(), when.getTime());
+    const parsed = parseReport(JSON.parse(await fs.readFile(file, "utf8")));
+    assert.equal(parsed.ok, false, "images are still base64 on disk, as the outbox keeps them");
+
+    const relay = fakeRelay(created());
+    const feedback = makeFeedback({
+      relay: RELAY,
+      outboxDir: dir,
+      version: "0.4.0",
+      install: "installed",
+      logFiles: [],
+      fetch: relay.impl,
+    });
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      assert.equal(await feedback.flush(), 1);
+    } finally {
+      console.warn = warn;
+    }
+    const [sent] = relay.reports;
+    assert.equal(sent.id, old.id);
+    assert.equal(sent.version, "0.3.0", "the version it was written on");
+    assert.deepEqual(sent.facts, {
+      Install: "installed",
+      OS: "macOS (Darwin 25.6.0, arm64)",
+      Node: "v24.1.0",
+      Browser: "Mozilla/5.0",
+    });
+    assert.deepEqual(sent.errors, ["TypeError: x is undefined"]);
+    assert.equal(sent.logs, "== kb25.log ==\nready");
+    assert.equal(migrateOutbox(path.join(tmp.dir, "missing")), 0);
   } finally {
     await tmp.cleanup();
   }
 });
 
-test("the OS reads as a person knows it", () => {
-  assert.equal(describeOs("darwin", "25.6.0", "arm64"), "macOS (Darwin 25.6.0, arm64)");
-  assert.equal(describeOs("win32", "10.0.26100", "x64"), "Windows (10.0.26100, x64)");
-  assert.equal(describeOs("freebsd", "14.1", "x64"), "freebsd (14.1, x64)");
-});
-
-test("a checkout's version comes from its package.json", async () => {
+test("a checkout's version comes from its package.json", () => {
   assert.match(checkoutVersion(path.join(import.meta.dirname)), /^\d+\.\d+\.\d+$/);
   assert.equal(checkoutVersion("/nowhere/at/all"), "unknown");
 });

@@ -1,57 +1,40 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import {
-  LIMITS,
-  MAX_BODY_BYTES,
-  parseReport,
-  reportForm,
-  type Parsed,
-  type Report,
-} from "../../relay/src/report.js";
+import { MAX_BODY_BYTES, isObject, readReportBody, type Facts, type SendResult } from "@elmir-mamedov/feedback";
+import { createOutbox, describeOs, logTail } from "@elmir-mamedov/feedback/node";
 
 /**
- * Feedback to the developer. The viewer's feedback dialog posts here; this
- * adds what only the server knows (version, OS, Node, and the log tail when
- * the person ticks it) and hands the report to the relay (relay/), which files
- * it as an issue in a private GitHub repo. Nothing leaves without a Send.
- *
- * The report format and its limits are the relay's own (relay/src/report.ts),
- * checked here too, so a report that would be refused is refused before it
- * goes anywhere, and never sits in the outbox. A report the relay can't take
- * right now (offline, rate-limited, GitHub down) waits there and is retried.
+ * Feedback to the developer, through @elmir-mamedov/feedback. The viewer's
+ * dialog (views.ts) asks GET /_feedback for what only the server knows
+ * (KB25's version, the OS, Node, and the log tail) and shows it before
+ * sending. POST /_feedback takes the report the dialog builds, sets those
+ * facts as the server knows them, and hands it to the outbox, which sends it
+ * to the relay, or keeps it and retries while the relay is out of reach.
+ * Nothing leaves without a Send.
  */
 
-export const DEFAULT_FEEDBACK_URL = "https://kb25-feedback.elmir-together.workers.dev/reports";
+/** The relay every app's feedback goes through (github.com/elmir-mamedov/feedback-relay). */
+export const DEFAULT_FEEDBACK_RELAY = "https://feedback-relay.elmir-together.workers.dev";
 
-/** What POST /_feedback may carry: the dialog sends images as base64, a third larger than the bytes. */
-export const FEEDBACK_BODY_LIMIT = MAX_BODY_BYTES + Math.ceil(LIMITS.totalImageBytes / 3);
+/** KB25's id on the relay. */
+export const FEEDBACK_APP = "kb25";
 
-const SEND_TIMEOUT_MS = 60 * 1000;
-const FIRST_RETRY_MS = 30 * 1000;
-const RETRY_EVERY_MS = 30 * 60 * 1000;
-const LOG_LINES = 40;
-const LOG_LINE_CHARS = 300;
-const LOG_TAIL_BYTES = 16 * 1024;
+/** What POST /_feedback may carry: one report, as the multipart the relay takes. */
+export const FEEDBACK_BODY_LIMIT = MAX_BODY_BYTES;
 
-export type SendResult = { status: "sent" } | { status: "queued" } | { status: "refused"; error: string };
-
-/** What GET /_feedback answers: everything a report would carry besides what the person writes. */
-export interface FeedbackPreview {
+/** What GET /_feedback answers: everything a report carries besides what the person writes. */
+export interface FeedbackInfo {
   version: string;
-  install: "installed" | "checkout";
-  os: string;
-  node: string;
-  /** The log tail a report carries when asked, or null when this copy keeps no log. */
+  facts: Facts;
+  /** The log tail a report carries when ticked, or null when this copy keeps no log. */
   logs: string | null;
   /** Reports waiting in the outbox. */
   queued: number;
-  limits: { message: number; images: number; imageBytes: number; totalImageBytes: number };
 }
 
 export interface FeedbackOptions {
-  endpoint: string;
+  /** The relay's URL, without a path. */
+  relay: string;
   outboxDir: string;
   version: string;
   install: "installed" | "checkout";
@@ -63,23 +46,13 @@ export interface FeedbackOptions {
 }
 
 export interface Feedback {
-  preview(): Promise<FeedbackPreview>;
-  /** Check the dialog's untrusted body, then send it or queue it. */
-  submit(body: unknown): Promise<SendResult>;
+  info(): FeedbackInfo;
+  /** Read the dialog's multipart body, then send the report or queue it. */
+  submit(body: Uint8Array, contentType: string): Promise<SendResult>;
   /** Send what the outbox holds, oldest first; resolves to how many went. */
   flush(): Promise<number>;
   /** Retry the outbox now and then, without keeping the process alive for it. */
   startRetrying(): void;
-}
-
-/** "macOS (Darwin 25.6.0, arm64)": the name a person knows, and the version that pins it down. */
-export function describeOs(
-  platform: NodeJS.Platform = process.platform,
-  release = os.release(),
-  arch: string = process.arch
-): string {
-  const names: Partial<Record<NodeJS.Platform, string>> = { darwin: "macOS", win32: "Windows", linux: "Linux" };
-  return `${names[platform] ?? platform} (${platform === "darwin" ? "Darwin " : ""}${release}, ${arch})`;
 }
 
 /** A checkout's version, from the package.json beside src/; an install has VERSION instead. */
@@ -92,201 +65,65 @@ export function checkoutVersion(serverDir: string): string {
   }
 }
 
-/** The last bytes of a file, from the first whole line in them. */
-function readTail(file: string, bytes: number): string {
-  const fd = fs.openSync(file, "r");
+/**
+ * Reports KB25 0.3.0 and earlier left in the outbox, in the old relay's
+ * format (everything besides the message in one `diagnostics` object),
+ * rewritten as the reports the relay takes now, so they're sent rather than
+ * dropped as malformed. Each keeps its time, so the oldest still goes first.
+ */
+export function migrateOutbox(dir: string): number {
+  let names: string[];
   try {
-    const { size } = fs.fstatSync(fd);
-    const start = Math.max(0, size - bytes);
-    const buffer = Buffer.alloc(size - start);
-    fs.readSync(fd, buffer, 0, buffer.length, start);
-    const text = buffer.toString("utf8");
-    return start > 0 ? text.slice(text.indexOf("\n") + 1) : text;
-  } finally {
-    fs.closeSync(fd);
+    names = fs.readdirSync(dir).filter((name) => name.endsWith(".json"));
+  } catch {
+    return 0;
   }
-}
-
-/**
- * The last lines of each log, under its name, with the home folder shown as ~
- * so the report doesn't carry the account name. Null when no log has any.
- */
-export function logTail(files: string[], home = os.homedir()): string | null {
-  const parts: string[] = [];
-  for (const file of files) {
-    let text: string;
+  let migrated = 0;
+  for (const name of names) {
+    const file = path.join(dir, name);
     try {
-      text = readTail(file, LOG_TAIL_BYTES);
+      const stored: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (!isObject(stored) || !isObject(stored.diagnostics)) continue;
+      const { diagnostics: d, ...report } = stored;
+      const facts = { Install: d.install, OS: d.os, Node: d.node, Browser: d.browser, Page: d.page };
+      const { mtime } = fs.statSync(file);
+      fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...report, version: d.version, facts, errors: d.errors, logs: d.logs }));
+      fs.renameSync(`${file}.tmp`, file);
+      fs.utimesSync(file, mtime, mtime);
+      migrated++;
     } catch {
-      continue;
+      // Unreadable: the outbox drops it on its first flush.
     }
-    const lines = text
-      .split(/\r?\n/)
-      .filter((line) => line.trim())
-      .slice(-LOG_LINES)
-      .map((line) => (line.length > LOG_LINE_CHARS ? `${line.slice(0, LOG_LINE_CHARS)}…` : line));
-    if (lines.length) parts.push(`== ${path.basename(file)} ==\n${lines.join("\n")}`);
   }
-  if (!parts.length) return null;
-  const joined = home ? parts.join("\n\n").split(home).join("~") : parts.join("\n\n");
-  return joined.length > LIMITS.logs ? joined.slice(-LIMITS.logs) : joined;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Images as JSON carries them (the dialog's body, an outbox file), base64,
- * turned into the bytes a report holds. Anything else passes through for
- * parseReport to refuse in its own words.
- */
-function decodeImages(value: unknown): unknown {
-  if (!Array.isArray(value)) return value;
-  return value.map((img) =>
-    isObject(img) && typeof img.data === "string" ? { type: img.type, data: Buffer.from(img.data, "base64") } : img
-  );
+  return migrated;
 }
 
 export function makeFeedback(options: FeedbackOptions): Feedback {
-  const { endpoint, outboxDir } = options;
-  const fetchImpl = options.fetch ?? fetch;
-  const home = options.home ?? os.homedir();
-  let flushing: Promise<number> | null = null;
-
-  function facts() {
-    return { version: options.version, install: options.install, os: describeOs(), node: process.version };
-  }
-
-  /** The report this body asks for, with a fresh id, or why it can't be one. */
-  function build(body: unknown): Parsed {
-    const input = isObject(body) ? body : {};
-    return parseReport({
-      id: crypto.randomUUID(),
-      kind: input.kind,
-      message: input.message,
-      email: input.email,
-      images: decodeImages(input.images),
-      diagnostics: {
-        ...facts(),
-        browser: input.browser,
-        page: input.page,
-        errors: input.errors,
-        logs: input.includeLogs === true ? logTail(options.logFiles, home) ?? undefined : undefined,
-      },
-    });
-  }
-
-  /** "retry" for anything that might go through later; a refusal is final. */
-  async function deliver(report: Report): Promise<"sent" | "retry" | { refused: string }> {
-    let response: Response;
-    try {
-      response = await fetchImpl(endpoint, {
-        method: "POST",
-        body: reportForm(report),
-        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-      });
-    } catch {
-      return "retry";
-    }
-    if (response.ok) return "sent";
-    if (response.status === 429 || response.status >= 500) return "retry";
-    const answer: unknown = await response.json().catch(() => null);
-    const error = isObject(answer) && typeof answer.error === "string" ? answer.error : "";
-    return { refused: error || `The feedback service refused the report (${response.status}).` };
-  }
-
-  function outboxFiles(): string[] {
-    try {
-      return fs
-        .readdirSync(outboxDir)
-        .filter((name) => name.endsWith(".json"))
-        .map((name) => path.join(outboxDir, name));
-    } catch {
-      return [];
-    }
-  }
-
-  function queue(report: Report): void {
-    fs.mkdirSync(outboxDir, { recursive: true });
-    const file = path.join(outboxDir, `${report.id}.json`);
-    const images = report.images.map((img) => ({ type: img.type, data: Buffer.from(img.data).toString("base64") }));
-    // Written aside and renamed in, so a flush never reads half a report.
-    fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...report, images }));
-    fs.renameSync(`${file}.tmp`, file);
-  }
-
-  async function flushOnce(): Promise<number> {
-    const files = outboxFiles()
-      .map((file) => ({ file, mtime: fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? 0 }))
-      .sort((a, b) => a.mtime - b.mtime);
-    let sent = 0;
-    for (const { file } of files) {
-      let parsed: Parsed;
-      try {
-        const stored: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
-        parsed = parseReport(isObject(stored) ? { ...stored, images: decodeImages(stored.images) } : stored);
-      } catch {
-        parsed = { ok: false, error: "unreadable" };
-      }
-      if (!parsed.ok) {
-        console.warn(`Dropping a queued feedback report the relay would refuse: ${parsed.error}`);
-        fs.rmSync(file, { force: true });
-        continue;
-      }
-      const outcome = await deliver(parsed.report);
-      if (outcome === "retry") break; // still unreachable; the rest wait too
-      if (outcome !== "sent") console.warn(`The relay refused a queued feedback report: ${outcome.refused}`);
-      fs.rmSync(file, { force: true });
-      if (outcome === "sent") sent++;
-    }
-    return sent;
-  }
-
-  function flush(): Promise<number> {
-    flushing ??= flushOnce().finally(() => {
-      flushing = null;
-    });
-    return flushing;
-  }
+  migrateOutbox(options.outboxDir);
+  const outbox = createOutbox({ relay: options.relay, app: FEEDBACK_APP, dir: options.outboxDir, fetch: options.fetch });
+  const facts = (): Facts => ({ Install: options.install, OS: describeOs(), Node: process.version });
 
   return {
-    async preview() {
+    info() {
       return {
-        ...facts(),
-        logs: logTail(options.logFiles, home),
-        queued: outboxFiles().length,
-        limits: {
-          message: LIMITS.message,
-          images: LIMITS.images,
-          imageBytes: LIMITS.imageBytes,
-          totalImageBytes: LIMITS.totalImageBytes,
-        },
+        version: options.version,
+        facts: facts(),
+        logs: logTail(options.logFiles, { home: options.home }),
+        queued: outbox.size(),
       };
     },
 
-    async submit(body) {
-      const built = build(body);
-      if (!built.ok) return { status: "refused", error: built.error };
-      const outcome = await deliver(built.report);
-      if (outcome === "sent") {
-        // The relay is reachable again: a good moment for anything queued.
-        if (outboxFiles().length) void flush().catch(() => {});
-        return { status: "sent" };
-      }
-      if (outcome === "retry") {
-        queue(built.report);
-        return { status: "queued" };
-      }
-      return { status: "refused", error: outcome.refused };
+    async submit(body, contentType) {
+      const parsed = await readReportBody(body, contentType);
+      if (!parsed.ok) return { status: "refused", error: parsed.error };
+      // The dialog had these from GET /_feedback; the server's own word counts.
+      return outbox.submit({ ...parsed.report, version: options.version, facts: { ...parsed.report.facts, ...facts() } });
     },
 
-    flush,
+    flush: () => outbox.flush(),
 
     startRetrying() {
-      const tick = () => void flush().catch(() => {});
-      setTimeout(tick, FIRST_RETRY_MS).unref();
-      setInterval(tick, RETRY_EVERY_MS).unref();
+      outbox.startRetrying();
     },
   };
 }

@@ -24,7 +24,7 @@ import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
 import { crossSiteRefusal, isLoopbackHost } from "./loopback.js";
 import { envFlag, envNumber, syncFromEnv } from "./sync.js";
 import { parseWordDiff } from "./diff.js";
-import { DEFAULT_FEEDBACK_URL, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedback } from "./feedback.js";
+import { DEFAULT_FEEDBACK_RELAY, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedback } from "./feedback.js";
 import { createRenderer, noteSegments, sourceBlocks, type Section } from "./markdown.js";
 import { collectNotes, groupNotesByPage, summarizeNotes } from "./note-index.js";
 import {
@@ -360,6 +360,18 @@ app.get("/_vendor/mermaid/*", async (req, reply) => {
     return reply.callNotFound();
   }
   return reply.sendFile(rel, MERMAID_DIST);
+});
+
+// The feedback dialog's browser modules (@elmir-mamedov/feedback, imported by
+// views.ts), served like Mermaid's bundle: from node_modules, so the dialog
+// needs no CDN.
+const FEEDBACK_DIST = path.join(__dirname, "..", "node_modules", "@elmir-mamedov", "feedback", "dist");
+app.get("/_vendor/feedback/*", async (req, reply) => {
+  const rel = (req.params as { "*": string })["*"];
+  if (!rel.endsWith(".js") || !isInsideDir(FEEDBACK_DIST, path.join(FEEDBACK_DIST, rel))) {
+    return reply.callNotFound();
+  }
+  return reply.sendFile(rel, FEEDBACK_DIST);
 });
 
 /** Best-effort git commit date+time for a file; falls back to null. */
@@ -1815,9 +1827,9 @@ if (install && updateCheck) {
 // Feedback to the developer (feedback.ts). GET answers what a report would
 // carry besides the person's own words, for the dialog to show before
 // sending; POST sends it through the relay, or queues it when the relay is
-// out of reach. KB25_FEEDBACK_URL points it elsewhere, e.g. at `wrangler dev`.
+// out of reach. KB25_FEEDBACK_RELAY points it elsewhere, e.g. at `wrangler dev`.
 const feedback = makeFeedback({
-  endpoint: process.env.KB25_FEEDBACK_URL || DEFAULT_FEEDBACK_URL,
+  relay: process.env.KB25_FEEDBACK_RELAY || DEFAULT_FEEDBACK_RELAY,
   outboxDir: install
     ? path.join(install.home, "feedback-outbox")
     : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "kb25", "feedback-outbox"),
@@ -1826,11 +1838,15 @@ const feedback = makeFeedback({
   logFiles: install ? [path.join(install.home, "kb25.log"), install.logFile] : [],
 });
 feedback.startRetrying();
-app.get("/_feedback", async (_req, reply) => reply.send(await feedback.preview()));
-app.post("/_feedback", { bodyLimit: FEEDBACK_BODY_LIMIT }, async (req, reply) => {
-  const result = await feedback.submit(req.body);
-  if (result.status === "refused") return reply.code(400).send({ error: result.error });
-  return reply.code(result.status === "sent" ? 200 : 202).send(result);
+app.get("/_feedback", async (_req, reply) => reply.send(feedback.info()));
+// The dialog posts a report as the multipart the relay takes, read here as
+// raw bytes. The parser is scoped to this route; nothing else takes multipart.
+await app.register(async (scope) => {
+  scope.addContentTypeParser("multipart/form-data", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
+  scope.post("/_feedback", { bodyLimit: FEEDBACK_BODY_LIMIT }, async (req, reply) => {
+    const result = await feedback.submit(req.body as Buffer, req.headers["content-type"] ?? "");
+    return reply.code(result.status === "refused" ? 400 : result.status === "sent" ? 200 : 202).send(result);
+  });
 });
 
 // Any page by slug (supports nested paths).

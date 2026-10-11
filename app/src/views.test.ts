@@ -1195,12 +1195,12 @@ test("views: every page with the corner offers feedback, through /_feedback", ()
     layout(pageView()),
   ]) {
     assert.match(html, /<button type="button" class="feedback-button" data-feedback-open aria-label="Send feedback"/);
-    assert.match(html, /<dialog class="feedback-dialog" data-feedback-dialog/);
-    assert.match(html, /fetch\("\/_feedback"/);
-    // Every extra is opt-in except the errors, which are KB25's own.
-    assert.match(html, /<input type="checkbox" data-feedback-page \/>/);
-    assert.match(html, /<input type="checkbox" data-feedback-logs \/>/);
-    const script = html.slice(html.indexOf('const ERRORS = "kb25.feedback.errors"'));
-    assert.doesNotMatch(script.slice(0, script.indexOf("</script>")), /innerHTML/, "text only ever goes in via textContent");
+    const script = html.slice(html.indexOf('<script type="module">'));
+    assert.match(script, /import \{ mountFeedback \} from "\/_vendor\/feedback\/widget\/index\.js"/);
+    assert.match(script, /app: "kb25"/);
+    assert.match(script, /button: false/, "the corner's own button opens it");
+    assert.match(script, /fetch\("\/_feedback"/);
+    assert.match(script, /The last lines of KB25's log/);
+    assert.doesNotMatch(html, /<dialog class="feedback-dialog"/, "the package draws the dialog now");
   }
 });
