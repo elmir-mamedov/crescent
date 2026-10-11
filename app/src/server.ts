@@ -20,7 +20,7 @@ import {
 } from "./content.js";
 import { makeGit } from "./git.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
-import { isLoopbackHost } from "./loopback.js";
+import { crossSiteRefusal, isLoopbackHost } from "./loopback.js";
 import { envFlag, envNumber, syncFromEnv } from "./sync.js";
 import { parseWordDiff } from "./diff.js";
 import { createRenderer, noteSegments, sourceBlocks, type Section } from "./markdown.js";
@@ -298,6 +298,21 @@ app.addHook("onRequest", async (req, reply) => {
 
   const next = encodeURIComponent(req.url || "/");
   return reply.redirect(`/_login?next=${next}`, 303);
+});
+
+// With sign-in off there is no session for a forged request to lack, so any
+// page in the browser could otherwise post forms here or, by DNS rebinding,
+// read the KB. The browser's own Host/Origin headers tell those apart.
+app.addHook("onRequest", async (req, reply) => {
+  if (!AUTH_DISABLED) return;
+  const secFetchSite = req.headers["sec-fetch-site"];
+  const refusal = crossSiteRefusal({
+    method: req.method,
+    host: req.headers.host,
+    origin: req.headers.origin,
+    secFetchSite: Array.isArray(secFetchSite) ? secFetchSite[0] : secFetchSite,
+  });
+  if (refusal) return reply.code(403).type("text/plain").send(refusal);
 });
 
 // Register @fastify/static once with no route of its own (`serve: false`), just
