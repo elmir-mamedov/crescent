@@ -1,0 +1,19 @@
+{
+  "name": "kb25-feedback-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker that files KB25 feedback as issues in a private GitHub repo.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261011.1",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.149.0"
+  }
+}

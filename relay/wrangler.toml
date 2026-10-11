@@ -1,0 +1,18 @@
+# The KB25 feedback relay. Deploy with `npm run deploy`; the GitHub token is a
+# secret (`npx wrangler secret put GITHUB_TOKEN`), never a var. See README.md.
+name = "kb25-feedback"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[vars]
+GITHUB_REPO = "elmir-mamedov/kb25-feedback"
+
+# Five reports a minute from one address: plenty for a person, and it slows
+# anyone who found the URL in the public source and wants to flood the repo.
+[[ratelimits]]
+name = "PER_IP"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
+
+[observability]
+enabled = true
