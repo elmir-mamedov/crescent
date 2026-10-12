@@ -25,6 +25,10 @@ the Start menu on Windows. Your pages are kept in a `KB25` folder in your home
 folder. If you already have a knowledge base from the kb25 plugin, the
 installer offers to use it where it is instead.
 
+KB25 opens in your browser. Close its last tab and it quits half a minute
+later, or quit it right away with the power button in the top-right corner.
+Open it again the same way as before.
+
 If you use the Claude app or Claude Code, the installer offers to connect KB25
 to it, so Claude can find, read and write your pages.
 

@@ -16,10 +16,11 @@ npm run mcp      # stdio MCP server for local agent/client integrations
 
 On macOS, `npm run app:install` adds `~/Applications/KB25.app`, so the viewer
 opens like any other app (Cmd+Space, "KB25"). It starts the server if it is not
-already running and opens the viewer as a tab in your default browser; the
-server keeps running in the background until logout and logs to
-`~/Library/Logs/kb25-viewer.log`. Re-run it after moving the checkout or
-switching Node versions.
+already running and opens the viewer as a tab in your default browser. The
+server runs in the background and logs to `~/Library/Logs/kb25-viewer.log`;
+the power button in the top-right corner quits it, and it also quits by itself
+30 seconds after its last tab closes. Re-run `npm run app:install` after moving
+the checkout or switching Node versions.
 
 It binds to `localhost` only, so nothing outside this machine can reach it.
 Keep it that way. Sign-in is one static username/password: repeated wrong
