@@ -1,7 +1,8 @@
 // Opens KB25: starts the server when nothing answers on its port, then shows
 // it in the default browser. The macOS KB25.app and the Windows Start-menu
 // shortcut both run this with KB25's private Node. The server outlives this
-// script, so the next launch is instant; it stops at logout.
+// script and runs in desktop mode (KB25_DESKTOP): it quits from its Quit
+// button, or by itself 30 seconds after its last tab closes.
 //
 // KB25_NO_BROWSER=1 starts the server without opening a browser (CI smoke tests).
 import { spawn } from "node:child_process";
@@ -13,7 +14,7 @@ const p = paths();
 const url = serverUrl(p);
 
 if (!(await isUp(url))) {
-  const env = { ...process.env };
+  const env = { ...process.env, KB25_DESKTOP: "1" };
   // Finder hands apps a bare PATH; the server looks for git, which may be
   // Homebrew's.
   if (isMac) env.PATH = `/opt/homebrew/bin:/usr/local/bin:${env.PATH ?? "/usr/bin:/bin"}`;

@@ -1,8 +1,8 @@
 // Installs ~/Applications/KB25.app, a launcher for the web viewer that
 // Spotlight and Launchpad pick up. Opening it starts the server when it is not
 // already running, then opens the viewer as a tab in the default browser. The
-// server keeps running after the tab closes, so the next launch is instant; it
-// stops at logout.
+// server runs in desktop mode (KB25_DESKTOP): it quits from its Quit button,
+// or by itself 30 seconds after its last tab closes.
 //
 // This is the developer launcher: it runs this checkout's src/ through tsx.
 // Everyone else installs a packaged copy with the one-line installer in the
@@ -38,6 +38,8 @@ URL="http://localhost:${port}"
 LOG=${sh(logPath)}
 # The server shells out to git, and Finder hands apps a bare PATH.
 export PATH=${sh(path.dirname(process.execPath))}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
+# Started without a terminal, so the page offers Quit and the last tab closing stops it.
+export KB25_DESKTOP=1
 
 up() { curl -s -o /dev/null --max-time 1 "$URL/"; }
 
