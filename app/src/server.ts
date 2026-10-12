@@ -26,6 +26,7 @@ import { envFlag, envNumber, syncFromEnv } from "./sync.js";
 import { parseWordDiff } from "./diff.js";
 import { DEFAULT_FEEDBACK_RELAY, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedback } from "./feedback.js";
 import { createRenderer, noteSegments, sourceBlocks, type Section } from "./markdown.js";
+import { makePresence } from "./presence.js";
 import { collectNotes, groupNotesByPage, summarizeNotes } from "./note-index.js";
 import {
   insertNote,
@@ -119,6 +120,12 @@ const AUTH_PASSWORD = AUTH_DISABLED ? "" : requireEnv("AUTH_PASSWORD");
 const AUTH_SESSION_SECRET = AUTH_DISABLED
   ? crypto.randomBytes(32).toString("base64url")
   : requireEnv("AUTH_SESSION_SECRET");
+// A server a launcher started (KB25.app, the Start-menu shortcut) has no
+// terminal to stop it, so the page gets a Quit button and the server quits by
+// itself a while after its last tab closes (presence.ts). Loopback only: on a
+// wider bind it would let any visitor stop the server.
+const DESKTOP = envFlag("KB25_DESKTOP") && isLoopbackHost(HOST);
+const QUIT_GRACE_MS = 30_000;
 const SESSION_COOKIE = "kb_session";
 const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 
@@ -297,6 +304,8 @@ app.addHook("onRequest", async (req, reply) => {
   const reqPath = requestPath(req);
   if (reqPath === "/_login") return;
   if (PUBLIC_PATHS.has(reqPath)) return; // site icons load before sign-in
+  // Carries no KB data, and a tab left on the sign-in page is still open.
+  if (DESKTOP && reqPath === "/_presence") return;
   if (currentUser(req)) return;
 
   const next = encodeURIComponent(req.url || "/");
@@ -1861,6 +1870,59 @@ await app.register(async (scope) => {
   });
 });
 
+// Quitting, for a server a launcher started (DESKTOP). Each browser keeps one
+// event stream here while it has a KB25 tab open, and the server quits once
+// the last one has been gone a while; POST /_quit is the page's Quit button.
+const presence = DESKTOP
+  ? makePresence({ graceMs: QUIT_GRACE_MS, onIdle: () => void shutdown("no KB25 tabs open", false) })
+  : null;
+if (presence) {
+  app.get("/_presence", async (_req, reply) => {
+    reply.hijack();
+    reply.raw.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+    // A dropped stream retries soon, so a restart (an update) picks it back up.
+    reply.raw.write("retry: 2000\n\n");
+    reply.raw.on("close", presence.connect(reply.raw));
+  });
+  app.post("/_quit", async (_req, reply) => {
+    reply.raw.once("finish", () => void shutdown("quit from the page", true));
+    return reply.code(202).send({ ok: true });
+  });
+}
+
+let shuttingDown = false;
+/**
+ * Stop serving and exit. `quitting` tells the open tabs KB25 has quit; a
+ * signal (logout, or an update stopping this server to restart it) leaves
+ * them to reconnect instead.
+ */
+async function shutdown(reason: string, quitting: boolean): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`KB viewer stopping: ${reason}`);
+  presence?.endAll(quitting);
+  // Let a save already under way finish, but never wait on it for long.
+  await Promise.race([app.close().catch(() => {}), new Promise((resolve) => setTimeout(resolve, 3000))]);
+  if (sync) {
+    // Give the debounced push for the last edit a chance to land before exit.
+    await sync.flush().catch(() => {});
+    sync.stop();
+  }
+  // Only this server's own pid, which a newer server may already have replaced.
+  if (install) {
+    try {
+      if (fs.readFileSync(install.pidFile, "utf8").trim() === String(process.pid)) {
+        fs.rmSync(install.pidFile, { force: true });
+      }
+    } catch {}
+  }
+  process.exit(0);
+}
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => void shutdown(signal, false));
+}
+
 // Any page by slug (supports nested paths).
 app.get("/*", async (req, reply) => {
   const slug = (req.params as { "*": string })["*"] ?? "";
@@ -1872,15 +1934,6 @@ if (sync) {
   // Pick up whatever the other machine pushed before serving a single stale page.
   await sync.pullAll();
   sync.startPeriodicPull(envNumber("KB_SYNC_INTERVAL_MS", 0));
-  for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.once(signal, () => {
-      // Give the debounced push for the last edit a chance to land before exit.
-      void sync.flush().finally(() => {
-        sync.stop();
-        process.exit(0);
-      });
-    });
-  }
 }
 
 try {
