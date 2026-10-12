@@ -362,6 +362,18 @@ app.get("/_vendor/mermaid/*", async (req, reply) => {
   return reply.sendFile(rel, MERMAID_DIST);
 });
 
+// KaTeX's stylesheet and the fonts it names, for the formulas markdown.ts
+// typesets on the server. No script: the page arrives already laid out.
+const KATEX_DIST = path.join(__dirname, "..", "node_modules", "katex", "dist");
+app.get("/_vendor/katex/*", async (req, reply) => {
+  const rel = (req.params as { "*": string })["*"];
+  const allowed = rel === "katex.min.css" || /^fonts\/[\w-]+\.(woff2|woff|ttf)$/.test(rel);
+  if (!allowed || !isInsideDir(KATEX_DIST, path.join(KATEX_DIST, rel))) {
+    return reply.callNotFound();
+  }
+  return reply.sendFile(rel, KATEX_DIST);
+});
+
 // The feedback dialog's browser modules (@elmir-mamedov/feedback, imported by
 // views.ts), served like Mermaid's bundle: from node_modules, so the dialog
 // needs no CDN.

@@ -24,6 +24,7 @@
     "fastify": "^4.28.1",
     "gray-matter": "^4.0.3",
     "highlight.js": "^11.10.0",
+    "katex": "^0.18.7",
     "markdown-it": "^14.1.0",
     "mermaid": "^11.16.0",
     "zod": "^3.23.8"

@@ -116,6 +116,17 @@ test("issue #1: non-editable views have no edit link for the shortcut to fire", 
   assert.doesNotMatch(html, /data-edit-link>/);
 });
 
+test("issue #7: a page with a formula links KaTeX's stylesheet in <head>", () => {
+  const html = layout(pageView({ contentHtml: '<p><span class="katex">x</span></p>' }));
+  const head = html.slice(0, html.indexOf("</head>"));
+  assert.match(head, /<link rel="stylesheet" href="\/_vendor\/katex\/katex\.min\.css" \/>/);
+});
+
+test("issue #7: a page without a formula loads no KaTeX stylesheet", () => {
+  const html = layout(pageView());
+  assert.doesNotMatch(html, /_vendor\/katex/);
+});
+
 test("issue #3: the page header exposes a Download-as-Markdown link", () => {
   const html = layout(pageView());
   assert.match(

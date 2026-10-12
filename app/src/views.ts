@@ -452,15 +452,16 @@ ${HELP_DIALOG}
  * The shared document <head>: theming meta, favicons, the inlined stylesheet, and
  * the FOUC-safe theme script. The script sets `data-theme` on <html> before the
  * body paints (from localStorage, else the OS preference) and wires the toggle.
+ * `extra` is for a stylesheet only some pages need, such as KaTeX's.
  */
-function renderHead(title: string): string {
+function renderHead(title: string, extra = ""): string {
   return `<head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light dark" />
 ${FAVICON_TAGS}
 <title>${title}</title>
-<style>${STYLES}</style>
+<style>${STYLES}</style>${extra}
 <script>${THEME_SCRIPT}</script>
 </head>`;
 }
@@ -563,9 +564,13 @@ export function layout(v: PageView): string {
       ? ""
       : `<div id="kb25-notes" hidden data-slug="${escapeHtml(v.activeSlug)}" data-notes="${escapeHtml(JSON.stringify(v.notes ?? []))}"></div>`;
 
+  // In <head> rather than beside the Mermaid script: KaTeX's markup without its
+  // stylesheet shows every formula twice, once as text and once as MathML.
+  const mathCss = v.contentHtml.includes('class="katex') ? `\n${KATEX_CSS}` : "";
+
   return `<!doctype html>
 <html lang="en">
-${renderHead(`${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`)}
+${renderHead(`${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, mathCss)}
 <body>
 ${sessionCorner(v.username, v.spaceKey)}
 ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, v.isArchiveView)}
@@ -1737,6 +1742,13 @@ const MERMAID_SCRIPT = `<script src="/_vendor/mermaid/mermaid.min.js"></script>
     window.__renderMermaid();
   })();
 </script>`;
+
+/**
+ * KaTeX's stylesheet, from the app's own copy (see `/_vendor/katex` in server.ts).
+ * The formulas are already typeset into the page's HTML by markdown.ts; this and
+ * the fonts it names are all a page needs to draw them.
+ */
+const KATEX_CSS = `<link rel="stylesheet" href="/_vendor/katex/katex.min.css" />`;
 
 /** Cmd/Ctrl+S submits the open editor form instead of the browser save dialog. */
 const EDITOR_SCRIPT = `
@@ -3786,6 +3798,10 @@ body.dragging-page .space-current{
 .prose pre code{background:none; padding:0}
 .prose pre.mermaid{background:none; border:none; padding:0; text-align:center; overflow:auto}
 .prose pre.mermaid:not([data-processed]){visibility:hidden}
+/* A formula wider than the column scrolls on its own instead of the page. */
+.prose .katex-display{overflow-x:auto; overflow-y:hidden; padding:.2em 0}
+.prose .math-block{margin:.7em 0}
+.prose .math-block .katex-display{margin:0}
 .prose blockquote{margin:1em 0; padding:.4em 1em; color:var(--muted);
   border-left:3px solid var(--line)}
 .prose table{border-collapse:collapse; width:100%}

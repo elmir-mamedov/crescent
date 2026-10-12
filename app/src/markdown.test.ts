@@ -40,6 +40,96 @@ test("non-mermaid code fences are still syntax-highlighted", () => {
   assert.doesNotMatch(html, /class="mermaid"/);
 });
 
+/** The TeX KaTeX was handed, which it keeps in the MathML it emits. */
+const texOf = (html: string) =>
+  [...html.matchAll(/<annotation encoding="application\/x-tex">([^<]*)<\/annotation>/g)].map(
+    (match) => match[1]
+  );
+
+test("$…$ is typeset by KaTeX with its backslashes intact", () => {
+  // Issue #7: as plain text, markdown-it read `\,` as an escaped comma and
+  // dropped the backslash, so the unit came out as `\mathrm{L,min^{-1}}`.
+  const html = render(String.raw`Flow at $Q_L=120\ \mathrm{L\,min^{-1}}$ into the tank.`);
+  assert.match(html, /<span class="katex">/);
+  assert.deepEqual(texOf(html), [String.raw`Q_L=120\ \mathrm{L\,min^{-1}}`]);
+  assert.doesNotMatch(html, /\$/);
+});
+
+test("emphasis and escape characters inside a formula reach KaTeX untouched", () => {
+  const html = render(String.raw`Then $x*y*z$ and $\{a_i\}$ and $b_i$.`);
+  assert.doesNotMatch(html, /<em>/);
+  assert.deepEqual(texOf(html), ["x*y*z", String.raw`\{a_i\}`, "b_i"]);
+});
+
+test("dollar amounts in prose are not read as math", () => {
+  const html = render("It costs $5 and $10, or $5-$10. A lone $ x$ too.");
+  assert.doesNotMatch(html, /katex/);
+  assert.match(html, /It costs \$5 and \$10, or \$5-\$10\. A lone \$ x\$ too\./);
+});
+
+test("an escaped dollar is a literal dollar", () => {
+  const html = render(String.raw`Pay \$x$ now`);
+  assert.doesNotMatch(html, /katex/);
+  assert.match(html, /Pay \$x\$ now/);
+});
+
+test("a $$ block is display math, anchored like any other block", () => {
+  const html = render("Intro.\n\n$$\nQ = a\n- b\n$$\n\nAfter.\n");
+  // `- b` would start a list if the lines were left to the paragraph rule.
+  assert.doesNotMatch(html, /<ul>/);
+  assert.match(html, /<div class="math-block" data-src-line="2" data-src-hash="[0-9a-f]{8}"><span class="katex-display">/);
+  assert.deepEqual(texOf(html), ["Q = a\n- b"]);
+  assert.match(html, /<p[^>]*>After\.<\/p>/);
+});
+
+test("sourceBlocks agrees with the renderer on a math block's anchor", () => {
+  const body = "Intro.\n\n$$\nE = mc^2\n$$\n";
+  const [, math] = sourceBlocks(body);
+  assert.equal(math.line, 2);
+  assert.match(render(body), new RegExp(`class="math-block" data-src-line="2" data-src-hash="${math.hash}"`));
+});
+
+test("a one-line $$ … $$ is a display block too", () => {
+  const html = render("$$ E = mc^2 $$\n");
+  assert.match(html, /<div class="math-block"[^>]*><span class="katex-display">/);
+  assert.deepEqual(texOf(html), ["E = mc^2"]);
+});
+
+test("$$ … $$ inside a paragraph is displayed where it stands", () => {
+  const html = render("Liquid enters at\n$$ Q_L = 2 $$ per second.");
+  assert.match(html, /<p[^>]*>Liquid enters at\n<span class="katex-display">/);
+  assert.match(html, /per second\.<\/p>/);
+});
+
+test("an unclosed $$ costs one paragraph, not the rest of the page", () => {
+  const html = render("$$\nx\n\nNext paragraph.\n\n$$\ny\n$$\n");
+  assert.match(html, /<p[^>]*>\$\$\nx<\/p>/);
+  assert.match(html, /<p[^>]*>Next paragraph\.<\/p>/);
+  assert.deepEqual(texOf(html), ["y"]);
+});
+
+test("TeX that KaTeX cannot parse shows as an error, not a broken page", () => {
+  const html = render(String.raw`Bad $\frac{1}{$ here.`);
+  assert.match(html, /class="katex-error"/);
+  assert.match(html, /here\.<\/p>/);
+});
+
+test("math cannot make links: KaTeX's \\href stays untrusted", () => {
+  const html = render(String.raw`$\href{javascript:alert(1)}{x}$`);
+  assert.doesNotMatch(html, /<a /);
+});
+
+test("\\ce from mhchem typesets chemical formulas", () => {
+  const html = render(String.raw`Absorbing $\ce{CO2 + 2OH- -> CO3^2- + H2O}$.`);
+  assert.match(html, /<span class="katex">/);
+  assert.doesNotMatch(html, /katex-error|#cc0000/);
+});
+
+test("a heading's formula appears in the rail as its TeX", () => {
+  const [section] = extractSections("## Rate of $r_A$\n");
+  assert.equal(section.text, "Rate of r_A");
+});
+
 test("[[id:<id>]] resolves to the target's current slug and title", () => {
   const md = createRenderer(
     (slug) => (slug === "kb25/moved-here" ? "Moved Page" : undefined),

@@ -4,6 +4,9 @@ import type StateInline from "markdown-it/lib/rules_inline/state_inline.mjs";
 import type StateBlock from "markdown-it/lib/rules_block/state_block.mjs";
 import type StateCore from "markdown-it/lib/rules_core/state_core.mjs";
 import hljs from "highlight.js";
+import katex from "katex";
+// Registers `\ce{…}` and `\pu{…}` for chemical equations and units.
+import "katex/contrib/mhchem";
 import { createHash } from "node:crypto";
 import { normalizeQuote, parseNotes, type Note } from "./notes.js";
 
@@ -371,6 +374,119 @@ function imageWithSize(state: StateInline, silent: boolean): boolean {
 }
 
 /**
+ * TeX math, `$…$` inline and `$$…$$` on display, typeset by KaTeX on the
+ * server. A page with a formula needs KaTeX's stylesheet and fonts, which
+ * `layout` links when the HTML has one, but no script.
+ *
+ * The formula has to be claimed while parsing. Left in the text, TeX's own
+ * backslashes read as Markdown escapes — `\,` comes out a bare comma, `\{` a
+ * brace — and its `*` and `_` as emphasis, so it is already damaged before
+ * anything could look for it in the finished HTML.
+ *
+ * Single dollars follow Pandoc, so prose that mentions money stays prose: the
+ * opening `$` needs a non-space after it, and the next unescaped `$` closes only
+ * with a non-space before it and no digit after. `$5 and $10` has no closer and
+ * is left as text. `\$` is a literal dollar, inside a formula or out.
+ */
+function mathInline(state: StateInline, silent: boolean): boolean {
+  const src = state.src;
+  const start = state.pos;
+  if (src.charCodeAt(start) !== 0x24 /* $ */) return false;
+
+  // `$$…$$` in the middle of a paragraph is display math all the same.
+  const display = src.charCodeAt(start + 1) === 0x24;
+  const open = display ? 2 : 1;
+  let end = -1;
+  if (display) {
+    end = src.indexOf("$$", start + 2);
+    if (end >= state.posMax) end = -1;
+  } else if (start + 1 < state.posMax && !isSpaceCode(src.charCodeAt(start + 1))) {
+    for (let pos = start + 1; pos < state.posMax; pos += 1) {
+      const code = src.charCodeAt(pos);
+      if (code === 0x5c /* \ */) {
+        pos += 1;
+        continue;
+      }
+      if (code !== 0x24) continue;
+      const digitAfter = /[0-9]/.test(src.charAt(pos + 1));
+      if (!isSpaceCode(src.charCodeAt(pos - 1)) && !digitAfter) end = pos;
+      break;
+    }
+  }
+  if (end < 0) return false;
+  const tex = src.slice(start + open, end).trim();
+  if (!tex) return false;
+
+  if (!silent) {
+    const token = state.push("math_inline", "math", 0);
+    token.content = tex;
+    token.markup = display ? "$$" : "$";
+  }
+  state.pos = end + open;
+  return true;
+}
+
+/**
+ * A `$$` display formula standing as its own block. The inline rule would take
+ * it too, but only while its lines read as a paragraph — a line inside it that
+ * starts `- ` or `1. ` would break it into a list first. A blank line ends the
+ * search for the closing `$$` (TeX refuses one in math anyway), so a formula
+ * left unclosed costs a paragraph of raw text rather than the rest of the page.
+ */
+function mathBlock(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
+  if (state.sCount[startLine] - state.blkIndent >= 4) return false;
+  const first = blockLine(state, startLine);
+  if (!first.startsWith("$$")) return false;
+
+  let tex: string;
+  let last = startLine;
+  const close = first.indexOf("$$", 2);
+  if (close >= 0) {
+    // One line, `$$ … $$`. Anything after the closer makes it a paragraph that
+    // opens with a formula, which the inline rule handles.
+    if (first.slice(close + 2).trim()) return false;
+    tex = first.slice(2, close);
+  } else {
+    for (last = startLine + 1; last < endLine; last += 1) {
+      const line = blockLine(state, last);
+      if (!line.trim() || state.sCount[last] < state.blkIndent) return false;
+      if (line.trimEnd().endsWith("$$")) break;
+    }
+    if (last >= endLine) return false;
+    const between =
+      last > startLine + 1 ? [state.getLines(startLine + 1, last, state.blkIndent, false)] : [];
+    tex = [first.slice(2), ...between, blockLine(state, last).trimEnd().slice(0, -2)].join("\n");
+  }
+  if (!tex.trim()) return false;
+  if (silent) return true;
+
+  const token = state.push("math_block", "math", 0);
+  token.block = true;
+  token.content = tex.trim();
+  token.markup = "$$";
+  token.map = [startLine, last + 1];
+  state.line = last + 1;
+  return true;
+}
+
+/**
+ * KaTeX's HTML for one formula. A formula KaTeX cannot parse comes back as its
+ * own source in red, with the error as a tooltip, rather than failing the page.
+ * `trust` stays off, so `\href`, `\url` and `\includegraphics` are refused the
+ * same way: the content is anyone's, and the viewer allows it no raw HTML.
+ * `strict: "ignore"` stops a warning per formula in the server log for things
+ * KaTeX renders fine, such as Unicode in math mode.
+ */
+function typeset(md: MarkdownIt, tex: string, displayMode: boolean): string {
+  try {
+    return katex.renderToString(tex, { displayMode, throwOnError: false, strict: "ignore" });
+  } catch {
+    // throwOnError only covers parse errors; anything else still throws.
+    return `<span class="katex-error">${md.utils.escapeHtml(tex)}</span>`;
+  }
+}
+
+/**
  * Rewrite a portable `_assets/…` reference to the current page's space-scoped
  * asset URL (`/<spaceKey>/_assets/…`). Absolute/external/anchor URLs and any
  * target not beginning with `_assets/` are returned unchanged.
@@ -691,16 +807,18 @@ function stripSectionPin(inline: Token): string | null {
  * this text to a person — raw source would put literal backticks and asterisks
  * in front of them, and would join a setext heading's two lines with a newline.
  *
- * `imageAlt` is what a heading wants and `locateQuote` does not: alt text names
- * an image for a heading that is one, but it reaches the browser as an
- * attribute, so it is not text a note's quote could ever be highlighted in.
+ * `heading` adds what a heading wants and `locateQuote` does not: an image's alt
+ * text, and a formula's TeX, the nearest plain text to it. Neither is text a
+ * note's quote could ever be highlighted in — alt text reaches the browser as an
+ * attribute, and KaTeX draws a formula rather than writing out its source.
  */
-function inlineText(token: Token, imageAlt = true): string {
+function inlineText(token: Token, heading = true): string {
   let out = "";
   for (const child of token.children ?? []) {
     if (child.type === "text" || child.type === "code_inline") out += child.content;
     else if (child.type === "softbreak" || child.type === "hardbreak") out += " ";
-    else if (child.type === "image" && imageAlt) out += child.content; // alt text
+    else if (child.type === "image" && heading) out += child.content; // alt text
+    else if (child.type === "math_inline" && heading) out += child.content;
   }
   return out.replace(/\s+/g, " ").trim();
 }
@@ -968,6 +1086,19 @@ export function createRenderer(
   // Accept an optional `=WxH` size spec on images (`![alt](pic.png =600x)`),
   // the only way to size an image given `html: false` above.
   md.inline.ruler.at("image", imageWithSize);
+
+  // TeX math (see mathInline). A formula is taken whole, so the escape and
+  // emphasis rules never see inside it. The block form carries the source
+  // anchor like any other top-level block, so a note can sit on an equation.
+  md.inline.ruler.before("escape", "math_inline", mathInline);
+  md.block.ruler.after("fence", "math_block", mathBlock, {
+    alt: ["paragraph", "reference", "blockquote", "list"],
+  });
+  md.renderer.rules.math_inline = (tokens, idx) =>
+    typeset(md, tokens[idx].content, tokens[idx].markup === "$$");
+  md.renderer.rules.math_block = (tokens, idx, _options, _env, self) =>
+    `<div class="math-block"${self.renderAttrs(tokens[idx])}>` +
+    `${typeset(md, tokens[idx].content, true)}</div>\n`;
 
   // Rewrite relative `_assets/…` references (images and attachment links such
   // as PDFs) to the current page's space, e.g. `_assets/diagram.png` on a `kb25`

@@ -6,8 +6,8 @@
 //
 // The zip needs nothing but Node to run: the server and the MCP server are
 // each bundled into one file, laid out so the paths server.ts already uses
-// (../public, ../node_modules/mermaid/dist, ../node_modules/@elmir-mamedov/
-// feedback/dist, ../../.env) resolve unchanged.
+// (../public, ../node_modules/mermaid/dist, ../node_modules/katex/dist,
+// ../node_modules/@elmir-mamedov/feedback/dist, ../../.env) resolve unchanged.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -54,6 +54,20 @@ copy(
   path.join(appDir, "node_modules", "mermaid", "dist", "mermaid.min.js"),
   path.join("node_modules", "mermaid", "dist", "mermaid.min.js")
 );
+// KaTeX's stylesheet and fonts (views.ts links /_vendor/katex/katex.min.css).
+// woff2 only: every browser the viewer supports reads it, and it is the first
+// source the stylesheet lists, so the woff and ttf copies would never load.
+copy(
+  path.join(appDir, "node_modules", "katex", "dist", "katex.min.css"),
+  path.join("node_modules", "katex", "dist", "katex.min.css")
+);
+for (const font of fs.readdirSync(path.join(appDir, "node_modules", "katex", "dist", "fonts"))) {
+  if (!font.endsWith(".woff2")) continue;
+  copy(
+    path.join(appDir, "node_modules", "katex", "dist", "fonts", font),
+    path.join("node_modules", "katex", "dist", "fonts", font)
+  );
+}
 // The feedback dialog's browser modules (views.ts loads /_vendor/feedback/...).
 copy(
   path.join(appDir, "node_modules", "@elmir-mamedov", "feedback", "dist"),
