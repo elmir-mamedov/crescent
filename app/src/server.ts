@@ -1834,11 +1834,11 @@ app.get("/_diff/*", async (req, reply) => {
 // finding no /_update, stays hidden. KB25_UPDATE_CHECK=0 turns the check off.
 const install = findInstall(__dirname);
 const updateCheck = !/^(0|false|no|off)$/i.test(process.env.KB25_UPDATE_CHECK?.trim() ?? "");
-if (install && updateCheck) {
-  const updater = makeUpdater({
-    install,
-    releasesUrl: process.env.KB25_RELEASES_URL || DEFAULT_RELEASES_URL,
-  });
+const updater =
+  install && updateCheck
+    ? makeUpdater({ install, releasesUrl: process.env.KB25_RELEASES_URL || DEFAULT_RELEASES_URL })
+    : null;
+if (updater) {
   app.get("/_update", async (_req, reply) => reply.send(await updater.status()));
   app.post("/_update", async (_req, reply) => {
     const started = await updater.start();
@@ -1949,4 +1949,35 @@ try {
 } catch (err) {
   console.error(err);
   process.exit(1);
+}
+
+// An update that moved KB25 off a dev-server port (installer/setup.mjs) passes
+// the port it left. The page that started the update is still asking that
+// port whether the new version is up, so for a few minutes the old port
+// answers: /_update as this server would, which has the page reload, and the
+// reload with a redirect to the new address. Remove once copies of KB25 0.5.0
+// and earlier have updated.
+const MOVED_FROM = envNumber("KB25_MOVED_FROM", 0);
+if (install && MOVED_FROM && MOVED_FROM !== PORT) {
+  const forwarder = Fastify({ logger: false });
+  forwarder.addHook("onRequest", async (req, reply) => {
+    // The same DNS-rebinding guard as this server's: a loopback Host only.
+    const refusal = crossSiteRefusal({ method: "GET", host: req.headers.host });
+    if (refusal) return reply.code(403).type("text/plain").send(refusal);
+  });
+  if (updater) {
+    forwarder.get("/_update", async (_req, reply) => reply.header("cache-control", "no-store").send(await updater.status()));
+  }
+  forwarder.get("/*", async (req, reply) => {
+    const target = new URL(req.url, `http://${req.headers.host}`);
+    target.port = String(PORT);
+    return reply.redirect(target.href, 302);
+  });
+  try {
+    await forwarder.listen({ host: HOST, port: MOVED_FROM });
+    console.log(`Forwarding port ${MOVED_FROM}, which KB25 moved from, for 5 minutes`);
+    setTimeout(() => void forwarder.close(), 5 * 60_000).unref();
+  } catch {
+    // Something else took the old port; there is nothing to forward.
+  }
 }

@@ -53,6 +53,15 @@ const PLUGIN_ENV_FILE = path.join(
   ".env"
 );
 const SKILL_DIR = path.join(os.homedir(), ".claude", "skills", "kb-page-authoring");
+/**
+ * Where an install's port search starts: clear of the ports dev servers take
+ * (3000, 4000, 5173, 8000, 8080, a KB25 checkout's 4000) and below every
+ * system's ephemeral range (32768 on Linux, 49152 on macOS and Windows), which
+ * outgoing connections borrow ports from.
+ */
+const PORT_FROM = 25250;
+/** Where KB25 0.5.0 and earlier started it, which collided with those dev servers. */
+const OLD_PORT_FROM = 4000;
 /** Marks a skill folder as ours, so removal never deletes someone's own skill. */
 const SKILL_MARKER = ".installed-by-kb25";
 
@@ -81,6 +90,9 @@ async function main() {
 
   const kbDir = await ensureSettings();
   console.log(`Your pages are kept in ${tildify(kbDir)}`);
+  const movedFrom = await moveOffDevPort();
+  // The server answers the old port for a while, for the page still on it.
+  const moved = movedFrom ? { KB25_MOVED_FROM: String(movedFrom) } : {};
   createLauncher();
   await connectClaudeDesktop();
   await connectClaudeCode();
@@ -89,13 +101,13 @@ async function main() {
     // The server was stopped before the app was swapped; start it again on the
     // new version for the page that is waiting on it.
     const { KB25_UPDATE, ...env } = process.env;
-    launch({ ...env, KB25_NO_BROWSER: "1" });
+    launch({ ...env, ...moved, KB25_NO_BROWSER: "1" });
     console.log("Starting KB25 again in the background.");
     return;
   }
   const where = isMac ? 'Spotlight (Cmd+Space, type "KB25")' : 'the Start menu (type "KB25")';
   console.log(`\nAll set! Open KB25 any time from ${where}.`);
-  if (await ask("Open KB25 now?")) launch(process.env);
+  if (await ask("Open KB25 now?")) launch({ ...process.env, ...moved });
 }
 
 /** Run the launcher, which starts the server unless it answers already. */
@@ -153,11 +165,7 @@ async function ensureSettings() {
       fs.mkdirSync(current, { recursive: true });
       return current;
     }
-    const lines = fs.readFileSync(p.envFile, "utf8").split(/\r?\n/);
-    fs.writeFileSync(
-      p.envFile,
-      lines.map((line) => (/^\s*KB_DIR\s*=/.test(line) ? `KB_DIR=${adopted}` : line)).join("\n")
-    );
+    setEnvValue("KB_DIR", adopted);
     await stopServer(p); // it still serves the empty folder
     try {
       fs.rmdirSync(current); // fails, harmlessly, unless the folder is empty
@@ -174,12 +182,34 @@ async function ensureSettings() {
       "# KB25 settings, written by the installer and kept across updates.",
       "# Sign-in is off: KB25 only answers on this computer (localhost).",
       `KB_DIR=${kbDir}`,
-      `PORT=${await freePort(4000)}`,
+      `PORT=${await freePort(PORT_FROM)}`,
       "AUTH_DISABLED=1",
       "",
     ].join("\n")
   );
   return kbDir;
+}
+
+/** Replace the `key=` line in KB25_HOME/.env. */
+function setEnvValue(key, value) {
+  const lines = fs.readFileSync(p.envFile, "utf8").split(/\r?\n/);
+  const pattern = new RegExp(`^\\s*${key}\\s*=`);
+  fs.writeFileSync(p.envFile, lines.map((line) => (pattern.test(line) ? `${key}=${value}` : line)).join("\n"));
+}
+
+/**
+ * Move a copy that KB25 0.5.0 or earlier put on a port from 4000 into the
+ * range new installs get: a dev server started there later would stand in
+ * KB25's way. Returns the port it left, or null when it stays where it is.
+ */
+async function moveOffDevPort() {
+  const port = Number(readEnvFile(p.envFile).PORT);
+  if (!(port >= OLD_PORT_FROM && port < OLD_PORT_FROM + 100)) return null;
+  await stopServer(p); // an up-to-date copy is still running on the old port
+  const next = await freePort(PORT_FROM);
+  setEnvValue("PORT", next);
+  console.log(`KB25 moved from port ${port} to ${next}, out of the way of dev servers.`);
+  return port;
 }
 
 /** Offer each knowledge base set up before KB25 in turn; the one accepted, or null. */
