@@ -1,15 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  configureViews,
   dashboardLayout,
   editLayout,
   layout,
   folderLayout,
+  loginLayout,
   spacesLayout,
   type DashboardView,
   type EditView,
   type PageView,
   type FolderView,
+  type LoginView,
   type SpacesView,
 } from "./views.js";
 import type { PageNode } from "./content.js";
@@ -1214,4 +1217,53 @@ test("views: every page with the corner offers feedback, through /_feedback", ()
     assert.match(script, /The last lines of KB25's log/);
     assert.doesNotMatch(html, /<dialog class="feedback-dialog"/, "the package draws the dialog now");
   }
+});
+
+/** Render with a launcher-started server's views, then put the default back. */
+function asDesktop<T>(render: () => T): T {
+  configureViews({ desktop: true });
+  try {
+    return render();
+  } finally {
+    configureViews({ desktop: false });
+  }
+}
+
+test("views: a server started from a terminal offers no Quit and reports no tabs", () => {
+  for (const html of [
+    spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),
+    layout(pageView()),
+    loginLayout({ siteTitle: "KB", next: "/" } as LoginView),
+  ]) {
+    assert.doesNotMatch(html, /data-quit-open/);
+    assert.doesNotMatch(html, /data-quit-dialog/);
+    assert.doesNotMatch(html, /\/_presence/);
+  }
+});
+
+test("views: a launcher-started server's corner offers Quit, behind a confirmation", () => {
+  for (const html of asDesktop(() => [
+    spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),
+    layout(pageView()),
+  ])) {
+    assert.match(html, /<button type="button" class="quit-button" data-quit-open aria-label="Quit KB25"/);
+    assert.match(html, /<dialog class="help-dialog" data-quit-dialog>/);
+    assert.match(html, /data-quit-confirm/);
+    assert.match(html, /fetch\("\/_quit", \{ method: "POST" \}\)/);
+  }
+});
+
+test("views: every page of a launcher-started server reports the tab open, sign-in included", () => {
+  for (const html of asDesktop(() => [
+    spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),
+    layout(pageView()),
+    loginLayout({ siteTitle: "KB", next: "/" } as LoginView),
+  ])) {
+    const head = html.slice(0, html.indexOf("</head>"));
+    assert.match(head, /new EventSource\("\/_presence"\)/);
+    assert.match(head, /navigator\.locks\.request\("kb25-presence"/);
+  }
+  // Signing in is still needed to quit.
+  const login = asDesktop(() => loginLayout({ siteTitle: "KB", next: "/" } as LoginView));
+  assert.doesNotMatch(login, /class="quit-button"/);
 });

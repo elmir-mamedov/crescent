@@ -3,6 +3,17 @@ import type { DiffLine } from "./diff.js";
 import { relativeAge, type NotePageGroup, type NoteSummary } from "./note-index.js";
 import type { RenderedNote, Section } from "./markdown.js";
 
+/** Set once at startup by {@link configureViews}; read by every page. */
+let desktop = false;
+
+/**
+ * `desktop`: a launcher started this server (KB25_DESKTOP), so every page
+ * reports itself open to it (PRESENCE_SCRIPT) and the corner offers Quit.
+ */
+export function configureViews(options: { desktop: boolean }): void {
+  desktop = options.desktop;
+}
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -440,9 +451,10 @@ function sessionCorner(username?: string | null, spaceKey = ""): string {
     ${FEEDBACK_BUTTON}
     <button type="button" class="button secondary" data-help-open>Help</button>
     ${sessionActions(username)}
+    ${desktop ? QUIT_BUTTON : ""}
   </div>
 <div class="update-card" data-update role="status" aria-live="polite" hidden></div>
-${HELP_DIALOG}
+${HELP_DIALOG}${desktop ? QUIT_DIALOG : ""}
 <script>${HELP_SCRIPT}</script>
 <script>${UPDATE_SCRIPT}</script>
 <script type="module">${FEEDBACK_SCRIPT}</script>`;
@@ -462,7 +474,7 @@ function renderHead(title: string, extra = ""): string {
 ${FAVICON_TAGS}
 <title>${title}</title>
 <style>${STYLES}</style>${extra}
-<script>${THEME_SCRIPT}</script>
+<script>${THEME_SCRIPT}</script>${desktop ? `\n<script>${PRESENCE_SCRIPT}</script>` : ""}
 </head>`;
 }
 
@@ -1257,6 +1269,27 @@ const HELP_SCRIPT = `
 })();
 `;
 
+/** Power button, last in the corner of a launcher-started server; opens QUIT_DIALOG. */
+const QUIT_BUTTON = `<button type="button" class="quit-button" data-quit-open aria-label="Quit KB25" title="Quit KB25 — stop it until you open it again">
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.4 6.6a9 9 0 1 1-12.8 0" /><path d="M12 2v10" /></svg>
+  </button>`;
+
+/** Asks before quitting: Quit stops every open KB25 tab, not just this one. */
+const QUIT_DIALOG = `<dialog class="help-dialog" data-quit-dialog>
+  <form method="dialog" class="help-head">
+    <h2>Quit KB25?</h2>
+    <button class="help-close" aria-label="Cancel" value="cancel">&times;</button>
+  </form>
+  <section class="help-section">
+    <p>Every open KB25 tab stops working until you open KB25 again.</p>
+    <p class="quit-error" data-quit-error role="alert" hidden></p>
+  </section>
+  <form method="dialog" class="quit-actions">
+    <button class="button secondary" value="cancel">Cancel</button>
+    <button class="button primary" type="button" data-quit-confirm>Quit</button>
+  </form>
+</dialog>`;
+
 /** Speech bubble in the top-right corner that opens the feedback dialog. */
 const FEEDBACK_BUTTON = `<button type="button" class="feedback-button" data-feedback-open aria-label="Send feedback" title="Send feedback — report a bug or suggest an idea to the KB25 developer">
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
@@ -1428,6 +1461,103 @@ const UPDATE_SCRIPT = `
     }
     if (s.available && s.state !== "updating" && store.get(DISMISSED) !== s.latest) offer(s);
   }).catch(() => {});
+})();
+`;
+
+/**
+ * Keeps a launcher-started server (KB25_DESKTOP) told that this browser still
+ * has a KB25 tab open, and handles Quit. Runs in <head> on every page, the
+ * sign-in page included, so no open tab goes uncounted.
+ *
+ * A browser allows only six connections to one origin across all its tabs, so
+ * the tabs keep one stream between them: whichever holds the "kb25-presence"
+ * Web Lock opens GET /_presence and holds both until it closes, and the browser
+ * then hands the lock to the next tab (presence.ts on the server). The holder
+ * passes the server's quit event on to the other tabs over a BroadcastChannel.
+ * Without Web Locks each tab keeps its own stream.
+ */
+const PRESENCE_SCRIPT = `
+(() => {
+  if (!window.EventSource) return;
+  const channel = window.BroadcastChannel ? new BroadcastChannel("kb25") : null;
+  let source = null;
+  let holder = false;
+  let quit = false;
+
+  // The page stays as it is, so an editor still shows what was typed.
+  function showQuit() {
+    if (quit) return;
+    quit = true;
+    if (source) source.close();
+    const el = (className, text) => {
+      const node = document.createElement("p");
+      node.className = className;
+      node.textContent = text;
+      return node;
+    };
+    const card = document.querySelector("[data-update]") || document.body.appendChild(document.createElement("div"));
+    card.className = "update-card";
+    card.setAttribute("role", "status");
+    card.replaceChildren(el("update-title", "KB25 has quit"), el("update-text", "Open KB25 again to keep using it."));
+    card.hidden = false;
+  }
+
+  function open() {
+    if (quit) return;
+    source = new EventSource("/_presence");
+    source.addEventListener("quit", () => {
+      if (channel) channel.postMessage("quit");
+      showQuit();
+    });
+    // The browser retries a dropped stream by itself, but not a refused one.
+    source.addEventListener("error", () => {
+      if (source.readyState === EventSource.CLOSED && !quit) setTimeout(open, 5000);
+    });
+  }
+
+  // Held for as long as this tab is open.
+  function hold() {
+    holder = true;
+    open();
+    return new Promise(() => {});
+  }
+
+  if (channel) channel.addEventListener("message", (event) => { if (event.data === "quit") showQuit(); });
+  if (navigator.locks) navigator.locks.request("kb25-presence", hold);
+  else hold();
+  // Back from the back/forward cache, whose entry closed the stream.
+  addEventListener("pageshow", (event) => {
+    if (event.persisted && holder && !quit && source && source.readyState === EventSource.CLOSED) open();
+  });
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!target || !target.closest) return;
+    const dialog = document.querySelector("[data-quit-dialog]");
+    if (!dialog) return;
+    const error = dialog.querySelector("[data-quit-error]");
+    if (target.closest("[data-quit-open]")) {
+      error.hidden = true;
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+      return;
+    }
+    const confirm = target.closest("[data-quit-confirm]");
+    if (!confirm) return;
+    confirm.disabled = true;
+    fetch("/_quit", { method: "POST" })
+      .then((res) => {
+        if (res.status !== 202) throw new Error("HTTP " + res.status);
+        dialog.close();
+        if (channel) channel.postMessage("quit");
+        showQuit();
+      })
+      .catch(() => {
+        error.textContent = "KB25 didn't quit. Try again.";
+        error.hidden = false;
+        confirm.disabled = false;
+      });
+  });
 })();
 `;
 
@@ -3669,13 +3799,13 @@ body.dragging-page .space-current{
   display:flex; align-items:center; gap:8px}
 /* The corner's two icon buttons share one box; only the theme toggle swaps its
    glyph, so the rules below it stay on that class alone. */
-.theme-toggle,.dash-button,.instructions-button,.feedback-button{
+.theme-toggle,.dash-button,.instructions-button,.feedback-button,.quit-button{
   display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto;
   width:34px; height:34px; padding:0; border:1px solid var(--line); border-radius:6px;
   background:var(--surface); color:var(--fg-secondary); cursor:pointer;
 }
-.theme-toggle:hover,.dash-button:hover,.instructions-button:hover,.feedback-button:hover{background:var(--surface-hover-2); color:var(--fg)}
-.dash-button svg,.instructions-button svg,.feedback-button svg{display:block}
+.theme-toggle:hover,.dash-button:hover,.instructions-button:hover,.feedback-button:hover,.quit-button:hover{background:var(--surface-hover-2); color:var(--fg)}
+.dash-button svg,.instructions-button svg,.feedback-button svg,.quit-button svg{display:block}
 .theme-toggle .theme-icon{display:block}
 .theme-toggle .icon-moon{display:none}
 :root[data-theme="dark"] .theme-toggle .icon-sun{display:none}
@@ -3717,6 +3847,8 @@ body.dragging-page .space-current{
 .help-close:hover{color:var(--fg)}
 .help-section{padding:16px 20px 0}
 .help-section:last-child{padding-bottom:20px}
+.help-section .quit-error{margin-top:8px; color:var(--error-fg)}
+.quit-actions{display:flex; justify-content:flex-end; gap:8px; margin:0; padding:16px 20px 20px}
 .help-section h3{font-size:14px; margin:0 0 8px}
 .help-section p{margin:0; color:var(--fg-secondary); font-size:14px; line-height:1.6}
 .help-keys{display:grid; grid-template-columns:auto 1fr; gap:8px 16px; margin:0}

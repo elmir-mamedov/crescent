@@ -50,6 +50,7 @@ import {
 } from "./space-instructions.js";
 import {
   archiveLayout,
+  configureViews,
   dashboardLayout,
   deleteLayout,
   diffLayout,
@@ -126,6 +127,7 @@ const AUTH_SESSION_SECRET = AUTH_DISABLED
 // wider bind it would let any visitor stop the server.
 const DESKTOP = envFlag("KB25_DESKTOP") && isLoopbackHost(HOST);
 const QUIT_GRACE_MS = 30_000;
+configureViews({ desktop: DESKTOP });
 const SESSION_COOKIE = "kb_session";
 const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 
