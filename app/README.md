@@ -69,6 +69,19 @@ writes those headers itself.
 - Carries inline notes: select a phrase and leave a `task`, `remark` or `highlight`
   on it, stored as a comment in the page's own Markdown. An `agent` note is the
   fourth kind — written over MCP, drawn pink, and resolve-only in the browser.
+- Searches the current space from the sidebar box (Cmd/Ctrl+K), optionally
+  narrowed to pages carrying chosen labels.
+- Labels pages: the ⋯ menu's "Labels…" sets coloured markers such as "Draft" or
+  "Needs review". A page lists their names in frontmatter (`labels: [Draft]`);
+  each space's palette, `<space>/_labels.json`, owns their colours (ten named
+  swatches). Labels show as chips under the page title and dots in the sidebar.
+- Opens a Dashboards hub per space from the chart button in the corner
+  (`/_dashboard?space=<key>`):
+  - `/_dashboard/tasks` — open task notes, grouped by page.
+  - `/_dashboard/labels` — pages filtered by label (a page must carry every
+    ticked one) and searched; the state is in the URL. Labels are created,
+    renamed, recoloured and deleted here, and a rename or delete rewrites every
+    page carrying the label, archived ones included, in one commit.
 - Shows the page's last-updated date from `git log` (falls back gracefully).
 - Edits existing pages in the browser at `/_edit/<slug>`.
 - Validates frontmatter before saving.
@@ -202,7 +215,3 @@ installer reads that file too, and offers to use the knowledge base it names.
 - `npm run typecheck` — type-check with `tsc --noEmit`.
 - `npm run build:plugin` — bundle the MCP server into `kb25-plugin/server/`.
 - `npm run package:plugin` — rebuild the bundle and zip the plugin into `dist/`.
-
-## Not yet (later steps)
-
-Web UI search.
