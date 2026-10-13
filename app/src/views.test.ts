@@ -1480,7 +1480,8 @@ test("labels: a row shows at most three dots and counts the rest", () => {
   const html = layout(
     pageView({ tree: [node({ slug: "kb25/a", title: "A", labels: ["a", "b", "c", "d", "e"] })] })
   );
-  assert.equal(html.match(/<span class="label-dot"/g)?.length, 3);
+  const dots = html.match(/<span class="tree-label-dots"[\s\S]*?<\/span><\/span>/)?.[0] ?? "";
+  assert.equal(dots.match(/<span class="label-dot"/g)?.length, 3);
   assert.match(html, /<span class="tree-label-more">\+2<\/span>/);
 });
 
@@ -1523,4 +1524,66 @@ test("labels: every sidebar-drawing layout passes the palette to the tree", () =
   assert.match(dashboardLayout(dashboardView({ tree, labelSet })), dot);
   assert.match(dashboardsLayout(dashboardsView({ tree, labelSet })), dot);
   assert.match(labelsDashboardLayout(labelsView({ tree, labelSet })), dot);
+});
+
+test("label dialog: a page's ⋯ menu opens it with the page and its labels", () => {
+  const html = layout(
+    pageView({ tree: [node({ slug: "kb25/deploy", title: "Deploy", labels: ["Draft"] })] })
+  );
+  assert.match(
+    html,
+    /<button type="button" data-label-open data-label-slug="kb25\/deploy" data-label-title="Deploy" data-label-current="\[&quot;Draft&quot;\]">Labels…<\/button>/
+  );
+});
+
+test("label dialog: folders get no Labels item", () => {
+  const html = layout(
+    pageView({ tree: [node({ slug: "kb25/box", title: "Box", isFolder: true, isSection: true })] })
+  );
+  assert.doesNotMatch(html, /<button type="button" data-label-open/);
+});
+
+test("label dialog: one dialog per sidebar, carrying the palette plus orphans", () => {
+  const html = layout(
+    pageView({
+      tree: [node({ slug: "kb25/a", title: "A", labels: ["Legacy"] })],
+      labelSet: [{ name: "Draft", color: "yellow" }],
+    })
+  );
+  assert.equal(html.match(/<dialog class="label-dialog"/g)?.length, 1);
+  assert.match(
+    html,
+    /data-label-palette="\[\{&quot;name&quot;:&quot;Draft&quot;,&quot;color&quot;:&quot;yellow&quot;,&quot;defined&quot;:true\},\{&quot;name&quot;:&quot;Legacy&quot;,&quot;color&quot;:&quot;gray&quot;,&quot;defined&quot;:false\}\]"/
+  );
+  assert.match(html, /<form class="label-dialog-form" method="post" action="\/_labels\/page">/);
+  assert.match(html, /<input type="radio" name="newColor" value="gray" checked \/>/);
+  assert.equal(html.match(/name="newColor"/g)?.length, 10);
+  assert.match(html, /<a class="label-dialog-manage" href="\/_dashboard\/labels\?space=kb25">All labels<\/a>/);
+});
+
+test("label dialog: a palette name cannot break out of its attribute", () => {
+  const html = layout(pageView({ labelSet: [{ name: '"><script>x</script>', color: "red" }] }));
+  assert.doesNotMatch(html, /"><script>x<\/script>/);
+});
+
+test("label dialog: absent outside a space and in the archive browser", () => {
+  const outside = layout(pageView({ spaceKey: "" }));
+  assert.doesNotMatch(outside, /<dialog class="label-dialog"/);
+  const archive = layout(pageView({ isArchiveView: true }));
+  assert.doesNotMatch(archive, /<dialog class="label-dialog"/);
+});
+
+test("label dialog: its script builds rows without markup strings", () => {
+  const html = layout(pageView());
+  const script = html.match(/var dialog = document\.querySelector\("\[data-label-dialog\]"\);[\s\S]*?\}\)\(\);/)?.[0] ?? "";
+  assert.ok(script, "label dialog script is present");
+  assert.match(script, /document\.createElement\("input"\)/);
+  assert.match(script, /span\.textContent = entry\.name/);
+  assert.match(script, /returnInput\.value = location\.pathname \+ location\.search/);
+});
+
+test("Help mentions labels and where to find them", () => {
+  const html = layout(pageView());
+  assert.match(html, /download, label, copy its link/);
+  assert.match(html, /<strong>Dashboards<\/strong> button in the corner lists and searches pages by label/);
 });

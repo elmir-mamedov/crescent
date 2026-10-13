@@ -46,6 +46,7 @@ import { mapWithConcurrency, searchPages, searchTokens, type SearchHit } from ".
 import { DEFAULT_RELEASES_URL, findInstall, makeUpdater } from "./update.js";
 import { cleanLabelNames, labelKey } from "./frontmatter.js";
 import {
+  applyPageLabels,
   filterLabelled,
   knownLabels,
   loadLabelSet,
@@ -200,10 +201,15 @@ app.addContentTypeParser(
   "application/x-www-form-urlencoded",
   { parseAs: "string" },
   (_request, body, done) => {
-    const parsed: Record<string, string> = {};
+    // A repeated key (several ticked `label` checkboxes) collects into an array;
+    // formString still reads one value, the last, as before. No prototype, so a
+    // field named __proto__ is just a field.
+    const parsed: Record<string, string | string[]> = Object.create(null);
     const rawBody = typeof body === "string" ? body : body.toString("utf8");
     for (const [key, value] of new URLSearchParams(rawBody)) {
-      parsed[key] = value;
+      const previous = parsed[key];
+      parsed[key] =
+        previous === undefined ? value : Array.isArray(previous) ? [...previous, value] : [previous, value];
     }
     done(null, parsed);
   }
@@ -495,7 +501,19 @@ function errorMessage(err: unknown): string {
 function formString(body: unknown, field: string): string | null {
   if (!body || typeof body !== "object") return null;
   const value = (body as Record<string, unknown>)[field];
+  if (Array.isArray(value)) {
+    const last = value[value.length - 1];
+    return typeof last === "string" ? last : null;
+  }
   return typeof value === "string" ? value : null;
+}
+
+/** Every value a form sent under one name (ticked checkboxes), in order. */
+function formStrings(body: unknown, field: string): string[] {
+  if (!body || typeof body !== "object") return [];
+  const value = (body as Record<string, unknown>)[field];
+  if (typeof value === "string") return [value];
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
 /**
@@ -1124,6 +1142,58 @@ app.post("/_rename-folder", async (req, reply) => {
   }
 
   return reply.redirect(pagePath(mutation.slug), 303);
+});
+
+/**
+ * Set a page's labels from the sidebar's label dialog: the ticked names, plus
+ * an optional new label to define and apply in the same step. Lands back on
+ * the page the dialog was opened from, which need not be the labelled one.
+ */
+app.post("/_labels/page", async (req, reply) => {
+  const slug = (formString(req.body, "slug") ?? "").trim();
+  const names = formStrings(req.body, "label");
+  const newName = formString(req.body, "newName") ?? "";
+  const newColor = formString(req.body, "newColor") ?? "gray";
+  const returnTo = formString(req.body, "returnTo");
+  const back = returnTo ? safeRedirectPath(returnTo) : pagePath(slug);
+
+  let mutation: Awaited<ReturnType<typeof applyPageLabels>>;
+  try {
+    mutation = await applyPageLabels(
+      content,
+      slug,
+      names,
+      newName.trim() ? { name: newName, color: newColor } : undefined
+    );
+  } catch (err) {
+    const notice = { tone: "error", text: errorMessage(err) } satisfies ViewNotice;
+    const { status, html } = await renderPage(slug, { notice });
+    return reply.code(status === 404 ? 404 : 400).type("text/html").send(html);
+  }
+  if (!mutation) {
+    const spaces = await content.spaces();
+    return reply
+      .code(404)
+      .type("text/html")
+      .send(notFound(SITE_TITLE, slug.replace(/^\/+/, ""), spaces, AUTH_USERNAME));
+  }
+
+  try {
+    if (mutation.changedFsPaths.length) {
+      const fsPath = await content.resolve(slug);
+      const target = fsPath ? git.kbRelPath(fsPath) : slug;
+      await git.commitFiles(mutation.changedFsPaths, `Label ${target} via web`);
+    }
+  } catch (err) {
+    const notice = {
+      tone: "error",
+      text: `Labels saved, but Git commit failed: ${errorMessage(err)}`,
+    } satisfies ViewNotice;
+    const { html } = await renderPage(slug, { notice });
+    return reply.code(500).type("text/html").send(html);
+  }
+
+  return reply.redirect(back, 303);
 });
 
 app.post("/_create-space", async (req, reply) => {

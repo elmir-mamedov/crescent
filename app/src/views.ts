@@ -1,6 +1,13 @@
-import type { PageNode, SpaceInfo } from "./content.js";
+import { flatten, type PageNode, type SpaceInfo } from "./content.js";
 import { labelKey } from "./frontmatter.js";
-import { LABEL_COLORS, colorOf, type KnownLabel, type LabelColor, type LabelDef } from "./labels.js";
+import {
+  LABEL_COLORS,
+  colorOf,
+  knownLabels,
+  type KnownLabel,
+  type LabelColor,
+  type LabelDef,
+} from "./labels.js";
 import type { DiffLine } from "./diff.js";
 import { relativeAge, type NotePageGroup, type NoteSummary } from "./note-index.js";
 import type { RenderedNote, Section } from "./markdown.js";
@@ -130,7 +137,8 @@ function treeLabelDots(node: PageNode, labelSet: readonly LabelDef[]): string {
 /**
  * Per-node ⋯ menu. Every node can hold children (New page / New folder). A
  * folder is a pure container, so it gets a Rename control and NO Edit/Download;
- * ordinary pages keep Edit/Download. Creating a folder prompts for its name.
+ * ordinary pages keep Edit/Download and a "Labels…" item that opens the shared
+ * label dialog. Creating a folder prompts for its name.
  */
 function treeMenu(node: PageNode): string {
   const slug = node.slug;
@@ -151,7 +159,8 @@ function treeMenu(node: PageNode): string {
         <button type="submit">Rename</button>
       </form>`
     : `<a href="/_edit${slugPath(slug)}">Edit</a>
-      <a href="/_download${slugPath(slug)}" download>Download</a>`;
+      <a href="/_download${slugPath(slug)}" download>Download</a>
+      <button type="button" data-label-open data-label-slug="${escapeHtml(slug)}" data-label-title="${escapeHtml(node.title)}" data-label-current="${escapeHtml(JSON.stringify(node.labels ?? []))}">Labels…</button>`;
   return `<details class="tree-menu">
     <summary aria-label="Page actions">⋯</summary>
     <div class="tree-menu-pop">
@@ -456,7 +465,58 @@ function sidebarHtml(
     labelSet,
   })}</nav>
 </aside>
-<script>${SEARCH_SCRIPT}</script>`;
+<script>${SEARCH_SCRIPT}</script>
+${isArchiveView ? "" : labelDialog(spaceKey, labelSet, tree)}`;
+}
+
+/**
+ * The one label dialog a sidebar shares across all its rows. Each row's
+ * "Labels…" item carries its page and current labels; LABELS_SCRIPT fills the
+ * checkbox list from those and from the palette here, then the dialog posts a
+ * plain form. Shipping the palette once beats a checkbox list in every row's
+ * menu, which would repeat it for every page in the tree.
+ */
+function labelDialog(spaceKey: string, labelSet: readonly LabelDef[], tree: PageNode[]): string {
+  const offered = knownLabels(labelSet, flatten(tree)).map(({ name, color, defined }) => ({
+    name,
+    color,
+    defined,
+  }));
+  const swatches = LABEL_COLORS.map(
+    (color) => `<label class="label-swatch" title="${color}">
+          <input type="radio" name="newColor" value="${color}"${color === "gray" ? " checked" : ""} />
+          <span class="label-dot" data-label-color="${color}"></span>
+          <span class="sr-only">${color}</span>
+        </label>`
+  ).join("");
+  return `<dialog class="label-dialog" data-label-dialog aria-labelledby="label-dialog-title" data-label-palette="${escapeHtml(JSON.stringify(offered))}">
+  <form class="label-dialog-form" method="post" action="/_labels/page">
+    <div class="help-head">
+      <h2 id="label-dialog-title">Labels</h2>
+      <button type="button" class="help-close" data-label-close aria-label="Close">&times;</button>
+    </div>
+    <div class="label-dialog-body">
+      <p class="label-dialog-page" data-label-page></p>
+      <input type="hidden" name="slug" value="" data-label-slug />
+      <input type="hidden" name="returnTo" value="" data-label-return />
+      <fieldset class="label-dialog-list" data-label-list>
+        <legend>In this space</legend>
+      </fieldset>
+      <p class="label-dialog-empty" data-label-none hidden>No labels in this space yet — create the first one below.</p>
+      <fieldset class="label-dialog-new">
+        <legend>New label</legend>
+        <input type="text" name="newName" maxlength="40" placeholder="Name, e.g. Needs review" aria-label="New label name" autocomplete="off" />
+        <div class="label-swatches" role="radiogroup" aria-label="Colour">${swatches}</div>
+      </fieldset>
+    </div>
+    <div class="label-dialog-actions">
+      <a class="label-dialog-manage" href="${escapeHtml(labelsHref(spaceKey))}">All labels</a>
+      <button type="button" class="button secondary" data-label-close>Cancel</button>
+      <button type="submit" class="button primary">Save</button>
+    </div>
+  </form>
+</dialog>
+<script>${LABELS_SCRIPT}</script>`;
 }
 
 /**
@@ -1503,7 +1563,7 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog>
   </form>
   <section class="help-section">
     <h3>About KB25</h3>
-    <p>KB25 is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, copy its link, or delete it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
+    <p>KB25 is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as dots in the sidebar, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
   </section>
   <section class="help-section">
     <h3>Keyboard shortcuts</h3>
@@ -3698,6 +3758,125 @@ const NOTES_SCRIPT = `
 `;
 
 /**
+ * The label dialog. A row's "Labels…" item opens it for that page: the list is
+ * rebuilt from the palette plus whatever the page already carries (an orphan
+ * stays listed so it can be unticked), built with createElement and
+ * textContent only — label names were typed by people and agents. Saving is
+ * an ordinary form post that lands back on this page.
+ */
+const LABELS_SCRIPT = `
+(function () {
+  var dialog = document.querySelector("[data-label-dialog]");
+  if (!dialog) return;
+  var form = dialog.querySelector("form");
+  var list = dialog.querySelector("[data-label-list]");
+  var none = dialog.querySelector("[data-label-none]");
+  var slugInput = dialog.querySelector("[data-label-slug]");
+  var returnInput = dialog.querySelector("[data-label-return]");
+  var pageName = dialog.querySelector("[data-label-page]");
+  var nameInput = form.querySelector("input[name=newName]");
+  var palette = [];
+  try {
+    palette = JSON.parse(dialog.getAttribute("data-label-palette") || "[]");
+  } catch (error) {
+    palette = [];
+  }
+
+  function key(name) {
+    return String(name).trim().normalize("NFC").toLowerCase();
+  }
+
+  function chip(entry) {
+    var span = document.createElement("span");
+    span.className = entry.defined === false ? "label-chip is-orphan" : "label-chip";
+    span.setAttribute("data-label-color", entry.color || "gray");
+    span.textContent = entry.name;
+    return span;
+  }
+
+  function fill(current) {
+    Array.prototype.slice.call(list.querySelectorAll(".label-option")).forEach(function (row) {
+      row.remove();
+    });
+    var on = {};
+    current.forEach(function (name) { on[key(name)] = true; });
+    var seen = {};
+    var rows = [];
+    palette.forEach(function (entry) {
+      seen[key(entry.name)] = true;
+      rows.push(entry);
+    });
+    current.forEach(function (name) {
+      if (seen[key(name)]) return;
+      seen[key(name)] = true;
+      rows.push({ name: name, color: "gray", defined: false });
+    });
+    rows.forEach(function (entry) {
+      var row = document.createElement("label");
+      row.className = "label-option";
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.name = "label";
+      box.value = entry.name;
+      box.checked = !!on[key(entry.name)];
+      row.appendChild(box);
+      row.appendChild(chip(entry));
+      list.appendChild(row);
+    });
+    list.hidden = rows.length === 0;
+    none.hidden = rows.length !== 0;
+  }
+
+  function show(button) {
+    var current = [];
+    try {
+      current = JSON.parse(button.getAttribute("data-label-current") || "[]");
+    } catch (error) {
+      current = [];
+    }
+    slugInput.value = button.getAttribute("data-label-slug") || "";
+    returnInput.value = location.pathname + location.search;
+    pageName.textContent = button.getAttribute("data-label-title") || "";
+    nameInput.value = "";
+    var gray = form.querySelector("input[name=newColor][value=gray]");
+    if (gray) gray.checked = true;
+    fill(current);
+    var menu = button.closest("details");
+    if (menu) menu.open = false;
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+    var first = list.hidden ? null : list.querySelector("input");
+    (first || nameInput).focus();
+  }
+
+  function hide() {
+    if (typeof dialog.close === "function") dialog.close();
+    else dialog.removeAttribute("open");
+  }
+
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+    var opener = target.closest("[data-label-open]");
+    if (opener) {
+      event.preventDefault();
+      show(opener);
+      return;
+    }
+    if (target.closest("[data-label-close]")) {
+      event.preventDefault();
+      hide();
+    }
+  });
+
+  // A click on the backdrop lands on the dialog element itself.
+  dialog.addEventListener("click", function (event) {
+    if (event.target === dialog) hide();
+  });
+})();
+`;
+
+/**
  * Ticking a label in the Labels view applies it at once. The form already
  * works with scripts off (tick, then Search); this only saves the click.
  */
@@ -4616,6 +4795,51 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
   background:var(--lc-dot); flex:0 0 auto;
 }
 .page-labels{margin-bottom:8px}
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0,0,0,0); border:0;
+}
+/* The label dialog borrows the Help dialog's head and close button. */
+.label-dialog{
+  width:min(440px,92vw); border:1px solid var(--line); border-radius:10px;
+  padding:0; color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
+}
+.label-dialog::backdrop{background:var(--backdrop)}
+.label-dialog-form{margin:0}
+.label-dialog-body{
+  display:flex; flex-direction:column; gap:14px;
+  padding:14px 20px; max-height:60vh; overflow:auto;
+}
+.label-dialog-page{margin:0; color:var(--fg-secondary); font-size:14px; font-weight:600; overflow-wrap:anywhere}
+.label-dialog fieldset{border:0; margin:0; padding:0; min-width:0}
+.label-dialog legend{
+  padding:0; margin:0 0 6px; color:var(--muted);
+  font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.04em;
+}
+.label-option{
+  display:flex; align-items:center; gap:8px; min-width:0;
+  padding:4px 6px; border-radius:6px; cursor:pointer;
+}
+.label-option:hover{background:var(--surface-hover-2)}
+.label-option input{margin:0; flex:0 0 auto}
+.label-dialog-empty{margin:0; color:var(--fg-secondary); font-size:13px}
+.label-dialog-new input[type="text"]{
+  width:100%; border:1px solid var(--line); border-radius:6px; padding:7px 10px;
+  color:var(--fg); background:var(--surface);
+  font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+.label-dialog-new input[type="text"]:focus{outline:2px solid var(--focus-ring-soft); border-color:var(--focus-ring)}
+.label-swatches{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+.label-swatch{position:relative; display:inline-flex; cursor:pointer}
+.label-swatch input{position:absolute; inset:0; margin:0; opacity:0; cursor:pointer}
+.label-swatch .label-dot{width:20px; height:20px; box-shadow:0 0 0 1px var(--line)}
+.label-swatch input:checked + .label-dot{box-shadow:0 0 0 2px var(--surface), 0 0 0 4px var(--fg)}
+.label-swatch input:focus-visible + .label-dot{outline:2px solid var(--focus-ring); outline-offset:4px}
+.label-dialog-actions{
+  display:flex; align-items:center; justify-content:flex-end; gap:8px;
+  padding:12px 20px; border-top:1px solid var(--line);
+}
+.label-dialog-manage{margin-right:auto; font-size:13px}
 .tree-label-dots{
   display:inline-flex; align-items:center; gap:3px; flex:0 0 auto;
   padding:0 6px 0 4px;
