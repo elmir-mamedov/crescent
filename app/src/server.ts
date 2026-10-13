@@ -52,6 +52,7 @@ import {
   deleteLabel,
   filterLabelled,
   knownLabels,
+  labelledPages,
   loadLabelSet,
   spaceNodes,
   updateLabel,
@@ -1756,6 +1757,9 @@ app.post("/_notes/*", async (req, reply) => {
  * Excerpts are returned as plain text plus the query's tokens; the client wraps
  * the matches in <mark> itself. No HTML crosses the wire, so page bodies — the
  * least trustworthy strings in the system — can never inject markup here.
+ *
+ * Repeated `label` parameters narrow the results to pages carrying every one;
+ * with labels and no usable query, it lists those pages in navigation order.
  */
 app.get("/_search", async (req, reply) => {
   // Results are derived from authenticated content and change on every edit, so
@@ -1764,7 +1768,10 @@ app.get("/_search", async (req, reply) => {
   reply.header("cache-control", "no-store");
 
   const query = (queryString(req.query, "q") ?? "").trim();
-  if (query.length < SEARCH_MIN_QUERY) {
+  const labels = cleanLabelNames(queryStrings(req.query, "label")).slice(0, LABEL_FILTER_MAX);
+  // With labels picked, no query is a question too: which pages carry them.
+  const browsing = query.length < SEARCH_MIN_QUERY;
+  if (browsing && !labels.length) {
     return reply.code(400).send({ ok: false, error: "Query is too short." });
   }
 
@@ -1772,9 +1779,7 @@ app.get("/_search", async (req, reply) => {
   if (!spaceKey) {
     return reply.code(400).send({ ok: false, error: "Missing space." });
   }
-  // Membership doubles as the traversal guard: spaceKeyOf("../etc") yields "..",
-  // which is not a space, so it 404s rather than escaping the KB.
-  const space = (await content.spaces("all")).find((s) => s.key === spaceKey);
+  const space = await findSpace(spaceKey);
   if (!space) {
     return reply.code(404).send({ ok: false, error: `No space named "${spaceKey}".` });
   }
@@ -1785,25 +1790,27 @@ app.get("/_search", async (req, reply) => {
     ? Math.min(Math.max(parsedLimit, 1), SEARCH_LIMIT_MAX)
     : SEARCH_LIMIT_DEFAULT;
 
-  let hits: SearchHit[];
+  // A "live" tree drops an archived space's own node, and with it every page
+  // beneath — scoping to one would silently return nothing. Its pages are
+  // still browsable, so widen the filter for that case alone.
+  const filter = space.archived ? "all" : "live";
+  let hits: Array<Pick<SearchHit, "slug" | "title" | "excerpt" | "labels">>;
   try {
-    hits = await searchPages(content, query, {
-      space: spaceKey,
-      limit,
-      // A "live" tree drops an archived space's own node, and with it every page
-      // beneath — scoping to one would silently return nothing. Its pages are
-      // still browsable, so widen the filter for that case alone.
-      filter: space.archived ? "all" : "live",
-    });
+    hits = browsing
+      ? (await labelledPages(content, spaceKey, filter, labels))
+          .slice(0, limit)
+          .map((node) => ({ slug: node.slug, title: node.title, excerpt: "", labels: node.labels ?? [] }))
+      : await searchPages(content, query, { space: spaceKey, limit, filter, labels });
   } catch (err) {
     return reply.code(500).send({ ok: false, error: errorMessage(err) });
   }
 
   return reply.send({
     ok: true,
-    query,
+    query: browsing ? "" : query,
     space: spaceKey,
-    tokens: searchTokens(query),
+    labels,
+    tokens: browsing ? [] : searchTokens(query),
     results: hits.map((hit) => ({
       slug: hit.slug,
       title: hit.title,
@@ -1811,6 +1818,7 @@ app.get("/_search", async (req, reply) => {
       // Middle segments only: the space is implied and the leaf is the title.
       crumb: hit.slug.split("/").slice(1, -1).join(" / "),
       excerpt: hit.excerpt,
+      labels: hit.labels,
     })),
   });
 });

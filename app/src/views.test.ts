@@ -1621,3 +1621,40 @@ test("manage labels: the dialog links straight to the management section", () =>
     /<a class="label-dialog-manage" href="\/_dashboard\/labels\?space=kb25#manage-labels">Manage labels<\/a>/
   );
 });
+
+test("search filter: the box carries the labels on offer, and its controls start hidden", () => {
+  const html = layout(
+    pageView({
+      tree: [node({ slug: "kb25/a", title: "A", labels: ["Legacy"] })],
+      labelSet: [{ name: "Draft", color: "yellow" }],
+    })
+  );
+  assert.match(
+    html,
+    /<div class="sidebar-search" data-search data-search-space="kb25" data-search-labels="\[\{&quot;name&quot;:&quot;Draft&quot;,&quot;color&quot;:&quot;yellow&quot;,&quot;defined&quot;:true\},\{&quot;name&quot;:&quot;Legacy&quot;/
+  );
+  // Revealed by the script, and only when there is a label to pick.
+  assert.match(html, /<button type="button" class="sidebar-search-filter" data-search-filter hidden/);
+  assert.match(html, /<div id="kb-search-picker" class="sidebar-search-picker" role="group" aria-label="Filter by label" data-search-picker hidden><\/div>/);
+  assert.match(html, /<a class="sidebar-search-more" data-search-more href="\/_dashboard\/labels\?space=kb25" hidden>Show all results<\/a>/);
+});
+
+test("search filter: requests carry the labels and stale answers are keyed on them too", () => {
+  const html = layout(pageView());
+  assert.match(html, /selected\.map\(\(name\) => "&label=" \+ encodeURIComponent\(name\)\)\.join\(""\)/);
+  assert.match(html, /return JSON\.stringify\(\[query, selected\]\);/);
+  assert.match(html, /if \(key !== lastKey\) return;/);
+  assert.match(html, /cache\.set\(key, result\);/);
+  assert.doesNotMatch(html, /lastQuery/);
+});
+
+test("search filter: the picked labels are kept per space for the tab", () => {
+  const html = layout(pageView());
+  assert.match(html, /const STORE_KEY = "kb:search-labels:" \+ space;/);
+  assert.match(html, /sessionStorage\.setItem\(STORE_KEY, JSON\.stringify\(selected\)\)/);
+});
+
+test("search filter: a chip that removes itself on click does not count as an outside click", () => {
+  const html = layout(pageView());
+  assert.match(html, /if \(event\.composedPath\(\)\.includes\(root\)\) return;/);
+});

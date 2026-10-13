@@ -438,10 +438,18 @@ function sidebarHtml(
     ? ""
     : `<div class="move-error" data-move-error hidden></div>`;
 
+  // The labels a person can pick in this space — the palette, then orphans the
+  // pages carry — shared by the search filter and the label dialog.
+  const offered = knownLabels(labelSet, flatten(tree)).map(({ name, color, defined }) => ({
+    name,
+    color,
+    defined,
+  }));
+
   return `<aside class="sidebar">
   <a class="brand" href="/">${escapeHtml(siteTitle)}</a>
   ${switcher}
-  ${sidebarSearch(spaceKey)}
+  ${sidebarSearch(spaceKey, offered)}
   <details class="create-menu">
     <summary class="sidebar-link">Create</summary>
     <div class="create-menu-pop">
@@ -466,7 +474,7 @@ function sidebarHtml(
   })}</nav>
 </aside>
 <script>${SEARCH_SCRIPT}</script>
-${isArchiveView ? "" : labelDialog(spaceKey, labelSet, tree)}`;
+${isArchiveView ? "" : labelDialog(spaceKey, offered)}`;
 }
 
 /**
@@ -491,12 +499,7 @@ function labelSwatches(name: string, checked: LabelColor, label = "Colour"): str
  * plain form. Shipping the palette once beats a checkbox list in every row's
  * menu, which would repeat it for every page in the tree.
  */
-function labelDialog(spaceKey: string, labelSet: readonly LabelDef[], tree: PageNode[]): string {
-  const offered = knownLabels(labelSet, flatten(tree)).map(({ name, color, defined }) => ({
-    name,
-    color,
-    defined,
-  }));
+function labelDialog(spaceKey: string, offered: readonly OfferedLabel[]): string {
   const swatches = labelSwatches("newColor", "gray");
   return `<dialog class="label-dialog" data-label-dialog aria-labelledby="label-dialog-title" data-label-palette="${escapeHtml(JSON.stringify(offered))}">
   <form class="label-dialog-form" method="post" action="/_labels/page">
@@ -528,27 +531,42 @@ function labelDialog(spaceKey: string, labelSet: readonly LabelDef[], tree: Page
 <script>${LABELS_SCRIPT}</script>`;
 }
 
+/** A label as the sidebar's scripts receive it: name, colour, and whether the palette defines it. */
+type OfferedLabel = Pick<KnownLabel, "name" | "color" | "defined">;
+
 /**
  * Sidebar search: an ARIA combobox scoped to the current space. The input owns
  * the combobox role; `SEARCH_SCRIPT` fills the listbox with `<a role="option">`
  * children and tracks the highlighted one through `aria-activedescendant`, so DOM
  * focus never leaves the field.
  *
- * `data-search-space` carries the scope, so the script needs no inline data.
- * With JavaScript off this is an inert field — there is no server-rendered
- * results page to fall back to, so it deliberately has no <form> and no action.
+ * `data-search-space` carries the scope and `data-search-labels` the labels
+ * the filter offers, so the script needs no inline data. The filter button
+ * stays hidden until the script reveals it, and only when there is a label to
+ * pick. With JavaScript off this is an inert field; the Labels view is the
+ * full, server-rendered search, and the panel's footer links there.
  */
-function sidebarSearch(spaceKey: string): string {
-  return `<div class="sidebar-search" data-search data-search-space="${escapeHtml(spaceKey)}">
-    <input id="kb-search-input" class="sidebar-search-input" type="search" data-search-input
-      placeholder="Search this space" aria-label="Search this space"
-      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-      role="combobox" aria-expanded="false" aria-autocomplete="list"
-      aria-haspopup="listbox" aria-controls="kb-search-results" />
+function sidebarSearch(spaceKey: string, offered: readonly OfferedLabel[] = []): string {
+  return `<div class="sidebar-search" data-search data-search-space="${escapeHtml(spaceKey)}" data-search-labels="${escapeHtml(JSON.stringify(offered))}">
+    <div class="sidebar-search-field">
+      <input id="kb-search-input" class="sidebar-search-input" type="search" data-search-input
+        placeholder="Search this space" aria-label="Search this space"
+        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        role="combobox" aria-expanded="false" aria-autocomplete="list"
+        aria-haspopup="listbox" aria-controls="kb-search-results" />
+      <button type="button" class="sidebar-search-filter" data-search-filter hidden
+        aria-label="Filter by label" title="Filter by label" aria-expanded="false" aria-controls="kb-search-picker">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+        <span class="sidebar-search-filter-count" data-search-filter-count hidden></span>
+      </button>
+    </div>
+    <div class="sidebar-search-chips" data-search-chips hidden></div>
+    <div id="kb-search-picker" class="sidebar-search-picker" role="group" aria-label="Filter by label" data-search-picker hidden></div>
     <div class="sidebar-search-panel" data-search-panel hidden>
       <div id="kb-search-results" class="sidebar-search-list" role="listbox"
         aria-label="Search results" data-search-list></div>
       <div class="sidebar-search-status" data-search-status role="status" aria-live="polite" hidden></div>
+      <a class="sidebar-search-more" data-search-more href="${escapeHtml(labelsHref(spaceKey))}" hidden>Show all results</a>
     </div>
   </div>`;
 }
@@ -2791,8 +2809,24 @@ const SEARCH_SCRIPT = `
   const list = root.querySelector("[data-search-list]");
   const status = root.querySelector("[data-search-status]");
   if (!input || !panel || !list || !status) return;
+  const filterButton = root.querySelector("[data-search-filter]");
+  const filterCount = root.querySelector("[data-search-filter-count]");
+  const picker = root.querySelector("[data-search-picker]");
+  const chips = root.querySelector("[data-search-chips]");
+  const more = root.querySelector("[data-search-more]");
 
   const space = root.getAttribute("data-search-space") || "";
+  let offered = [];
+  try {
+    offered = JSON.parse(root.getAttribute("data-search-labels") || "[]");
+  } catch (error) {
+    offered = [];
+  }
+  const hasFilter = !!(filterButton && filterCount && picker && chips) && offered.length > 0;
+  // Label names every result must carry, in the order they were picked. Kept
+  // per space for the tab's lifetime, so opening a result keeps the filter on.
+  const STORE_KEY = "kb:search-labels:" + space;
+  let selected = [];
   const DEBOUNCE_MS = 180;
   const MIN_LENGTH = 2;
   const LIMIT = 8;
@@ -2801,11 +2835,40 @@ const SEARCH_SCRIPT = `
   let controller = null;
   let items = [];
   let activeIndex = -1;
-  let lastQuery = "";
+  // What the newest request asked for — the query and the labels — so a slower
+  // answer to an older question is dropped rather than drawn.
+  let lastKey = "";
   // Backspacing to a query already asked about is the most common wasted round
   // trip; a plain Map kills it. Cleared wholesale rather than evicted by age —
   // it only has to survive until the next navigation.
   const cache = new Map();
+
+  function labelKey(name) {
+    return String(name).trim().normalize("NFC").toLowerCase();
+  }
+
+  function colorOf(name) {
+    const key = labelKey(name);
+    const found = offered.find((entry) => labelKey(entry.name) === key);
+    return found ? found.color : "gray";
+  }
+
+  function requestKey(query) {
+    return JSON.stringify([query, selected]);
+  }
+
+  function labelsUrl(query) {
+    const params = new URLSearchParams({ space: space });
+    selected.forEach((name) => params.append("label", name));
+    if (query) params.set("q", query);
+    return "/_dashboard/labels?" + params.toString();
+  }
+
+  function showMore(query) {
+    if (!more) return;
+    more.href = labelsUrl(query);
+    more.hidden = false;
+  }
 
   function setStatus(text) {
     status.textContent = text || "";
@@ -2829,6 +2892,7 @@ const SEARCH_SCRIPT = `
     input.removeAttribute("aria-activedescendant");
     clearList();
     setStatus("");
+    if (more) more.hidden = true;
   }
 
   function setActive(index) {
@@ -2885,8 +2949,10 @@ const SEARCH_SCRIPT = `
     clearList();
     const results = payload.results || [];
     const tokens = payload.tokens || [];
+    showMore(query);
     if (!results.length) {
-      setStatus("No matches for \\"" + query + "\\" in this space.");
+      const where = selected.length ? " with these labels" : " in this space";
+      setStatus(query ? "No matches for \\"" + query + "\\"" + where + "." : "No pages carry these labels.");
       open();
       return;
     }
@@ -2902,6 +2968,19 @@ const SEARCH_SCRIPT = `
       const title = document.createElement("span");
       title.className = "sidebar-search-title";
       highlight(title, String(result.title || ""), tokens);
+      const labels = Array.isArray(result.labels) ? result.labels : [];
+      if (labels.length) {
+        const dots = document.createElement("span");
+        dots.className = "sidebar-search-dots";
+        dots.title = labels.join(", ");
+        labels.slice(0, 3).forEach((name) => {
+          const dot = document.createElement("span");
+          dot.className = "label-dot";
+          dot.setAttribute("data-label-color", colorOf(name));
+          dots.appendChild(dot);
+        });
+        title.appendChild(dots);
+      }
       item.appendChild(title);
 
       if (result.crumb) {
@@ -2929,7 +3008,8 @@ const SEARCH_SCRIPT = `
 
   async function run(query) {
     if (controller) controller.abort();
-    const cached = cache.get(query);
+    const key = requestKey(query);
+    const cached = cache.get(key);
     if (cached) {
       render(cached, query);
       return;
@@ -2939,7 +3019,8 @@ const SEARCH_SCRIPT = `
     setStatus("Searching…");
     open();
     const url = "/_search?q=" + encodeURIComponent(query) +
-      "&space=" + encodeURIComponent(space) + "&limit=" + LIMIT;
+      "&space=" + encodeURIComponent(space) + "&limit=" + LIMIT +
+      selected.map((name) => "&label=" + encodeURIComponent(name)).join("");
     try {
       const response = await fetch(url, {
         signal: controller.signal,
@@ -2959,10 +3040,10 @@ const SEARCH_SCRIPT = `
         return;
       }
       // abort() does not reliably beat a response already in flight, so stale
-      // answers are dropped by query as well.
-      if (query !== lastQuery) return;
+      // answers are dropped by what they asked for as well.
+      if (key !== lastKey) return;
       if (cache.size > 50) cache.clear();
-      cache.set(query, result);
+      cache.set(key, result);
       render(result, query);
     } catch (error) {
       if (error && error.name === "AbortError") return;
@@ -2971,25 +3052,113 @@ const SEARCH_SCRIPT = `
     }
   }
 
-  input.addEventListener("input", () => {
-    const query = input.value.trim();
-    lastQuery = query;
+  // A query too short to search still counts as none; with labels picked, no
+  // query lists the pages carrying them.
+  function refresh() {
+    const typed = input.value.trim();
+    const query = typed.length >= MIN_LENGTH ? typed : "";
+    lastKey = requestKey(query);
     window.clearTimeout(timer);
-    if (query.length < MIN_LENGTH) {
+    if (!query && !selected.length) {
       if (controller) controller.abort();
       close();
       return;
     }
     timer = window.setTimeout(() => run(query), DEBOUNCE_MS);
+  }
+
+  input.addEventListener("input", refresh);
+  input.addEventListener("focus", () => {
+    if (selected.length && panel.hidden) refresh();
   });
+
+  function togglePicker(show) {
+    if (!hasFilter) return;
+    picker.hidden = !show;
+    filterButton.setAttribute("aria-expanded", show ? "true" : "false");
+  }
+
+  function renderChips() {
+    chips.textContent = "";
+    selected.forEach((name) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "label-chip sidebar-search-chip";
+      chip.setAttribute("data-label-color", colorOf(name));
+      chip.setAttribute("aria-label", "Remove the " + name + " filter");
+      chip.textContent = name + " ×";
+      chip.addEventListener("click", () => {
+        setSelected(selected.filter((other) => labelKey(other) !== labelKey(name)));
+        input.focus();
+      });
+      chips.appendChild(chip);
+    });
+    chips.hidden = selected.length === 0;
+    filterButton.classList.toggle("is-active", selected.length > 0);
+    filterCount.textContent = selected.length ? String(selected.length) : "";
+    filterCount.hidden = selected.length === 0;
+    picker.querySelectorAll("input").forEach((box) => {
+      box.checked = selected.some((name) => labelKey(name) === labelKey(box.value));
+    });
+  }
+
+  function setSelected(next) {
+    selected = next;
+    try {
+      if (selected.length) sessionStorage.setItem(STORE_KEY, JSON.stringify(selected));
+      else sessionStorage.removeItem(STORE_KEY);
+    } catch (error) {
+      /* storage blocked — the filter just will not outlive this page */
+    }
+    renderChips();
+    refresh();
+  }
+
+  if (hasFilter) {
+    offered.forEach((entry) => {
+      const row = document.createElement("label");
+      row.className = "sidebar-search-label";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = entry.name;
+      box.addEventListener("change", () => {
+        if (box.checked) setSelected(selected.concat([entry.name]));
+        else setSelected(selected.filter((name) => labelKey(name) !== labelKey(entry.name)));
+      });
+      const chip = document.createElement("span");
+      chip.className = entry.defined === false ? "label-chip is-orphan" : "label-chip";
+      chip.setAttribute("data-label-color", entry.color || "gray");
+      chip.textContent = entry.name;
+      row.appendChild(box);
+      row.appendChild(chip);
+      picker.appendChild(row);
+    });
+    filterButton.hidden = false;
+    filterButton.addEventListener("click", () => togglePicker(picker.hidden));
+    // Restore the filter this tab last used here, minus labels since removed.
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(STORE_KEY) || "[]");
+      if (Array.isArray(stored)) {
+        selected = stored.filter((name) =>
+          offered.some((entry) => labelKey(entry.name) === labelKey(name))
+        );
+      }
+    } catch (error) {
+      selected = [];
+    }
+    renderChips();
+  }
 
   input.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      // First press dismisses the results, second empties the box.
-      if (panel.hidden) {
+      // First press dismisses the label picker or the results, the next empties
+      // the box.
+      if (hasFilter && !picker.hidden) {
+        togglePicker(false);
+      } else if (panel.hidden) {
         input.value = "";
-        lastQuery = "";
+        lastKey = "";
         input.blur();
       } else {
         close();
@@ -3015,9 +3184,15 @@ const SEARCH_SCRIPT = `
   // remove the row between mousedown and click and swallow the navigation.
   // Safari does not focus clicked links, which is where this bites hardest.
   list.addEventListener("mousedown", (event) => event.preventDefault());
+  if (more) more.addEventListener("mousedown", (event) => event.preventDefault());
 
+  // The path is fixed when the click is dispatched, so a control that removes
+  // itself on click (a filter chip) still counts as inside; root.contains would
+  // see the detached node as outside and close everything.
   document.addEventListener("click", (event) => {
-    if (!root.contains(event.target)) close();
+    if (event.composedPath().includes(root)) return;
+    close();
+    togglePicker(false);
   });
   root.addEventListener("focusout", () => {
     window.setTimeout(() => {
@@ -4205,6 +4380,44 @@ a:hover{text-decoration:underline}
 .sidebar-search-item.is-active mark{background:var(--mark-bg-strong)}
 .sidebar-search-status{padding:6px 8px; font-size:12px; color:var(--muted)}
 .sidebar-search-status[hidden]{display:none}
+/* The label filter: a funnel inside the field, the picked labels as removable
+   chips under it, and the picker in the flow below (the results panel floats
+   beneath all three). */
+.sidebar-search-field{position:relative}
+.sidebar-search-field .sidebar-search-input{padding-right:40px}
+.sidebar-search-filter{
+  position:absolute; right:4px; top:50%; transform:translateY(-50%);
+  display:inline-flex; align-items:center; gap:2px; height:24px; padding:0 5px;
+  border:0; border-radius:4px; background:transparent; color:var(--muted); cursor:pointer;
+}
+.sidebar-search-filter[hidden]{display:none}
+.sidebar-search-filter:hover,.sidebar-search-filter[aria-expanded="true"]{background:var(--surface-hover); color:var(--fg)}
+.sidebar-search-filter.is-active{color:var(--accent)}
+.sidebar-search-filter:focus-visible{outline:2px solid var(--focus-ring-soft)}
+.sidebar-search-filter svg{display:block}
+.sidebar-search-filter-count{font-size:11px; font-weight:700; line-height:1}
+.sidebar-search-chips{display:flex; flex-wrap:wrap; gap:4px; margin-top:6px}
+.sidebar-search-chips[hidden]{display:none}
+.sidebar-search-chip{cursor:pointer; font-family:inherit}
+.sidebar-search-chip:hover{border-color:var(--lc-dot)}
+.sidebar-search-picker{
+  display:flex; flex-direction:column; gap:1px; margin-top:6px; padding:4px;
+  max-height:220px; overflow:auto;
+  border:1px solid var(--line); border-radius:6px; background:var(--surface);
+}
+.sidebar-search-picker[hidden]{display:none}
+.sidebar-search-label{
+  display:flex; align-items:center; gap:6px; padding:3px 6px; border-radius:4px;
+  cursor:pointer; font-size:13px;
+}
+.sidebar-search-label:hover{background:var(--surface-hover)}
+.sidebar-search-label input{margin:0}
+.sidebar-search-dots{display:inline-flex; align-items:center; gap:3px; margin-left:6px; vertical-align:middle}
+.sidebar-search-more{
+  display:block; margin-top:4px; padding:6px 8px; border-top:1px solid var(--line);
+  font-size:12px; font-weight:600;
+}
+.sidebar-search-more[hidden]{display:none}
 .move-error{
   margin:0 0 14px; padding:8px 10px; border:1px solid var(--error-border);
   border-radius:6px; background:var(--error-bg); color:var(--error-fg); font-size:13px;
