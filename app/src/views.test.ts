@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import {
   configureViews,
   dashboardLayout,
+  dashboardsLayout,
   editLayout,
   layout,
   folderLayout,
   loginLayout,
   spacesLayout,
   type DashboardView,
+  type DashboardsView,
   type EditView,
   type PageView,
   type FolderView,
@@ -94,6 +96,28 @@ function dashboardView(overrides: Partial<DashboardView> = {}): DashboardView {
       newestAt: "2026-08-17T11:00:00Z",
     },
     now: Date.parse("2026-08-17T12:00:00Z"),
+    username: "alice",
+    ...overrides,
+  };
+}
+
+function dashboardsView(overrides: Partial<DashboardsView> = {}): DashboardsView {
+  return {
+    siteTitle: "KB",
+    spaces: [{ key: "kb25", title: "KB25", archived: false }],
+    spaceKey: "kb25",
+    tree: [],
+    titles: new Map([["kb25", "KB25"]]),
+    spaceTitle: "KB25",
+    cards: [
+      {
+        href: "/_dashboard/tasks?space=kb25",
+        title: "Open tasks",
+        description: "Task notes left on pages.",
+        value: "3",
+        valueLabel: "open tasks",
+      },
+    ],
     username: "alice",
     ...overrides,
   };
@@ -757,6 +781,47 @@ test("dashboard: the corner button links to the space being viewed", () => {
   assert.match(html, /class="dash-button" href="\/_dashboard\?space=kb25"/);
 });
 
+test("dashboards: the corner button is named for the hub it opens", () => {
+  const html = layout(pageView());
+  assert.match(html, /class="dash-button"[^>]*aria-label="Dashboards" title="Dashboards"/);
+  assert.doesNotMatch(html, /Notes dashboard/);
+});
+
+test("dashboards: the hub lists each report as a card with its number", () => {
+  const html = dashboardsLayout(dashboardsView());
+  assert.match(html, /<title>KB25 · Dashboards · KB<\/title>/);
+  assert.match(
+    html,
+    /<a class="hub-card" href="\/_dashboard\/tasks\?space=kb25">\s*<span class="hub-title">Open tasks<\/span>/
+  );
+  assert.match(html, /<span class="stat-value">3<\/span> <span class="stat-label">open tasks<\/span>/);
+  assert.match(html, /<span class="hub-desc">Task notes left on pages\.<\/span>/);
+});
+
+test("dashboards: a card's link and words are escaped", () => {
+  const html = dashboardsLayout(
+    dashboardsView({
+      cards: [
+        {
+          href: "/_dashboard/labels?space=kb25&label=a",
+          title: "<b>x</b>",
+          description: "a & b",
+          value: "1",
+          valueLabel: "label",
+        },
+      ],
+    })
+  );
+  assert.match(html, /href="\/_dashboard\/labels\?space=kb25&amp;label=a"/);
+  assert.match(html, /&lt;b&gt;x&lt;\/b&gt;/);
+  assert.match(html, /a &amp; b/);
+});
+
+test("dashboards: the tasks report links back to the hub", () => {
+  const html = dashboardLayout(dashboardView());
+  assert.match(html, /<a class="dash-back" href="\/_dashboard\?space=kb25">← Dashboards<\/a>/);
+});
+
 test("dashboard: no button outside a space, where it would report on nothing", () => {
   // The spaces home page has no current space — the same reason it ships no
   // sidebar search.
@@ -1071,6 +1136,7 @@ test("views: every inline script in every layout parses as JavaScript", () => {
     ["page-toc", layout(pageView({ sections: sections() }))],
     ["folder", folderLayout({ ...pageView(), children: [] } as unknown as FolderView)],
     ["dashboard", dashboardLayout(dashboardView())],
+    ["dashboards", dashboardsLayout(dashboardsView())],
     ["spaces", spacesLayout({ siteTitle: "KB", spaces: [], username: "u" } as SpacesView)],
     ["edit", editLayout(editView())],
     [

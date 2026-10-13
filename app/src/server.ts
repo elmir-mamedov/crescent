@@ -18,6 +18,7 @@ import {
   type MoveMutation,
   type PageNode,
   type ReorderMutation,
+  type SpaceInfo,
 } from "./content.js";
 import { makeGit } from "./git.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
@@ -52,6 +53,7 @@ import {
   archiveLayout,
   configureViews,
   dashboardLayout,
+  dashboardsLayout,
   deleteLayout,
   diffLayout,
   editLayout,
@@ -471,6 +473,16 @@ function formString(body: unknown, field: string): string | null {
   return typeof value === "string" ? value : null;
 }
 
+/**
+ * The space a key names, or null. Membership in the space list doubles as the
+ * traversal guard: spaceKeyOf("../etc") yields "..", which is not a space.
+ */
+async function findSpace(key: string): Promise<SpaceInfo | null> {
+  const clean = content.spaceKeyOf(key);
+  if (!clean) return null;
+  return (await content.spaces("all")).find((s) => s.key === clean) ?? null;
+}
+
 function pagePath(slug: string): string {
   if (!slug) return "/";
   return "/" + slug.split("/").map(encodeURIComponent).join("/");
@@ -629,6 +641,41 @@ async function renderNotesDashboard(
     groups: groupNotesByPage(notes),
     summary: summarizeNotes(notes),
     now: Date.now(),
+    username: AUTH_USERNAME,
+  });
+}
+
+/**
+ * The Dashboards hub for one space: a card per report, each carrying the
+ * number that sums it up. Same archived-space widening as the reports.
+ */
+async function renderDashboardsHub(space: SpaceInfo): Promise<string> {
+  const filter = space.archived ? "all" : "live";
+  const [spaces, tree, titles, tasks] = await Promise.all([
+    content.spaces(),
+    content.spaceTree(space.key, filter),
+    content.titleIndex(),
+    collectNotes(content, filter, { space: space.key, kind: "task" }),
+  ]);
+  const query = `?space=${encodeURIComponent(space.key)}`;
+  const taskCount = summarizeNotes(tasks).total;
+
+  return dashboardsLayout({
+    siteTitle: SITE_TITLE,
+    spaces,
+    spaceKey: space.key,
+    tree,
+    titles,
+    spaceTitle: space.title,
+    cards: [
+      {
+        href: `/_dashboard/tasks${query}`,
+        title: "Open tasks",
+        description: "Task notes left on pages in this space, grouped by page.",
+        value: String(taskCount),
+        valueLabel: taskCount === 1 ? "open task" : "open tasks",
+      },
+    ],
     username: AUTH_USERNAME,
   });
 }
@@ -1476,11 +1523,6 @@ app.get("/_archive", async (_req, reply) => {
 });
 
 /**
- * The dashboard reports on one space, named by `?space=`. The corner button only
- * appears while a space is active and carries its key, so a request without one
- * was typed by hand: send it to the space picker rather than guessing.
- */
-/**
  * Open a space's standing instructions for editing.
  *
  * The file has to exist before the editor can open it, so this scaffolds an
@@ -1523,24 +1565,40 @@ app.get("/_instructions", async (req, reply) => {
   return reply.redirect(`/_edit/${instructionsSlug(space.key)}`, 303);
 });
 
-app.get("/_dashboard", async (req, reply) => {
-  // Derived from authenticated content and stale the moment a note is written.
+/**
+ * Every dashboard reports on one space, named by `?space=`. The corner button
+ * only appears while a space is active and carries its key, so a request
+ * without one was typed by hand: send it to the space picker rather than
+ * guessing. Null means the reply has already been sent.
+ */
+async function dashboardSpace(req: FastifyRequest, reply: FastifyReply): Promise<SpaceInfo | null> {
+  // Derived from authenticated content and stale the moment a page changes.
   reply.header("cache-control", "no-store");
 
   const spaceKey = content.spaceKeyOf(queryString(req.query, "space") ?? "");
-  if (!spaceKey) return reply.redirect("/", 303);
-
-  // Membership doubles as the traversal guard: spaceKeyOf("../etc") yields "..",
-  // which is not a space, so it 404s rather than escaping the KB.
-  const space = (await content.spaces("all")).find((s) => s.key === spaceKey);
+  if (!spaceKey) {
+    reply.redirect("/", 303);
+    return null;
+  }
+  const space = await findSpace(spaceKey);
   if (!space) {
     const spaces = await content.spaces();
-    return reply
-      .code(404)
-      .type("text/html")
-      .send(notFound(SITE_TITLE, spaceKey, spaces, AUTH_USERNAME));
+    reply.code(404).type("text/html").send(notFound(SITE_TITLE, spaceKey, spaces, AUTH_USERNAME));
+    return null;
   }
+  return space;
+}
 
+/** The Dashboards hub — what the corner button opens. */
+app.get("/_dashboard", async (req, reply) => {
+  const space = await dashboardSpace(req, reply);
+  if (!space) return reply;
+  return reply.type("text/html").send(await renderDashboardsHub(space));
+});
+
+app.get("/_dashboard/tasks", async (req, reply) => {
+  const space = await dashboardSpace(req, reply);
+  if (!space) return reply;
   return reply
     .type("text/html")
     .send(await renderNotesDashboard(space.key, space.title, space.archived));

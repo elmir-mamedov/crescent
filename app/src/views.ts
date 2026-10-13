@@ -247,6 +247,26 @@ export interface DashboardView {
   username?: string | null;
 }
 
+/** One report on the Dashboards hub: where it lives and the number that sums it up. */
+export interface DashboardCard {
+  href: string;
+  title: string;
+  description: string;
+  value: string;
+  valueLabel: string;
+}
+
+export interface DashboardsView {
+  siteTitle: string;
+  spaces: SpaceInfo[];
+  spaceKey: string;
+  tree: PageNode[];
+  titles: Map<string, string>;
+  spaceTitle: string;
+  cards: DashboardCard[];
+  username?: string | null;
+}
+
 export interface DeleteView {
   siteTitle: string;
   spaces: SpaceInfo[];
@@ -414,15 +434,20 @@ function themeToggle(): string {
   </button>`;
 }
 
+/** Where the current space's Dashboards hub lives. */
+function dashboardsHref(spaceKey: string): string {
+  return `/_dashboard?space=${encodeURIComponent(spaceKey)}`;
+}
+
 /**
- * Link to the current space's dashboard. A plain anchor, so it needs no handler
- * of its own — and it only appears when a space is active, the same rule the
- * sidebar search follows: the dashboard reports on one space, and the home page
- * is not in one.
+ * Link to the current space's Dashboards hub. A plain anchor, so it needs no
+ * handler of its own — and it only appears when a space is active, the same
+ * rule the sidebar search follows: every dashboard reports on one space, and
+ * the home page is not in one.
  */
 function dashboardLink(spaceKey: string): string {
   if (!spaceKey) return "";
-  return `<a class="dash-button" href="/_dashboard?space=${encodeURIComponent(spaceKey)}" aria-label="Notes dashboard" title="Notes dashboard">
+  return `<a class="dash-button" href="${dashboardsHref(spaceKey)}" aria-label="Dashboards" title="Dashboards">
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg>
   </a>`;
 }
@@ -872,8 +897,51 @@ export function dashboardLayout(v: DashboardView): string {
     titles: v.titles,
     title: `${v.spaceTitle} · Tasks`,
     contentHtml: `<div class="dash">
+  ${dashboardsBackLink(v.spaceKey)}
   <p class="dash-lede">Task notes waiting in this space. Remarks and highlights are not counted.</p>
   ${body}
+</div>`,
+    canEdit: false,
+    username: v.username,
+  });
+}
+
+/** The way back from one dashboard to the hub that lists them all. */
+function dashboardsBackLink(spaceKey: string): string {
+  return `<a class="dash-back" href="${dashboardsHref(spaceKey)}">← Dashboards</a>`;
+}
+
+/**
+ * The Dashboards hub for one space: every report on it, each a card with the
+ * number that sums it up, so the hub answers "is anything waiting?" before a
+ * report is even opened.
+ */
+export function dashboardsLayout(v: DashboardsView): string {
+  const cards = v.cards
+    .map(
+      (card) => `<li>
+      <a class="hub-card" href="${escapeHtml(card.href)}">
+        <span class="hub-title">${escapeHtml(card.title)}</span>
+        <span class="hub-stat"><span class="stat-value">${escapeHtml(card.value)}</span> <span class="stat-label">${escapeHtml(card.valueLabel)}</span></span>
+        <span class="hub-desc">${escapeHtml(card.description)}</span>
+      </a>
+    </li>`
+    )
+    .join("\n    ");
+
+  return layout({
+    siteTitle: v.siteTitle,
+    spaces: v.spaces,
+    spaceKey: v.spaceKey,
+    tree: v.tree,
+    activeSlug: "",
+    titles: v.titles,
+    title: `${v.spaceTitle} · Dashboards`,
+    contentHtml: `<div class="dash">
+  <p class="dash-lede">Reports on this space. Open one for the detail behind its number.</p>
+  <ul class="hub-grid">
+    ${cards}
+  </ul>
 </div>`,
     canEdit: false,
     username: v.username,
@@ -4195,7 +4263,7 @@ body.dragging-page .space-current{
   font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 }
 .new-space-form input:focus{outline:2px solid var(--focus-ring-soft); border-color:var(--focus-ring)}
-/* Notes dashboard.
+/* Tasks dashboard (and the shared dashboard pieces: lede, stat cards).
    Rides the note palettes already defined for pins and marks — a task is purple
    here for the same reason it is purple on the page it was left on. */
 .dash-lede{margin:0 0 20px; color:var(--fg-secondary); font-size:14px}
@@ -4259,6 +4327,22 @@ body.dragging-page .space-current{
 .task-text.is-empty{color:var(--muted); font-style:italic}
 .task-by{color:var(--muted); font-size:12px}
 .dash-empty{color:var(--fg-secondary)}
+.dash-back{display:inline-block; margin:0 0 12px; font-size:14px}
+/* Dashboards hub: one card per report. */
+.hub-grid{
+  list-style:none; margin:0; padding:0;
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px;
+}
+.hub-card{
+  display:flex; flex-direction:column; gap:6px; height:100%;
+  padding:16px 18px; border:1px solid var(--line); border-radius:8px;
+  background:var(--surface); color:var(--fg);
+}
+.hub-card:hover{background:var(--surface-hover); text-decoration:none}
+.hub-card:focus-visible{outline:2px solid var(--focus-ring-soft); outline-offset:1px}
+.hub-title{font-size:16px; font-weight:600; color:var(--accent)}
+.hub-stat{display:flex; align-items:baseline; gap:6px}
+.hub-desc{font-size:13px; color:var(--fg-secondary); line-height:1.45}
 @media(max-width:780px){
   body{flex-direction:column}
   .sidebar{width:auto; flex:none; height:auto; position:static; border-right:none;
