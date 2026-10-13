@@ -16,6 +16,13 @@ export const FrontmatterSchema = z.object({
    */
   id: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  /**
+   * Curated, coloured markers a person sets from the sidebar ("Draft", "Needs
+   * review"). Unlike `tags` — free keywords for search — every label name is
+   * meant to come from the space's palette in `_labels.json`, which owns its
+   * colour. A name missing from the palette still counts; it just renders grey.
+   */
+  labels: z.array(z.string()).optional(),
   summary: z.string().optional(),
   /**
    * Sibling position in the navigation, ascending. Sidebar drag-and-drop
@@ -41,6 +48,54 @@ export const FrontmatterSchema = z.object({
 });
 
 export type Frontmatter = z.infer<typeof FrontmatterSchema>;
+
+/** Longest label name accepted from a person; long enough for a phrase, short enough for a chip. */
+export const LABEL_NAME_MAX = 40;
+
+/**
+ * The identity two label names are compared by: "Draft", " draft" and "DRAFT"
+ * are one label. NFC folds the two ways of typing an accented letter together.
+ */
+export function labelKey(name: string): string {
+  return name.trim().normalize("NFC").toLowerCase();
+}
+
+/**
+ * Validate a label name typed by a person, returning it trimmed.
+ *
+ * Commas are refused because names travel through URLs and lists where a comma
+ * reads as a separator; control characters because a name ends up in a commit
+ * subject, where a newline would forge a second line.
+ */
+export function normalizeLabelName(raw: string): string {
+  const name = raw.trim().normalize("NFC");
+  if (!name) throw new Error("A label needs a name.");
+  if (name.length > LABEL_NAME_MAX) {
+    throw new Error(`A label name can be at most ${LABEL_NAME_MAX} characters.`);
+  }
+  if (name.includes(",")) throw new Error("A label name cannot contain a comma.");
+  if (/\p{Cc}/u.test(name)) throw new Error("A label name cannot contain control characters.");
+  return name;
+}
+
+/**
+ * Tidy a label list read from a file: trims, drops empty and non-string
+ * entries, and keeps the first spelling of names that compare equal. Lenient on
+ * purpose — a hand-edited page should still render, not fail on a stray space.
+ */
+export function cleanLabelNames(names: readonly unknown[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of names) {
+    if (typeof raw !== "string") continue;
+    const name = raw.trim();
+    const key = labelKey(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
 
 export interface ParsedPage {
   data: Frontmatter;
