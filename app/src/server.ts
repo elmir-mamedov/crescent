@@ -19,6 +19,7 @@ import {
   type PageNode,
   type ReorderMutation,
   type SpaceInfo,
+  type TreeFilter,
 } from "./content.js";
 import { makeGit } from "./git.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
@@ -49,6 +50,7 @@ import {
   knownLabels,
   loadLabelSet,
   spaceNodes,
+  type LabelDef,
 } from "./labels.js";
 import {
   CHAR_CAP,
@@ -506,6 +508,21 @@ async function findSpace(key: string): Promise<SpaceInfo | null> {
   return (await content.spaces("all")).find((s) => s.key === clean) ?? null;
 }
 
+/**
+ * What every page with a sidebar draws around its content in one space: the
+ * navigation tree, and the label palette that colours the dots in it.
+ */
+async function spaceChrome(
+  spaceKey: string,
+  filter: TreeFilter = "live"
+): Promise<{ tree: PageNode[]; labelSet: LabelDef[] }> {
+  const [tree, labelSet] = await Promise.all([
+    content.spaceTree(spaceKey, filter),
+    loadLabelSet(content, spaceKey),
+  ]);
+  return { tree, labelSet };
+}
+
 function pagePath(slug: string): string {
   if (!slug) return "/";
   return "/" + slug.split("/").map(encodeURIComponent).join("/");
@@ -552,7 +569,7 @@ async function renderPage(
   }
 
   const spaceKey = content.spaceKeyOf(page.slug);
-  const tree = await content.spaceTree(spaceKey);
+  const { tree, labelSet } = await spaceChrome(spaceKey);
 
   // A folder is a pure container: render its contents listing, never prose.
   if (isFolderPage(page.data)) {
@@ -562,6 +579,7 @@ async function renderPage(
       spaces,
       spaceKey,
       tree,
+      labelSet,
       activeSlug: page.slug,
       titles,
       title: page.data.title,
@@ -602,9 +620,11 @@ async function renderPage(
     spaces,
     spaceKey,
     tree,
+    labelSet,
     activeSlug: page.slug,
     titles,
     title: page.data.title,
+    labels: cleanLabelNames(page.data.labels ?? []),
     tags: page.data.tags,
     contentHtml,
     sections,
@@ -647,9 +667,9 @@ async function renderNotesDashboard(
   archived: boolean
 ): Promise<string> {
   const filter = archived ? "all" : "live";
-  const [spaces, tree, titles, notes] = await Promise.all([
+  const [spaces, { tree, labelSet }, titles, notes] = await Promise.all([
     content.spaces(),
-    content.spaceTree(spaceKey, filter),
+    spaceChrome(spaceKey, filter),
     content.titleIndex(),
     collectNotes(content, filter, { space: spaceKey, kind: "task" }),
   ]);
@@ -659,6 +679,7 @@ async function renderNotesDashboard(
     spaces,
     spaceKey,
     tree,
+    labelSet,
     titles,
     spaceTitle,
     groups: groupNotesByPage(notes),
@@ -692,6 +713,7 @@ async function renderDashboardsHub(space: SpaceInfo): Promise<string> {
     spaces,
     spaceKey: space.key,
     tree,
+    labelSet,
     titles,
     spaceTitle: space.title,
     cards: [
@@ -821,7 +843,7 @@ async function renderEditPage(
   }
 
   const spaceKey = content.spaceKeyOf(page.slug);
-  const tree = await content.spaceTree(spaceKey);
+  const { tree, labelSet } = await spaceChrome(spaceKey);
   const fallbackTitle = page.slug.split("/").pop() || "Home";
 
   // A space's instructions file is deliberately absent from the title index (the
@@ -835,6 +857,7 @@ async function renderEditPage(
     spaces,
     spaceKey,
     tree,
+    labelSet,
     activeSlug: page.slug,
     titles,
     title: isInstructions
@@ -867,7 +890,7 @@ async function renderDiffPage(
   }
 
   const spaceKey = content.spaceKeyOf(page.slug);
-  const tree = await content.spaceTree(spaceKey);
+  const { tree, labelSet } = await spaceChrome(spaceKey);
 
   const commits = await git.fileCommits(page.fsPath);
   // Clamp the requested revision into range; 0 is the latest edit.
@@ -884,6 +907,7 @@ async function renderDiffPage(
     spaces,
     spaceKey,
     tree,
+    labelSet,
     activeSlug: page.slug,
     titles,
     title: page.data.title,
@@ -912,7 +936,7 @@ async function renderDeletePage(slug: string): Promise<{ status: number; html: s
   }
 
   const spaceKey = content.spaceKeyOf(preview.slug);
-  const tree = await content.spaceTree(spaceKey);
+  const { tree, labelSet } = await spaceChrome(spaceKey);
   return {
     status: 200,
     html: deleteLayout({
@@ -920,6 +944,7 @@ async function renderDeletePage(slug: string): Promise<{ status: number; html: s
       spaces,
       spaceKey,
       tree,
+      labelSet,
       activeSlug: preview.slug,
       titles,
       title: preview.title,

@@ -1459,3 +1459,68 @@ test("labels view: ticking a label submits the form, and the page links back to 
   assert.match(html, /<a class="dash-back" href="\/_dashboard\?space=kb25">← Dashboards<\/a>/);
   assert.match(html, /<title>KB25 · Labels · KB<\/title>/);
 });
+
+test("labels: a labelled page's sidebar row carries its dots after the title", () => {
+  const html = layout(
+    pageView({
+      tree: [node({ slug: "kb25/deploy", title: "Deploy", labels: ["Draft", "Legacy"] })],
+      labelSet: [{ name: "Draft", color: "yellow" }],
+    })
+  );
+  const row = html.match(/<div class="tree-row">[\s\S]*?<details class="tree-menu">/)?.[0] ?? "";
+  assert.match(
+    row,
+    /Deploy<\/a><span class="tree-label-dots" role="img" aria-label="Labels: Draft, Legacy" title="Draft, Legacy"><span class="label-dot" data-label-color="yellow"><\/span><span class="label-dot" data-label-color="gray"><\/span><\/span>/
+  );
+  // Still exactly one marker glyph at the head of the row.
+  assert.equal([...row.matchAll(/class="(tree-toggle|tree-toggle-spacer|tree-page-dot)"/g)].length, 1);
+});
+
+test("labels: a row shows at most three dots and counts the rest", () => {
+  const html = layout(
+    pageView({ tree: [node({ slug: "kb25/a", title: "A", labels: ["a", "b", "c", "d", "e"] })] })
+  );
+  assert.equal(html.match(/<span class="label-dot"/g)?.length, 3);
+  assert.match(html, /<span class="tree-label-more">\+2<\/span>/);
+});
+
+test("labels: an unlabelled row has no dots, and label names in the tooltip are escaped", () => {
+  const plain = layout(pageView({ tree: [node({ slug: "kb25/a", title: "A" })] }));
+  assert.doesNotMatch(plain, /<span class="tree-label-dots"/);
+
+  const odd = layout(
+    pageView({ tree: [node({ slug: "kb25/a", title: "A", labels: ['"><b>x'] })] })
+  );
+  assert.match(odd, /aria-label="Labels: &quot;&gt;&lt;b&gt;x"/);
+});
+
+test("labels: the page header shows its labels as chips linking to the Labels view", () => {
+  const html = layout(
+    pageView({
+      labels: ["Draft", "Needs review"],
+      labelSet: [{ name: "Draft", color: "yellow" }, { name: "Needs review", color: "orange" }],
+      tags: ["ops"],
+    })
+  );
+  assert.match(
+    html,
+    /<div class="meta"><div class="page-labels"><span class="label-chips"><a class="label-chip" data-label-color="yellow" href="\/_dashboard\/labels\?space=kb25&amp;label=Draft">Draft<\/a><a class="label-chip" data-label-color="orange" href="\/_dashboard\/labels\?space=kb25&amp;label=Needs\+review">Needs review<\/a><\/span><\/div><div class="tags">/
+  );
+});
+
+test("labels: a page without labels has no label row in its header", () => {
+  const html = layout(pageView({ tags: ["ops"] }));
+  assert.doesNotMatch(html, /class="page-labels"/);
+});
+
+test("labels: every sidebar-drawing layout passes the palette to the tree", () => {
+  const tree = [node({ slug: "kb25/a", title: "A", labels: ["Draft"] })];
+  const labelSet = [{ name: "Draft", color: "red" as const }];
+  const dot = /<span class="label-dot" data-label-color="red">/;
+  assert.match(layout(pageView({ tree, labelSet })), dot);
+  assert.match(folderLayout({ ...pageView({ tree, labelSet }), children: [] } as unknown as FolderView), dot);
+  assert.match(editLayout(editView({ tree, labelSet })), dot);
+  assert.match(dashboardLayout(dashboardView({ tree, labelSet })), dot);
+  assert.match(dashboardsLayout(dashboardsView({ tree, labelSet })), dot);
+  assert.match(labelsDashboardLayout(labelsView({ tree, labelSet })), dot);
+});

@@ -36,6 +36,8 @@ function renderTree(
     dragEnabled?: boolean;
     collapsible?: boolean;
     parentSlug?: string;
+    /** The space's label palette; rows of labelled pages get coloured dots. */
+    labelSet?: readonly LabelDef[];
   } = {}
 ): string {
   if (nodes.length === 0) return "";
@@ -84,8 +86,11 @@ function renderTree(
       // as "container" — distinct from an ordinary content page that merely
       // happens to have child pages.
       const folderIcon = n.isFolder ? FOLDER_ICON : "";
+      // Dots come after the title, never in the marker column: that column
+      // holds exactly one glyph per row, which keeps carets and leaf dots aligned.
+      const dots = options.archiveMode ? "" : treeLabelDots(n, options.labelSet ?? []);
       const row = options.dragEnabled
-        ? `<div class="tree-row">${marker}${folderIcon}${label}${treeMenu(n)}</div>`
+        ? `<div class="tree-row">${marker}${folderIcon}${label}${dots}${treeMenu(n)}</div>`
         : label;
       const children = hasChildren
         ? `<div class="children">${renderTree(n.children, activeSlug, {
@@ -97,6 +102,29 @@ function renderTree(
     })
     .join("");
   return `<ul>${items}${dropLine("")}</ul>`;
+}
+
+/** How many label dots a sidebar row shows before collapsing the rest into "+N". */
+const TREE_LABEL_DOTS_MAX = 3;
+
+/**
+ * A labelled page's dots in the sidebar: one per label, in the page's order,
+ * coloured from the palette. The names ride along as the tooltip and the
+ * accessible name, since a colour alone says nothing to a screen reader.
+ */
+function treeLabelDots(node: PageNode, labelSet: readonly LabelDef[]): string {
+  const labels = node.labels ?? [];
+  if (!labels.length) return "";
+  const names = escapeHtml(labels.join(", "));
+  const dots = labels
+    .slice(0, TREE_LABEL_DOTS_MAX)
+    .map((name) => `<span class="label-dot" data-label-color="${colorOf(labelSet, name)}"></span>`)
+    .join("");
+  const more =
+    labels.length > TREE_LABEL_DOTS_MAX
+      ? `<span class="tree-label-more">+${labels.length - TREE_LABEL_DOTS_MAX}</span>`
+      : "";
+  return `<span class="tree-label-dots" role="img" aria-label="Labels: ${names}" title="${names}">${dots}${more}</span>`;
 }
 
 /**
@@ -165,6 +193,10 @@ export interface PageView {
   activeSlug: string;
   titles: Map<string, string>;
   title: string;
+  /** The page's own labels, shown as chips under the title. */
+  labels?: string[];
+  /** The active space's label palette, for the sidebar dots and the chips. */
+  labelSet?: LabelDef[];
   tags?: string[];
   contentHtml: string;
   /**
@@ -188,6 +220,7 @@ export interface EditView {
   spaces: SpaceInfo[];
   spaceKey: string;
   tree: PageNode[];
+  labelSet?: LabelDef[];
   activeSlug: string;
   titles: Map<string, string>;
   title: string;
@@ -208,6 +241,7 @@ export interface DiffView {
   spaces: SpaceInfo[];
   spaceKey: string;
   tree: PageNode[];
+  labelSet?: LabelDef[];
   activeSlug: string;
   titles: Map<string, string>;
   title: string;
@@ -238,6 +272,7 @@ export interface DashboardView {
   spaceKey: string;
   /** The active space's own tree, so the sidebar reads as it does on any page in it. */
   tree: PageNode[];
+  labelSet?: LabelDef[];
   titles: Map<string, string>;
   /** Display name of the space being reported on. */
   spaceTitle: string;
@@ -263,6 +298,7 @@ export interface DashboardsView {
   spaces: SpaceInfo[];
   spaceKey: string;
   tree: PageNode[];
+  labelSet?: LabelDef[];
   titles: Map<string, string>;
   spaceTitle: string;
   cards: DashboardCard[];
@@ -303,6 +339,7 @@ export interface DeleteView {
   spaces: SpaceInfo[];
   spaceKey: string;
   tree: PageNode[];
+  labelSet?: LabelDef[];
   activeSlug: string;
   titles: Map<string, string>;
   title: string;
@@ -344,7 +381,8 @@ function sidebarHtml(
   spaceKey: string,
   tree: PageNode[],
   activeSlug: string,
-  isArchiveView = false
+  isArchiveView = false,
+  labelSet: readonly LabelDef[] = []
 ): string {
   const archiveCls = isArchiveView ? " active" : "";
 
@@ -415,6 +453,7 @@ function sidebarHtml(
     dragEnabled: !isArchiveView,
     collapsible: !isArchiveView,
     parentSlug: spaceKey,
+    labelSet,
   })}</nav>
 </aside>
 <script>${SEARCH_SCRIPT}</script>`;
@@ -590,7 +629,10 @@ export function layout(v: PageView): string {
   const updated = v.updated
     ? `<div class="updated">Updated ${escapeHtml(v.updated)}</div>`
     : "";
-  const metaInner = `${tags ? `<div class="tags">${tags}</div>` : ""}${updated}`;
+  // Labels lead the meta line: a person set them, so they say more about the
+  // page than the keyword tags beside them.
+  const labels = labelChips(v.labels ?? [], v.labelSet ?? [], v.spaceKey);
+  const metaInner = `${labels ? `<div class="page-labels">${labels}</div>` : ""}${tags ? `<div class="tags">${tags}</div>` : ""}${updated}`;
   const editLink =
     v.canEdit === false
       ? ""
@@ -641,7 +683,7 @@ export function layout(v: PageView): string {
 ${renderHead(`${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, mathCss)}
 <body>
 ${sessionCorner(v.username, v.spaceKey)}
-${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, v.isArchiveView)}
+${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, v.isArchiveView, v.labelSet)}
 <main class="content">
   ${breadcrumb(v.activeSlug, v.titles)}
   <header class="page-head">
@@ -671,6 +713,7 @@ export interface FolderView {
   spaces: SpaceInfo[];
   spaceKey: string;
   tree: PageNode[];
+  labelSet?: LabelDef[];
   activeSlug: string;
   titles: Map<string, string>;
   title: string;
@@ -744,7 +787,7 @@ export function folderLayout(v: FolderView): string {
 ${renderHead(`${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`)}
 <body>
 ${sessionCorner(v.username, v.spaceKey)}
-${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false)}
+${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.labelSet)}
 <main class="content">
   ${breadcrumb(v.activeSlug, v.titles)}
   <header class="page-head">
@@ -924,6 +967,7 @@ export function dashboardLayout(v: DashboardView): string {
     spaces: v.spaces,
     spaceKey: v.spaceKey,
     tree: v.tree,
+    labelSet: v.labelSet,
     activeSlug: "",
     titles: v.titles,
     title: `${v.spaceTitle} · Tasks`,
@@ -965,6 +1009,7 @@ export function dashboardsLayout(v: DashboardsView): string {
     spaces: v.spaces,
     spaceKey: v.spaceKey,
     tree: v.tree,
+    labelSet: v.labelSet,
     activeSlug: "",
     titles: v.titles,
     title: `${v.spaceTitle} · Dashboards`,
@@ -1086,6 +1131,7 @@ export function labelsDashboardLayout(v: LabelsDashboardView): string {
     spaces: v.spaces,
     spaceKey: v.spaceKey,
     tree: v.tree,
+    labelSet: v.labelSet,
     activeSlug: "",
     titles: v.titles,
     title: `${v.spaceTitle} · Labels`,
@@ -1114,6 +1160,7 @@ export function deleteLayout(v: DeleteView): string {
     spaces: v.spaces,
     spaceKey: v.spaceKey,
     tree: v.tree,
+    labelSet: v.labelSet,
     activeSlug: v.activeSlug,
     titles: v.titles,
     title: `Delete ${v.title}`,
@@ -1164,7 +1211,7 @@ export function editLayout(v: EditView): string {
 ${renderHead(`Edit ${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`)}
 <body>
 ${sessionCorner(v.username, v.spaceKey)}
-${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug)}
+${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.labelSet)}
 <main class="content editor-content">
   ${breadcrumb(v.activeSlug, v.titles)}
   <header class="page-head">
@@ -1272,7 +1319,7 @@ export function diffLayout(v: DiffView): string {
 ${renderHead(`History ${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`)}
 <body>
 ${sessionCorner(v.username, v.spaceKey)}
-${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug)}
+${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.labelSet)}
 <main class="content">
   ${breadcrumb(v.activeSlug, v.titles)}
   <header class="page-head">
@@ -4568,7 +4615,12 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
   display:inline-block; width:8px; height:8px; border-radius:50%;
   background:var(--lc-dot); flex:0 0 auto;
 }
-.meta .label-chips{margin-bottom:8px}
+.page-labels{margin-bottom:8px}
+.tree-label-dots{
+  display:inline-flex; align-items:center; gap:3px; flex:0 0 auto;
+  padding:0 6px 0 4px;
+}
+.tree-label-more{font-size:10px; line-height:1; color:var(--muted)}
 .label-filter{display:flex; flex-direction:column; gap:12px; margin:0 0 24px}
 /* A fieldset's default min-width is its min-content, which a long row of chips
    would push past the viewport. */
