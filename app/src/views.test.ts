@@ -5,6 +5,8 @@ import {
   dashboardLayout,
   dashboardsLayout,
   editLayout,
+  labelsDashboardLayout,
+  labelsHref,
   layout,
   folderLayout,
   loginLayout,
@@ -12,6 +14,7 @@ import {
   type DashboardView,
   type DashboardsView,
   type EditView,
+  type LabelsDashboardView,
   type PageView,
   type FolderView,
   type LoginView,
@@ -117,6 +120,36 @@ function dashboardsView(overrides: Partial<DashboardsView> = {}): DashboardsView
         value: "3",
         valueLabel: "open tasks",
       },
+    ],
+    username: "alice",
+    ...overrides,
+  };
+}
+
+function labelsView(overrides: Partial<LabelsDashboardView> = {}): LabelsDashboardView {
+  return {
+    siteTitle: "KB",
+    spaces: [{ key: "kb25", title: "KB25", archived: false }],
+    spaceKey: "kb25",
+    tree: [],
+    titles: new Map([
+      ["kb25", "KB25"],
+      ["kb25/ops", "Operations"],
+    ]),
+    spaceTitle: "KB25",
+    labelSet: [
+      { name: "Draft", color: "yellow" },
+      { name: "Needs review", color: "orange" },
+    ],
+    known: [
+      { name: "Draft", color: "yellow", defined: true, count: 2 },
+      { name: "Needs review", color: "orange", defined: true, count: 0 },
+      { name: "Legacy", color: "gray", defined: false, count: 1 },
+    ],
+    selected: ["draft"],
+    query: "",
+    results: [
+      { slug: "kb25/ops/deploy", title: "Deploy", labels: ["Draft", "Legacy"], text: "How we ship." },
     ],
     username: "alice",
     ...overrides,
@@ -1137,6 +1170,7 @@ test("views: every inline script in every layout parses as JavaScript", () => {
     ["folder", folderLayout({ ...pageView(), children: [] } as unknown as FolderView)],
     ["dashboard", dashboardLayout(dashboardView())],
     ["dashboards", dashboardsLayout(dashboardsView())],
+    ["labels", labelsDashboardLayout(labelsView())],
     ["spaces", spacesLayout({ siteTitle: "KB", spaces: [], username: "u" } as SpacesView)],
     ["edit", editLayout(editView())],
     [
@@ -1332,4 +1366,96 @@ test("views: every page of a launcher-started server reports the tab open, sign-
   // Signing in is still needed to quit.
   const login = asDesktop(() => loginLayout({ siteTitle: "KB", next: "/" } as LoginView));
   assert.doesNotMatch(login, /class="quit-button"/);
+});
+
+// --- labels ---------------------------------------------------------------
+
+test("labels: labelsHref carries the space, every label and the query, encoded", () => {
+  assert.equal(labelsHref("kb25"), "/_dashboard/labels?space=kb25");
+  assert.equal(
+    labelsHref("kb25", ["Needs review", "a&b"], "deploy x"),
+    "/_dashboard/labels?space=kb25&label=Needs+review&label=a%26b&q=deploy+x"
+  );
+});
+
+test("labels: every theme block defines every swatch", () => {
+  const html = labelsDashboardLayout(labelsView());
+  for (const color of ["gray", "red", "brown"]) {
+    assert.equal(html.match(new RegExp(`--label-${color}-bg:`, "g"))?.length, 3, color);
+    assert.match(html, new RegExp(`\\[data-label-color="${color}"\\]\\{--lc-bg:var\\(--label-${color}-bg\\)`));
+  }
+});
+
+test("labels view: one GET form, a checkbox per known label, the selection ticked", () => {
+  const html = labelsDashboardLayout(labelsView());
+  assert.match(html, /<form class="label-filter" method="get" action="\/_dashboard\/labels" data-label-filter>/);
+  assert.match(html, /<input type="hidden" name="space" value="kb25" \/>/);
+  // Ticked case-insensitively: the URL said "draft", the palette says "Draft".
+  assert.match(html, /name="label" value="Draft" checked \/>/);
+  assert.match(html, /name="label" value="Needs review" \/>/);
+  assert.match(html, /name="label" value="Legacy" \/>/);
+  assert.match(html, /<span class="label-count">2<\/span>/);
+  assert.match(html, /<input type="search" name="q" value=""/);
+  assert.match(html, /<a class="label-clear" href="\/_dashboard\/labels\?space=kb25">Clear<\/a>/);
+});
+
+test("labels view: no Clear link when nothing is filtered", () => {
+  const html = labelsDashboardLayout(labelsView({ selected: [], query: "" }));
+  assert.doesNotMatch(html, /label-clear"/);
+});
+
+test("labels view: a chip takes its palette colour; an orphan is grey and dashed", () => {
+  const html = labelsDashboardLayout(labelsView());
+  assert.match(html, /<span class="label-chip" data-label-color="yellow">Draft<\/span>/);
+  assert.match(
+    html,
+    /<span class="label-chip is-orphan" data-label-color="gray" title="Not in this space's label palette">Legacy<\/span>/
+  );
+});
+
+test("labels view: each result links to its page, places it, and links its chips", () => {
+  const html = labelsDashboardLayout(labelsView());
+  assert.match(html, /<a class="label-result-title" href="\/kb25\/ops\/deploy">Deploy<\/a>/);
+  assert.match(html, /<p class="task-crumb">Operations<\/p>/);
+  assert.match(
+    html,
+    /<a class="label-chip" data-label-color="yellow" href="\/_dashboard\/labels\?space=kb25&amp;label=Draft">Draft<\/a>/
+  );
+  assert.match(html, /<p class="label-result-text">How we ship\.<\/p>/);
+  assert.match(html, /<p class="label-results-count">1 page<\/p>/);
+});
+
+test("labels view: label names, query and result text are escaped", () => {
+  const html = labelsDashboardLayout(
+    labelsView({
+      known: [{ name: "<i>x</i>", color: "gray", defined: false, count: 1 }],
+      selected: [],
+      query: '"><script>',
+      results: [{ slug: "kb25/a", title: "<b>A</b>", labels: ["<i>x</i>"], text: "<img>" }],
+    })
+  );
+  assert.doesNotMatch(html, /<i>x<\/i>|<b>A<\/b>|<img>|"><script>/);
+  assert.match(html, /value="&quot;&gt;&lt;script&gt;"/);
+});
+
+test("labels view: each empty state says why it is empty", () => {
+  const none = labelsDashboardLayout(labelsView({ known: [], selected: [], results: [] }));
+  assert.match(none, /No labels in <strong>KB25<\/strong> yet/);
+  assert.doesNotMatch(none, /data-label-filter>/);
+
+  const filtered = labelsDashboardLayout(labelsView({ results: [] }));
+  assert.match(filtered, /No pages carry all of the selected labels\./);
+
+  const searched = labelsDashboardLayout(labelsView({ results: [], query: "zzz" }));
+  assert.match(searched, /No pages match “zzz” with these labels\./);
+
+  const unlabelled = labelsDashboardLayout(labelsView({ results: [], selected: [] }));
+  assert.match(unlabelled, /No pages carry a label yet\./);
+});
+
+test("labels view: ticking a label submits the form, and the page links back to the hub", () => {
+  const html = labelsDashboardLayout(labelsView());
+  assert.match(html, /form\.requestSubmit\(\)/);
+  assert.match(html, /<a class="dash-back" href="\/_dashboard\?space=kb25">← Dashboards<\/a>/);
+  assert.match(html, /<title>KB25 · Labels · KB<\/title>/);
 });

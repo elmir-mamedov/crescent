@@ -236,19 +236,24 @@ export function hasAllLabels(node: PageNode, keys: readonly string[]): boolean {
 }
 
 /**
- * The pages in a space that carry every selected label, in navigation order.
- * With nothing selected, every page that carries any label at all.
+ * Of the given pages, those that carry every selected label, order kept. With
+ * nothing selected, every page that carries any label at all.
  */
+export function filterLabelled(nodes: readonly PageNode[], selected: readonly string[]): PageNode[] {
+  const keys = selected.map(labelKey).filter(Boolean);
+  return nodes.filter(
+    (node) => !node.isFolder && (node.labels?.length ?? 0) > 0 && hasAllLabels(node, keys)
+  );
+}
+
+/** The pages in a space that carry every selected label, in navigation order. */
 export async function labelledPages(
   content: Content,
   space: string,
   filter: TreeFilter,
   selected: readonly string[]
 ): Promise<PageNode[]> {
-  const keys = selected.map(labelKey).filter(Boolean);
-  return (await spaceNodes(content, space, filter)).filter(
-    (node) => !node.isFolder && (node.labels?.length ?? 0) > 0 && hasAllLabels(node, keys)
-  );
+  return filterLabelled(await spaceNodes(content, space, filter), selected);
 }
 
 export interface LabelMutation {

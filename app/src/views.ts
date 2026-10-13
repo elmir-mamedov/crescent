@@ -1,4 +1,6 @@
 import type { PageNode, SpaceInfo } from "./content.js";
+import { labelKey } from "./frontmatter.js";
+import { LABEL_COLORS, colorOf, type KnownLabel, type LabelColor, type LabelDef } from "./labels.js";
 import type { DiffLine } from "./diff.js";
 import { relativeAge, type NotePageGroup, type NoteSummary } from "./note-index.js";
 import type { RenderedNote, Section } from "./markdown.js";
@@ -264,6 +266,35 @@ export interface DashboardsView {
   titles: Map<string, string>;
   spaceTitle: string;
   cards: DashboardCard[];
+  username?: string | null;
+}
+
+/** One page in the Labels view's result list. */
+export interface LabelResult {
+  slug: string;
+  title: string;
+  labels: string[];
+  /** A search excerpt when a query is set, else the page's summary. */
+  text?: string;
+}
+
+export interface LabelsDashboardView {
+  siteTitle: string;
+  spaces: SpaceInfo[];
+  spaceKey: string;
+  tree: PageNode[];
+  titles: Map<string, string>;
+  spaceTitle: string;
+  /** The space's palette, for colouring the labels each result carries. */
+  labelSet: LabelDef[];
+  /** Every label worth offering: palette first, then orphans, each with its page count. */
+  known: KnownLabel[];
+  /** Label names currently filtered on (a page must carry all of them). */
+  selected: string[];
+  /** The search box's text; empty lists every match in navigation order. */
+  query: string;
+  results: LabelResult[];
+  notice?: ViewNotice;
   username?: string | null;
 }
 
@@ -943,6 +974,129 @@ export function dashboardsLayout(v: DashboardsView): string {
     ${cards}
   </ul>
 </div>`,
+    canEdit: false,
+    username: v.username,
+  });
+}
+
+/** Where the Labels view lives, filtered to the given labels and query. */
+export function labelsHref(spaceKey: string, labels: readonly string[] = [], query = ""): string {
+  const params = new URLSearchParams({ space: spaceKey });
+  for (const label of labels) params.append("label", label);
+  if (query) params.set("q", query);
+  return `/_dashboard/labels?${params.toString()}`;
+}
+
+/**
+ * One label as a pill. A label the palette does not define gets a dashed edge,
+ * so it reads as "carried, but not set up" rather than as a deliberate grey.
+ */
+function labelChip(
+  name: string,
+  set: readonly LabelDef[],
+  href?: string
+): string {
+  const key = labelKey(name);
+  const defined = set.some((l) => labelKey(l.name) === key);
+  const cls = defined ? "label-chip" : "label-chip is-orphan";
+  const title = defined ? "" : ` title="Not in this space's label palette"`;
+  const attrs = `class="${cls}" data-label-color="${colorOf(set, name)}"${title}`;
+  return href
+    ? `<a ${attrs} href="${escapeHtml(href)}">${escapeHtml(name)}</a>`
+    : `<span ${attrs}>${escapeHtml(name)}</span>`;
+}
+
+/** A row of chips, each linking to the Labels view filtered to it alone. */
+function labelChips(names: readonly string[], set: readonly LabelDef[], spaceKey: string): string {
+  if (!names.length) return "";
+  return `<span class="label-chips">${names
+    .map((name) => labelChip(name, set, labelsHref(spaceKey, [name])))
+    .join("")}</span>`;
+}
+
+/**
+ * The Labels view: pages in one space filtered by label, optionally searched.
+ *
+ * It is one GET form, so every state — which labels, what query — is a URL a
+ * person can bookmark or paste, and it works with scripts off. A page must
+ * carry every ticked label; with none ticked it lists every labelled page.
+ */
+export function labelsDashboardLayout(v: LabelsDashboardView): string {
+  const selectedKeys = new Set(v.selected.map(labelKey));
+  const toggles = v.known
+    .map((label) => {
+      const checked = selectedKeys.has(labelKey(label.name));
+      return `<label class="label-toggle">
+        <input type="checkbox" name="label" value="${escapeHtml(label.name)}"${checked ? " checked" : ""} />
+        ${labelChip(label.name, v.labelSet)}
+        <span class="label-count">${label.count}</span>
+      </label>`;
+    })
+    .join("\n      ");
+
+  const filterForm = v.known.length
+    ? `<form class="label-filter" method="get" action="/_dashboard/labels" data-label-filter>
+    <input type="hidden" name="space" value="${escapeHtml(v.spaceKey)}" />
+    <fieldset class="label-filter-chips">
+      <legend class="label-filter-legend">Labels</legend>
+      ${toggles}
+    </fieldset>
+    <div class="label-search">
+      <input type="search" name="q" value="${escapeHtml(v.query)}" placeholder="Search pages in this space" aria-label="Search pages in this space" />
+      <button class="button secondary" type="submit">Search</button>
+      ${v.selected.length || v.query ? `<a class="label-clear" href="${escapeHtml(labelsHref(v.spaceKey))}">Clear</a>` : ""}
+    </div>
+  </form>`
+    : `<p class="dash-empty">No labels in <strong>${escapeHtml(v.spaceTitle)}</strong> yet. Open a page's ⋯ menu in the sidebar and choose “Labels…” to add the first one.</p>`;
+
+  const items = v.results
+    .map((r) => {
+      const trail = sectionTrail(r.slug, v.titles);
+      return `<li class="label-result">
+        <a class="label-result-title" href="${slugPath(r.slug)}">${escapeHtml(r.title)}</a>
+        ${trail ? `<p class="task-crumb">${escapeHtml(trail)}</p>` : ""}
+        ${labelChips(r.labels, v.labelSet, v.spaceKey)}
+        ${r.text ? `<p class="label-result-text">${escapeHtml(r.text)}</p>` : ""}
+      </li>`;
+    })
+    .join("\n      ");
+
+  const count = v.results.length;
+  const results = !v.known.length
+    ? ""
+    : count
+      ? `<p class="label-results-count">${count} ${count === 1 ? "page" : "pages"}</p>
+  <ul class="label-results">
+      ${items}
+  </ul>`
+      : `<p class="dash-empty">${
+          v.query
+            ? `No pages match “${escapeHtml(v.query)}”${v.selected.length ? " with these labels" : ""}.`
+            : v.selected.length
+              ? "No pages carry all of the selected labels."
+              : "No pages carry a label yet."
+        }</p>`;
+
+  const notice = v.notice
+    ? `<div class="notice ${v.notice.tone}">${escapeHtml(v.notice.text)}</div>`
+    : "";
+
+  return layout({
+    siteTitle: v.siteTitle,
+    spaces: v.spaces,
+    spaceKey: v.spaceKey,
+    tree: v.tree,
+    activeSlug: "",
+    titles: v.titles,
+    title: `${v.spaceTitle} · Labels`,
+    contentHtml: `<div class="dash labels-dash">
+  ${dashboardsBackLink(v.spaceKey)}
+  ${notice}
+  <p class="dash-lede">Pages in this space by label. Tick labels to narrow the list — a page must carry all of them.</p>
+  ${filterForm}
+  ${results}
+</div>
+<script>${LABEL_FILTER_SCRIPT}</script>`,
     canEdit: false,
     username: v.username,
   });
@@ -3496,6 +3650,55 @@ const NOTES_SCRIPT = `
 })();
 `;
 
+/**
+ * Ticking a label in the Labels view applies it at once. The form already
+ * works with scripts off (tick, then Search); this only saves the click.
+ */
+const LABEL_FILTER_SCRIPT = `
+(function () {
+  var form = document.querySelector("[data-label-filter]");
+  if (!form) return;
+  form.addEventListener("change", function (event) {
+    var target = event.target;
+    if (!target || target.type !== "checkbox") return;
+    if (form.requestSubmit) form.requestSubmit();
+    else form.submit();
+  });
+})();
+`;
+
+/**
+ * Label swatches: chip background, chip ink, and a solid dot, per theme. The
+ * light pairs are a pale tint under dark ink; the dark ones a deep tint under
+ * pale ink — each clears 4.5:1, so a chip stays readable whichever theme is on.
+ */
+const LABEL_SWATCHES: Record<LabelColor, { light: [string, string, string]; dark: [string, string, string] }> = {
+  gray: { light: ["#f3f4f6", "#374151", "#9ca3af"], dark: ["#30363d", "#d1d5db", "#8b949e"] },
+  red: { light: ["#fee2e2", "#991b1b", "#ef4444"], dark: ["#4c1414", "#fecaca", "#f87171"] },
+  orange: { light: ["#ffedd5", "#9a3412", "#f97316"], dark: ["#4a2410", "#fed7aa", "#fb923c"] },
+  yellow: { light: ["#fef9c3", "#854d0e", "#eab308"], dark: ["#42340a", "#fef08a", "#facc15"] },
+  green: { light: ["#dcfce7", "#166534", "#22c55e"], dark: ["#12361f", "#bbf7d0", "#4ade80"] },
+  teal: { light: ["#ccfbf1", "#115e59", "#14b8a6"], dark: ["#123c38", "#99f6e4", "#2dd4bf"] },
+  blue: { light: ["#dbeafe", "#1e40af", "#3b82f6"], dark: ["#172554", "#bfdbfe", "#60a5fa"] },
+  purple: { light: ["#f3e8ff", "#6b21a8", "#a855f7"], dark: ["#3b1764", "#e9d5ff", "#c084fc"] },
+  pink: { light: ["#fce7f3", "#9d174d", "#ec4899"], dark: ["#4a1230", "#fbcfe8", "#f472b6"] },
+  brown: { light: ["#f1e7dc", "#5c3a1e", "#a0714a"], dark: ["#3a2817", "#ead7c3", "#c08a5b"] },
+};
+
+/** The `--label-<colour>-*` custom properties for one theme block. */
+function labelTokens(theme: "light" | "dark"): string {
+  return LABEL_COLORS.map((color) => {
+    const [bg, fg, dot] = LABEL_SWATCHES[color][theme];
+    return `--label-${color}-bg:${bg}; --label-${color}-fg:${fg}; --label-${color}-dot:${dot};`;
+  }).join("\n  ");
+}
+
+/** Point a chip or dot's working colours at the swatch its data-label-color names. */
+const LABEL_COLOR_RULES = LABEL_COLORS.map(
+  (color) =>
+    `[data-label-color="${color}"]{--lc-bg:var(--label-${color}-bg); --lc-fg:var(--label-${color}-fg); --lc-dot:var(--label-${color}-dot)}`
+).join("\n");
+
 const STYLES = `
 :root{
   color-scheme:light;
@@ -3542,6 +3745,7 @@ const STYLES = `
   --badge-mcp-fg:#6b21a8; --badge-mcp-bg:#f3e8ff; --badge-mcp-border:#e2ccf9;
   --hl-comment:#6a737d; --hl-keyword:#d73a49; --hl-string:#032f62;
   --hl-number:#005cc5; --hl-title:#6f42c1; --hl-attr:#e36209;
+  ${labelTokens("light")}
 }
 :root[data-theme="dark"]{
   color-scheme:dark;
@@ -3575,6 +3779,7 @@ const STYLES = `
   --badge-mcp-fg:#d8b4fe; --badge-mcp-bg:#2e1065; --badge-mcp-border:#4c1d95;
   --hl-comment:#8b949e; --hl-keyword:#ff7b72; --hl-string:#a5d6ff;
   --hl-number:#79c0ff; --hl-title:#d2a8ff; --hl-attr:#ffa657;
+  ${labelTokens("dark")}
 }
 /* No-JS fallback: honor the OS setting when no explicit choice was made. */
 @media (prefers-color-scheme:dark){
@@ -3610,6 +3815,7 @@ const STYLES = `
     --badge-mcp-fg:#d8b4fe; --badge-mcp-bg:#2e1065; --badge-mcp-border:#4c1d95;
     --hl-comment:#8b949e; --hl-keyword:#ff7b72; --hl-string:#a5d6ff;
     --hl-number:#79c0ff; --hl-title:#d2a8ff; --hl-attr:#ffa657;
+    ${labelTokens("dark")}
   }
 }
 *{box-sizing:border-box}
@@ -4343,6 +4549,62 @@ body.dragging-page .space-current{
 .hub-title{font-size:16px; font-weight:600; color:var(--accent)}
 .hub-stat{display:flex; align-items:baseline; gap:6px}
 .hub-desc{font-size:13px; color:var(--fg-secondary); line-height:1.45}
+/* Labels. A chip or dot reads its colours from --lc-*, which default to grey
+   and are repointed by the data-label-color rule that follows. Chips wrap
+   rather than nowrap: nowrap text inside .content widens the whole page. */
+.label-chip,.label-dot{
+  --lc-bg:var(--label-gray-bg); --lc-fg:var(--label-gray-fg); --lc-dot:var(--label-gray-dot);
+}
+${LABEL_COLOR_RULES}
+.label-chips{display:inline-flex; flex-wrap:wrap; gap:4px; min-width:0}
+.label-chip{
+  display:inline-block; max-width:100%; padding:1px 8px; border-radius:999px;
+  border:1px solid transparent; background:var(--lc-bg); color:var(--lc-fg);
+  font-size:12px; font-weight:600; line-height:1.5; overflow-wrap:anywhere;
+}
+a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
+.label-chip.is-orphan{border:1px dashed var(--lc-dot)}
+.label-dot{
+  display:inline-block; width:8px; height:8px; border-radius:50%;
+  background:var(--lc-dot); flex:0 0 auto;
+}
+.meta .label-chips{margin-bottom:8px}
+.label-filter{display:flex; flex-direction:column; gap:12px; margin:0 0 24px}
+/* A fieldset's default min-width is its min-content, which a long row of chips
+   would push past the viewport. */
+.label-filter-chips{display:flex; flex-wrap:wrap; gap:8px; border:none; margin:0; padding:0; min-width:0}
+.label-filter-legend{
+  float:left; width:100%; margin:0 0 4px; padding:0;
+  font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;
+}
+.label-toggle{
+  display:inline-flex; align-items:center; gap:6px; max-width:100%;
+  padding:4px 10px 4px 8px; border:1px solid var(--line); border-radius:999px;
+  background:var(--surface); cursor:pointer; font-size:13px;
+}
+.label-toggle:hover{background:var(--surface-hover-2)}
+.label-toggle:has(input:checked){border-color:var(--accent); background:var(--active-bg)}
+.label-toggle:has(input:focus-visible){outline:2px solid var(--focus-ring-soft); outline-offset:1px}
+.label-toggle input{margin:0}
+.label-count{color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums}
+.label-search{display:flex; flex-wrap:wrap; align-items:center; gap:8px}
+.label-search input[type="search"]{
+  flex:1 1 220px; min-width:0; max-width:420px;
+  border:1px solid var(--line); border-radius:6px; padding:7px 10px;
+  color:var(--fg); background:var(--surface);
+  font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+.label-search input[type="search"]:focus{outline:2px solid var(--focus-ring-soft); border-color:var(--focus-ring)}
+.label-clear{font-size:14px}
+.label-results-count{margin:0 0 8px; color:var(--muted); font-size:13px}
+.label-results{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px}
+.label-result{
+  display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-width:0;
+  padding:10px 14px; border:1px solid var(--line); border-radius:6px; background:var(--surface);
+}
+.label-result-title{font-size:15px; font-weight:600; overflow-wrap:anywhere}
+.label-result .task-crumb{margin:0}
+.label-result-text{margin:0; color:var(--fg-secondary); font-size:13px; line-height:1.45; overflow-wrap:anywhere}
 @media(max-width:780px){
   body{flex-direction:column}
   .sidebar{width:auto; flex:none; height:auto; position:static; border-right:none;

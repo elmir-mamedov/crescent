@@ -41,8 +41,15 @@ import {
   updateNote,
   type NoteKind,
 } from "./notes.js";
-import { searchPages, searchTokens, type SearchHit } from "./search.js";
+import { mapWithConcurrency, searchPages, searchTokens, type SearchHit } from "./search.js";
 import { DEFAULT_RELEASES_URL, findInstall, makeUpdater } from "./update.js";
+import { cleanLabelNames, labelKey } from "./frontmatter.js";
+import {
+  filterLabelled,
+  knownLabels,
+  loadLabelSet,
+  spaceNodes,
+} from "./labels.js";
 import {
   CHAR_CAP,
   ensureSpaceInstructions,
@@ -59,10 +66,13 @@ import {
   editLayout,
   escapeHtml,
   folderLayout,
+  labelsDashboardLayout,
+  labelsHref,
   layout,
   loginLayout,
   notFound,
   spacesLayout,
+  type LabelResult,
   type ViewNotice,
 } from "./views.js";
 
@@ -90,6 +100,11 @@ const SITE_TITLE = process.env.SITE_TITLE ?? "Knowledge Base";
 const SEARCH_MIN_QUERY = 2;
 const SEARCH_LIMIT_DEFAULT = 8;
 const SEARCH_LIMIT_MAX = 20;
+// The Labels view. A filter of more labels than this matches nothing useful
+// and only makes the URL a lever for work; a search there lists more than the
+// type-ahead because it is the page a person reads results on.
+const LABEL_FILTER_MAX = 10;
+const LABELS_SEARCH_LIMIT = 50;
 
 // Site icons bundled with the app, served from the site root so the
 // <link rel="icon"> tags and the browser's automatic /favicon.ico lookup
@@ -208,6 +223,14 @@ function queryString(query: unknown, field: string): string | null {
   if (!query || typeof query !== "object") return null;
   const value = (query as Record<string, unknown>)[field];
   return typeof value === "string" ? value : null;
+}
+
+/** Every value of a repeated query parameter (`?label=a&label=b`), in order. */
+function queryStrings(query: unknown, field: string): string[] {
+  if (!query || typeof query !== "object") return [];
+  const value = (query as Record<string, unknown>)[field];
+  if (typeof value === "string") return [value];
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
 function parseCookies(header: string | undefined): Map<string, string> {
@@ -651,14 +674,18 @@ async function renderNotesDashboard(
  */
 async function renderDashboardsHub(space: SpaceInfo): Promise<string> {
   const filter = space.archived ? "all" : "live";
-  const [spaces, tree, titles, tasks] = await Promise.all([
+  const [spaces, tree, titles, tasks, labelSet, nodes] = await Promise.all([
     content.spaces(),
     content.spaceTree(space.key, filter),
     content.titleIndex(),
     collectNotes(content, filter, { space: space.key, kind: "task" }),
+    loadLabelSet(content, space.key),
+    spaceNodes(content, space.key, filter),
   ]);
   const query = `?space=${encodeURIComponent(space.key)}`;
   const taskCount = summarizeNotes(tasks).total;
+  const labelledCount = filterLabelled(nodes, []).length;
+  const labelCount = knownLabels(labelSet, nodes).length;
 
   return dashboardsLayout({
     siteTitle: SITE_TITLE,
@@ -675,7 +702,86 @@ async function renderDashboardsHub(space: SpaceInfo): Promise<string> {
         value: String(taskCount),
         valueLabel: taskCount === 1 ? "open task" : "open tasks",
       },
+      {
+        href: labelsHref(space.key),
+        title: "Labels",
+        description: `${labelCount} ${labelCount === 1 ? "label" : "labels"} in this space. Filter and search pages by label.`,
+        value: String(labelledCount),
+        valueLabel: labelledCount === 1 ? "labelled page" : "labelled pages",
+      },
     ],
+    username: AUTH_USERNAME,
+  });
+}
+
+/**
+ * The Labels view for one space. With a query it is a search narrowed to the
+ * ticked labels, ranked like the sidebar's; without one it lists every page
+ * carrying them, in navigation order, each with its summary.
+ */
+async function renderLabelsDashboard(
+  space: SpaceInfo,
+  selected: string[],
+  query: string,
+  notice?: ViewNotice
+): Promise<string> {
+  const filter = space.archived ? "all" : "live";
+  const [spaces, tree, titles, labelSet, nodes] = await Promise.all([
+    content.spaces(),
+    content.spaceTree(space.key, filter),
+    content.titleIndex(),
+    loadLabelSet(content, space.key),
+    spaceNodes(content, space.key, filter),
+  ]);
+
+  // A label named in the URL that no page carries any more still shows as a
+  // ticked chip, so the reader can see why nothing matched and untick it.
+  const known = knownLabels(labelSet, nodes);
+  for (const name of selected) {
+    if (known.some((k) => labelKey(k.name) === labelKey(name))) continue;
+    known.push({ name, color: "gray", defined: false, count: 0 });
+  }
+
+  let results: LabelResult[];
+  if (searchTokens(query).length) {
+    const hits = await searchPages(content, query, {
+      space: space.key,
+      filter,
+      labels: selected,
+      limit: LABELS_SEARCH_LIMIT,
+    });
+    results = hits.map((hit) => ({
+      slug: hit.slug,
+      title: hit.title,
+      labels: hit.labels,
+      text: hit.excerpt,
+    }));
+  } else {
+    const matches = filterLabelled(nodes, selected);
+    results = await mapWithConcurrency(matches, 32, async (node) => {
+      let summary: string | undefined;
+      try {
+        summary = (await content.load(node.slug))?.data.summary;
+      } catch {
+        /* unreadable frontmatter — list it without a summary */
+      }
+      return { slug: node.slug, title: node.title, labels: node.labels ?? [], text: summary };
+    });
+  }
+
+  return labelsDashboardLayout({
+    siteTitle: SITE_TITLE,
+    spaces,
+    spaceKey: space.key,
+    tree,
+    titles,
+    spaceTitle: space.title,
+    labelSet,
+    known,
+    selected,
+    query,
+    results,
+    notice,
     username: AUTH_USERNAME,
   });
 }
@@ -1594,6 +1700,14 @@ app.get("/_dashboard", async (req, reply) => {
   const space = await dashboardSpace(req, reply);
   if (!space) return reply;
   return reply.type("text/html").send(await renderDashboardsHub(space));
+});
+
+app.get("/_dashboard/labels", async (req, reply) => {
+  const space = await dashboardSpace(req, reply);
+  if (!space) return reply;
+  const selected = cleanLabelNames(queryStrings(req.query, "label")).slice(0, LABEL_FILTER_MAX);
+  const query = (queryString(req.query, "q") ?? "").trim();
+  return reply.type("text/html").send(await renderLabelsDashboard(space, selected, query));
 });
 
 app.get("/_dashboard/tasks", async (req, reply) => {
