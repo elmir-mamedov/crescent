@@ -257,8 +257,11 @@ test("issue #4: the sidebar Create menu offers Page and Folder", () => {
   const html = layout(pageView());
   assert.match(html, /<summary class="sidebar-link">Create<\/summary>/);
   assert.match(html, /action="\/_create">\s*<input[^>]*value="kb25"[^>]*>\s*<button type="submit">Page<\/button>/);
-  // The folder form now also carries a name text input before its button.
-  assert.match(html, /action="\/_create-folder">[\s\S]*?name="name"[\s\S]*?<button type="submit">Folder<\/button>/);
+  // Folder asks for its name in the folder dialog, not in a box inside the menu.
+  assert.match(
+    html,
+    /<button type="button" data-folder-new data-folder-parent="kb25" data-folder-parent-title="KB25">Folder…<\/button>/
+  );
   // The old single-purpose button is gone.
   assert.doesNotMatch(html, /Create page/);
 });
@@ -312,7 +315,10 @@ test("only leaf pages get a dot — folders and pages-with-children do not", () 
 
 test("issue #4: the sidebar ⋯ menu offers New folder", () => {
   const html = layout(pageView({ tree: [node({ slug: "kb25/guide", title: "Guide" })] }));
-  assert.match(html, /action="\/_create-folder">[\s\S]*?value="kb25\/guide"[\s\S]*?New folder<\/button>/);
+  assert.match(
+    html,
+    /<button type="button" data-folder-new data-folder-parent="kb25\/guide" data-folder-parent-title="Guide">New folder…<\/button>/
+  );
 });
 
 test("the ⋯ menu for a folder shows Rename, not Edit/Download", () => {
@@ -321,8 +327,11 @@ test("the ⋯ menu for a folder shows Rename, not Edit/Download", () => {
       tree: [node({ slug: "kb25/box", title: "Box", isSection: true, isFolder: true })],
     })
   );
-  // Folder menu offers a rename form targeting the folder slug…
-  assert.match(html, /action="\/_rename-folder">[\s\S]*?value="kb25\/box"/);
+  // Folder menu offers Rename, opening the folder dialog for that folder…
+  assert.match(
+    html,
+    /<button type="button" data-folder-rename data-folder-slug="kb25\/box" data-folder-title="Box">Rename…<\/button>/
+  );
   // …and omits the page-only Edit/Download actions for that node.
   assert.doesNotMatch(html, /href="\/_edit\/kb25\/box"/);
   assert.doesNotMatch(html, /href="\/_download\/kb25\/box"/);
@@ -355,9 +364,15 @@ test("folderLayout lists children and offers create/rename, but no Edit/Download
   // Contents listing with links to each child.
   assert.match(html, /href="\/kb25\/box\/sub">Sub<\/a>/);
   assert.match(html, /href="\/kb25\/box\/note">Note<\/a>/);
-  // Create-inside + rename controls.
-  assert.match(html, /action="\/_create-folder">/);
-  assert.match(html, /action="\/_rename-folder">/);
+  // Create-inside + rename controls, both opening the folder dialog.
+  assert.match(
+    html,
+    /<button type="button" class="button secondary" data-folder-new data-folder-parent="kb25\/box" data-folder-parent-title="Box">New folder<\/button>/
+  );
+  assert.match(
+    html,
+    /<button type="button" class="button secondary" data-folder-rename data-folder-slug="kb25\/box" data-folder-title="Box">Rename<\/button>/
+  );
   // A folder is not editable/downloadable and has no prose body.
   assert.doesNotMatch(html, /data-edit-link>/);
   assert.doesNotMatch(html, /_download/);
@@ -1657,4 +1672,58 @@ test("search filter: the picked labels are kept per space for the tab", () => {
 test("search filter: a chip that removes itself on click does not count as an outside click", () => {
   const html = layout(pageView());
   assert.match(html, /if \(event\.composedPath\(\)\.includes\(root\)\) return;/);
+});
+
+// --- folder dialog ----------------------------------------------------------
+
+test("folder dialog: no menu carries a bare name box any more", () => {
+  const html = layout(
+    pageView({
+      tree: [
+        node({ slug: "kb25/box", title: "Box", isSection: true, isFolder: true }),
+        node({ slug: "kb25/guide", title: "Guide" }),
+      ],
+    })
+  );
+  assert.doesNotMatch(html, /placeholder="Folder name"/);
+  // The one name field on the page is the dialog's.
+  assert.equal(html.match(/<input[^>]*name="name"/g)?.length, 1);
+});
+
+test("folder dialog: one per sidebar, a labelled name field and both hidden targets", () => {
+  const html = layout(pageView());
+  assert.equal(html.match(/<dialog class="folder-dialog"/g)?.length, 1);
+  assert.match(html, /<form class="label-dialog-form" method="post" action="\/_create-folder" data-folder-form novalidate>/);
+  assert.match(html, /<label class="folder-dialog-label" for="folder-dialog-name">Name<\/label>/);
+  assert.match(html, /<input id="folder-dialog-name" class="folder-dialog-input" type="text" name="name"/);
+  assert.match(html, /<input type="hidden" name="parentSlug" value="" data-folder-parent-field \/>/);
+  // Create is the starting mode, so the rename target is not sent.
+  assert.match(html, /<input type="hidden" name="slug" value="" data-folder-slug-field disabled \/>/);
+  assert.match(html, /<p id="folder-dialog-error" class="folder-dialog-error" role="alert" data-folder-error hidden><\/p>/);
+  assert.match(html, /<button type="submit" class="button primary" data-folder-submit>Create folder<\/button>/);
+});
+
+test("folder dialog: absent outside a space and in the archive browser", () => {
+  assert.doesNotMatch(layout(pageView({ spaceKey: "" })), /<dialog class="folder-dialog"/);
+  assert.doesNotMatch(layout(pageView({ isArchiveView: true })), /<dialog class="folder-dialog"/);
+});
+
+test("folder dialog: its script switches modes and mirrors the server's name rule", () => {
+  const html = layout(pageView());
+  assert.match(html, /form\.action = "\/_create-folder";/);
+  assert.match(html, /form\.action = "\/_rename-folder";/);
+  assert.match(html, /parentField\.disabled = true;\s*parentField\.value = "";\s*slugField\.disabled = false;/);
+  // The server builds the address from ASCII letters and digits only.
+  assert.match(html, /if \(!\/\[a-z0-9\]\/i\.test\(name\)\)/);
+  assert.match(html, /submit\.disabled = !name \|\| \(mode === "rename" && name === original\);/);
+});
+
+test("folder dialog: a folder title is escaped into the button that opens it", () => {
+  const html = layout(
+    pageView({
+      tree: [node({ slug: "kb25/box", title: '"><b>x', isSection: true, isFolder: true })],
+    })
+  );
+  assert.match(html, /data-folder-title="&quot;&gt;&lt;b&gt;x"/);
+  assert.match(html, /data-folder-parent-title="&quot;&gt;&lt;b&gt;x"/);
 });
