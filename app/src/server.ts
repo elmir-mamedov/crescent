@@ -195,7 +195,9 @@ function requestPath(req: FastifyRequest): string {
 }
 
 function safeRedirectPath(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
+  // Browsers read a backslash as a slash in a URL path, so "/\evil.com" leaves
+  // the site exactly like "//evil.com" does.
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "/";
   if (value === "/_login" || value.startsWith("/_login?")) return "/";
   return value;
 }
