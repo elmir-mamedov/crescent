@@ -47,11 +47,16 @@ import { DEFAULT_RELEASES_URL, findInstall, makeUpdater } from "./update.js";
 import { cleanLabelNames, labelKey } from "./frontmatter.js";
 import {
   applyPageLabels,
+  colorOf,
+  createLabel,
+  deleteLabel,
   filterLabelled,
   knownLabels,
   loadLabelSet,
   spaceNodes,
+  updateLabel,
   type LabelDef,
+  type LabelMutation,
 } from "./labels.js";
 import {
   CHAR_CAP,
@@ -1195,6 +1200,97 @@ app.post("/_labels/page", async (req, reply) => {
 
   return reply.redirect(back, 303);
 });
+
+/** A label name as it may appear in a commit subject: one line, whatever was hand-written. */
+function subjectSafe(name: string): string {
+  return name.replace(/\p{Cc}/gu, " ").trim();
+}
+
+/**
+ * The shared tail of the label-management posts: run the mutation, commit
+ * everything it touched in one go, and return to the management section. A
+ * refusal re-renders the Labels view with the reason, as the folder rename
+ * does for its page.
+ */
+async function labelManagementPost(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  run: (space: SpaceInfo) => Promise<{ mutation: LabelMutation; subject: string }>
+): Promise<FastifyReply> {
+  const space = await findSpace(formString(req.body, "space") ?? "");
+  if (!space) {
+    const spaces = await content.spaces();
+    return reply
+      .code(404)
+      .type("text/html")
+      .send(notFound(SITE_TITLE, formString(req.body, "space") ?? "", spaces, AUTH_USERNAME));
+  }
+
+  let outcome: { mutation: LabelMutation; subject: string };
+  try {
+    outcome = await run(space);
+  } catch (err) {
+    const notice = { tone: "error", text: errorMessage(err) } satisfies ViewNotice;
+    return reply
+      .code(400)
+      .type("text/html")
+      .send(await renderLabelsDashboard(space, [], "", notice));
+  }
+
+  try {
+    if (outcome.mutation.changedFsPaths.length) {
+      await git.commitFiles(outcome.mutation.changedFsPaths, `${outcome.subject} in ${space.key} via web`);
+    }
+  } catch (err) {
+    const notice = {
+      tone: "error",
+      text: `Saved, but Git commit failed: ${errorMessage(err)}`,
+    } satisfies ViewNotice;
+    return reply
+      .code(500)
+      .type("text/html")
+      .send(await renderLabelsDashboard(space, [], "", notice));
+  }
+
+  return reply.redirect(`${labelsHref(space.key)}#manage-labels`, 303);
+}
+
+app.post("/_labels/create", async (req, reply) =>
+  labelManagementPost(req, reply, async (space) => {
+    const mutation = await createLabel(
+      content,
+      space.key,
+      formString(req.body, "name") ?? "",
+      formString(req.body, "color") ?? "gray"
+    );
+    return { mutation, subject: `Create label ${subjectSafe(mutation.name)}` };
+  })
+);
+
+app.post("/_labels/update", async (req, reply) =>
+  labelManagementPost(req, reply, async (space) => {
+    const name = formString(req.body, "name") ?? "";
+    const before = colorOf(await loadLabelSet(content, space.key), name);
+    const color = formString(req.body, "newColor") ?? undefined;
+    const mutation = await updateLabel(content, space.key, name, {
+      name: formString(req.body, "newName") ?? undefined,
+      color,
+    });
+    const renamed = mutation.name !== name.trim();
+    const recoloured = color !== undefined && color !== before;
+    const subject = renamed
+      ? `${recoloured ? "Rename and recolor" : "Rename"} label ${subjectSafe(name)} to ${subjectSafe(mutation.name)}`
+      : `Recolor label ${subjectSafe(mutation.name)}`;
+    return { mutation, subject };
+  })
+);
+
+app.post("/_labels/delete", async (req, reply) =>
+  labelManagementPost(req, reply, async (space) => {
+    const mutation = await deleteLabel(content, space.key, formString(req.body, "name") ?? "");
+    return { mutation, subject: `Delete label ${subjectSafe(mutation.name)}` };
+  })
+);
 
 app.post("/_create-space", async (req, reply) => {
   const title = formString(req.body, "title") ?? "";

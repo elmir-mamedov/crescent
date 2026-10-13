@@ -1558,7 +1558,6 @@ test("label dialog: one dialog per sidebar, carrying the palette plus orphans", 
   assert.match(html, /<form class="label-dialog-form" method="post" action="\/_labels\/page">/);
   assert.match(html, /<input type="radio" name="newColor" value="gray" checked \/>/);
   assert.equal(html.match(/name="newColor"/g)?.length, 10);
-  assert.match(html, /<a class="label-dialog-manage" href="\/_dashboard\/labels\?space=kb25">All labels<\/a>/);
 });
 
 test("label dialog: a palette name cannot break out of its attribute", () => {
@@ -1586,4 +1585,39 @@ test("Help mentions labels and where to find them", () => {
   const html = layout(pageView());
   assert.match(html, /download, label, copy its link/);
   assert.match(html, /<strong>Dashboards<\/strong> button in the corner lists and searches pages by label/);
+});
+
+test("manage labels: a create form, then one row per label with rename, colour and delete", () => {
+  const html = labelsDashboardLayout(labelsView());
+  assert.match(html, /<section class="label-manage" id="manage-labels">/);
+  assert.match(html, /<form class="label-manage-form label-create" method="post" action="\/_labels\/create">/);
+  assert.match(html, /<input type="text" name="name" maxlength="40" required placeholder="New label"/);
+
+  const rows = html.match(/<li class="label-manage-row">[\s\S]*?<\/li>/g) ?? [];
+  assert.equal(rows.length, 3);
+  const draft = rows[0];
+  assert.match(draft, /action="\/_labels\/update"/);
+  assert.match(draft, /<input type="hidden" name="name" value="Draft" \/>/);
+  assert.match(draft, /<input type="text" name="newName" value="Draft"/);
+  // The current colour is the checked swatch.
+  assert.match(draft, /name="newColor" value="yellow" checked/);
+  assert.equal(draft.match(/ checked/g)?.length, 1);
+  assert.match(draft, /<form method="post" action="\/_labels\/delete">/);
+  assert.match(draft, /from every page carrying it — 2 pages here, plus any archived ones\./);
+});
+
+test("manage labels: names are escaped in every form field", () => {
+  const html = labelsDashboardLayout(
+    labelsView({ known: [{ name: '"><b>x', color: "gray", defined: false, count: 1 }] })
+  );
+  assert.doesNotMatch(html, /"><b>x/);
+  assert.match(html, /value="&quot;&gt;&lt;b&gt;x"/);
+});
+
+test("manage labels: the dialog links straight to the management section", () => {
+  const html = layout(pageView());
+  assert.match(
+    html,
+    /<a class="label-dialog-manage" href="\/_dashboard\/labels\?space=kb25#manage-labels">Manage labels<\/a>/
+  );
 });

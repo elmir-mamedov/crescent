@@ -470,6 +470,21 @@ ${isArchiveView ? "" : labelDialog(spaceKey, labelSet, tree)}`;
 }
 
 /**
+ * The palette as a row of colour radios, one checked. Radio groups are scoped
+ * to their form, so several forms on one page can share the field name.
+ */
+function labelSwatches(name: string, checked: LabelColor, label = "Colour"): string {
+  const radios = LABEL_COLORS.map(
+    (color) => `<label class="label-swatch" title="${color}">
+          <input type="radio" name="${name}" value="${color}"${color === checked ? " checked" : ""} />
+          <span class="label-dot" data-label-color="${color}"></span>
+          <span class="sr-only">${color}</span>
+        </label>`
+  ).join("");
+  return `<div class="label-swatches" role="radiogroup" aria-label="${escapeHtml(label)}">${radios}</div>`;
+}
+
+/**
  * The one label dialog a sidebar shares across all its rows. Each row's
  * "Labels…" item carries its page and current labels; LABELS_SCRIPT fills the
  * checkbox list from those and from the palette here, then the dialog posts a
@@ -482,13 +497,7 @@ function labelDialog(spaceKey: string, labelSet: readonly LabelDef[], tree: Page
     color,
     defined,
   }));
-  const swatches = LABEL_COLORS.map(
-    (color) => `<label class="label-swatch" title="${color}">
-          <input type="radio" name="newColor" value="${color}"${color === "gray" ? " checked" : ""} />
-          <span class="label-dot" data-label-color="${color}"></span>
-          <span class="sr-only">${color}</span>
-        </label>`
-  ).join("");
+  const swatches = labelSwatches("newColor", "gray");
   return `<dialog class="label-dialog" data-label-dialog aria-labelledby="label-dialog-title" data-label-palette="${escapeHtml(JSON.stringify(offered))}">
   <form class="label-dialog-form" method="post" action="/_labels/page">
     <div class="help-head">
@@ -506,11 +515,11 @@ function labelDialog(spaceKey: string, labelSet: readonly LabelDef[], tree: Page
       <fieldset class="label-dialog-new">
         <legend>New label</legend>
         <input type="text" name="newName" maxlength="40" placeholder="Name, e.g. Needs review" aria-label="New label name" autocomplete="off" />
-        <div class="label-swatches" role="radiogroup" aria-label="Colour">${swatches}</div>
+        ${swatches}
       </fieldset>
     </div>
     <div class="label-dialog-actions">
-      <a class="label-dialog-manage" href="${escapeHtml(labelsHref(spaceKey))}">All labels</a>
+      <a class="label-dialog-manage" href="${escapeHtml(labelsHref(spaceKey))}#manage-labels">Manage labels</a>
       <button type="button" class="button secondary" data-label-close>Cancel</button>
       <button type="submit" class="button primary">Save</button>
     </div>
@@ -1152,7 +1161,7 @@ export function labelsDashboardLayout(v: LabelsDashboardView): string {
       ${v.selected.length || v.query ? `<a class="label-clear" href="${escapeHtml(labelsHref(v.spaceKey))}">Clear</a>` : ""}
     </div>
   </form>`
-    : `<p class="dash-empty">No labels in <strong>${escapeHtml(v.spaceTitle)}</strong> yet. Open a page's ⋯ menu in the sidebar and choose “Labels…” to add the first one.</p>`;
+    : `<p class="dash-empty">No labels in <strong>${escapeHtml(v.spaceTitle)}</strong> yet. Create one below, or open a page's ⋯ menu in the sidebar and choose “Labels…”.</p>`;
 
   const items = v.results
     .map((r) => {
@@ -1186,6 +1195,45 @@ export function labelsDashboardLayout(v: LabelsDashboardView): string {
     ? `<div class="notice ${v.notice.tone}">${escapeHtml(v.notice.text)}</div>`
     : "";
 
+  const spaceField = `<input type="hidden" name="space" value="${escapeHtml(v.spaceKey)}" />`;
+  const manageRows = v.known
+    .map((label) => {
+      const name = escapeHtml(label.name);
+      const pages = `${label.count} ${label.count === 1 ? "page" : "pages"}`;
+      return `<li class="label-manage-row">
+        <form class="label-manage-form" method="post" action="/_labels/update">
+          ${spaceField}
+          <input type="hidden" name="name" value="${name}" />
+          <input type="text" name="newName" value="${name}" maxlength="40" required aria-label="Name for ${name}" />
+          ${labelSwatches("newColor", label.color, `Colour for ${label.name}`)}
+          <button class="button secondary" type="submit">Save</button>
+        </form>
+        <details class="label-delete">
+          <summary class="button danger">Delete</summary>
+          <form method="post" action="/_labels/delete">
+            ${spaceField}
+            <input type="hidden" name="name" value="${name}" />
+            <p>Removes “${name}” from the palette and from every page carrying it — ${pages} here, plus any archived ones.</p>
+            <button class="button danger" type="submit">Delete label</button>
+          </form>
+        </details>
+      </li>`;
+    })
+    .join("\n      ");
+  const manage = `<section class="label-manage" id="manage-labels">
+    <h2>Manage labels</h2>
+    <p class="dash-lede">Renaming or deleting a label rewrites every page that carries it, in one commit.</p>
+    <form class="label-manage-form label-create" method="post" action="/_labels/create">
+      ${spaceField}
+      <input type="text" name="name" maxlength="40" required placeholder="New label" aria-label="New label name" />
+      ${labelSwatches("color", "gray", "Colour for the new label")}
+      <button class="button primary" type="submit">Create</button>
+    </form>
+    ${v.known.length ? `<ul class="label-manage-list">
+      ${manageRows}
+    </ul>` : ""}
+  </section>`;
+
   return layout({
     siteTitle: v.siteTitle,
     spaces: v.spaces,
@@ -1201,6 +1249,7 @@ export function labelsDashboardLayout(v: LabelsDashboardView): string {
   <p class="dash-lede">Pages in this space by label. Tick labels to narrow the list — a page must carry all of them.</p>
   ${filterForm}
   ${results}
+  ${manage}
 </div>
 <script>${LABEL_FILTER_SCRIPT}</script>`,
     canEdit: false,
@@ -4881,6 +4930,31 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
 .label-result-title{font-size:15px; font-weight:600; overflow-wrap:anywhere}
 .label-result .task-crumb{margin:0}
 .label-result-text{margin:0; color:var(--fg-secondary); font-size:13px; line-height:1.45; overflow-wrap:anywhere}
+.label-manage{margin-top:40px; padding-top:20px; border-top:1px solid var(--line)}
+.label-manage h2{margin:0 0 6px; font-size:18px; border:none; padding:0}
+.label-manage .dash-lede{margin-bottom:14px}
+.label-manage-list{list-style:none; margin:16px 0 0; padding:0; display:flex; flex-direction:column; gap:8px}
+.label-manage-row{
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px;
+  padding:10px 12px; border:1px solid var(--line); border-radius:6px; background:var(--surface);
+}
+.label-manage-form{display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:0; min-width:0}
+.label-manage-form input[type="text"]{
+  flex:0 1 200px; min-width:0; border:1px solid var(--line); border-radius:6px; padding:6px 10px;
+  color:var(--fg); background:var(--surface);
+  font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+.label-manage-form input[type="text"]:focus{outline:2px solid var(--focus-ring-soft); border-color:var(--focus-ring)}
+.label-manage-row > .label-manage-form{flex:1 1 auto}
+.label-manage-form .label-swatches{margin-top:0}
+.label-delete{margin-left:auto}
+/* Open, the confirmation takes a line of its own instead of squeezing the form. */
+.label-delete[open]{flex-basis:100%; margin-left:0}
+.label-delete summary{list-style:none}
+.label-delete summary::-webkit-details-marker{display:none}
+.label-delete[open] summary{margin-bottom:8px}
+.label-delete form{margin:0; max-width:360px}
+.label-delete p{margin:0 0 8px; color:var(--fg-secondary); font-size:13px; line-height:1.45}
 @media(max-width:780px){
   body{flex-direction:column}
   .sidebar{width:auto; flex:none; height:auto; position:static; border-right:none;
