@@ -16,6 +16,8 @@ import {
   type PageNode,
   type TreeFilter,
 } from "./content.js";
+import { labelKey } from "./frontmatter.js";
+import { hasAllLabels } from "./labels.js";
 import { extractSections, type Section } from "./markdown.js";
 import { stripNotes } from "./notes.js";
 
@@ -28,6 +30,8 @@ export interface SearchHit {
   fsPath: string;
   archived: boolean;
   tags: string[];
+  /** The page's label names, as the tree reports them. */
+  labels: string[];
   summary?: string;
   /** Plain-text snippet, windowed around the query where possible. */
   excerpt: string;
@@ -47,6 +51,8 @@ export interface SearchOptions {
   limit?: number;
   /** Restrict to one space (its top-level folder key, e.g. "kb25"). */
   space?: string;
+  /** Only pages carrying every one of these labels (compared as `labelKey`). */
+  labels?: string[];
 }
 
 /** Characters either side of the matched term in a body excerpt. */
@@ -213,7 +219,12 @@ export async function searchPages(
   const { filter = "live", limit = 10, space } = opts;
   if (!searchTokens(query).length) return [];
 
-  const nodes = await candidates(content, filter, space);
+  // The label filter reads the tree nodes, so it narrows the set before a
+  // single page is loaded rather than after scoring them all.
+  const labelKeys = (opts.labels ?? []).map(labelKey).filter(Boolean);
+  const all = await candidates(content, filter, space);
+  const nodes = labelKeys.length ? all.filter((node) => hasAllLabels(node, labelKeys)) : all;
+  const labelsBySlug = new Map(nodes.map((node) => [node.slug, node.labels ?? []]));
 
   // Load pages concurrently instead of serially. The tree walk above has
   // already warmed Content's parse cache, so these resolve to cheap cache hits;
@@ -249,6 +260,7 @@ export async function searchPages(
         fsPath: page.fsPath,
         archived: page.data.archived === true,
         tags: page.data.tags ?? [],
+        labels: labelsBySlug.get(page.slug) ?? [],
         summary: page.data.summary,
         excerpt: excerptFor(query, searchable.body, page.data.summary),
         score,

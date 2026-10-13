@@ -319,3 +319,31 @@ test("a match above the first heading, or on the title alone, reports no section
     await kb.cleanup();
   }
 });
+
+test("searchPages with labels keeps only pages carrying every one of them", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = await seed(kb.dir);
+    const both = await content.createPage("docs", "Deploy Both", "deploy steps");
+    const one = await content.createPage("docs", "Deploy One", "deploy steps");
+    await content.createPage("docs", "Deploy None", "deploy steps");
+    await content.setLabels(both.slug, ["Draft", "Ops"]);
+    await content.setLabels(one.slug, ["Draft"]);
+
+    const draft = await searchPages(content, "deploy", { space: "docs", labels: ["draft"] });
+    assert.deepEqual(draft.map((h) => h.title).sort(), ["Deploy Both", "Deploy One"]);
+    assert.deepEqual(
+      draft.find((h) => h.slug === both.slug)?.labels,
+      ["Draft", "Ops"]
+    );
+
+    const anded = await searchPages(content, "deploy", { space: "docs", labels: ["Draft", "OPS"] });
+    assert.deepEqual(anded.map((h) => h.title), ["Deploy Both"]);
+
+    const unfiltered = await searchPages(content, "deploy", { space: "docs", labels: [] });
+    assert.equal(unfiltered.length, 3);
+    assert.deepEqual(unfiltered.find((h) => h.title === "Deploy None")?.labels, []);
+  } finally {
+    await kb.cleanup();
+  }
+});
