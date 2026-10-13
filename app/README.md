@@ -71,7 +71,7 @@ writes those headers itself.
   fourth kind — written over MCP, drawn pink, and resolve-only in the browser.
 - Searches the current space from the sidebar box (Cmd/Ctrl+K), optionally
   narrowed to pages carrying chosen labels.
-- Labels pages: the ⋯ menu's "Labels…" sets coloured markers such as "Draft" or
+- Labels pages: the ⋯ menu's "Labels" sets coloured markers such as "Draft" or
   "Needs review". A page lists their names in frontmatter (`labels: [Draft]`);
   each space's palette, `<space>/_labels.json`, owns their colours (ten named
   swatches). Labels show as chips under the page title and dots in the sidebar.

@@ -150,10 +150,9 @@ function treeLabelDots(node: PageNode, labelSet: readonly LabelDef[]): string {
 /**
  * Per-node ⋯ menu. Every node can hold children (New page / New folder). A
  * folder is a pure container, so it gets a Rename control and NO Edit/Download;
- * ordinary pages keep Edit/Download and a "Labels…" item that opens the shared
+ * ordinary pages keep Edit/Download and a "Labels" item that opens the shared
  * label dialog. Naming a new folder and renaming one happen in the shared folder
- * dialog; the items that open a dialog end in "…", the ones that act at once
- * do not.
+ * dialog.
  */
 function treeMenu(node: PageNode): string {
   const slug = node.slug;
@@ -161,14 +160,14 @@ function treeMenu(node: PageNode): string {
         <input type="hidden" name="parentSlug" value="${escapeHtml(slug)}" />
         <button type="submit">New page</button>
       </form>`;
-  const newFolder = newFolderButton(slug, node.title, "New folder…");
+  const newFolder = newFolderButton(slug, node.title, "New folder");
   // Folders: rename the display name (in the folder dialog). Pages: edit body /
   // download.
   const middle = node.isFolder
-    ? renameFolderButton(slug, node.title, "Rename…")
+    ? renameFolderButton(slug, node.title, "Rename")
     : `<a href="/_edit${slugPath(slug)}">Edit</a>
       <a href="/_download${slugPath(slug)}" download>Download</a>
-      <button type="button" data-label-open data-label-slug="${escapeHtml(slug)}" data-label-title="${escapeHtml(node.title)}" data-label-current="${escapeHtml(JSON.stringify(node.labels ?? []))}">Labels…</button>`;
+      <button type="button" data-label-open data-label-slug="${escapeHtml(slug)}" data-label-title="${escapeHtml(node.title)}" data-label-current="${escapeHtml(JSON.stringify(node.labels ?? []))}">Labels</button>`;
   return `<details class="tree-menu">
     <summary aria-label="Page actions">⋯</summary>
     <div class="tree-menu-pop">
@@ -465,7 +464,7 @@ function sidebarHtml(
         <input type="hidden" name="parentSlug" value="${escapeHtml(spaceKey)}" />
         <button type="submit">Page</button>
       </form>
-      ${newFolderButton(spaceKey, current?.title ?? spaceKey, "Folder…")}
+      ${newFolderButton(spaceKey, current?.title ?? spaceKey, "Folder")}
     </div>
   </details>
   <a class="sidebar-link${archiveCls}" href="/_archive">Archive</a>
@@ -532,7 +531,7 @@ function labelSwatches(name: string, checked: LabelColor, label = "Colour"): str
 
 /**
  * The one label dialog a sidebar shares across all its rows. Each row's
- * "Labels…" item carries its page and current labels; LABELS_SCRIPT fills the
+ * "Labels" item carries its page and current labels; LABELS_SCRIPT fills the
  * checkbox list from those and from the palette here, then the dialog posts a
  * plain form. Shipping the palette once beats a checkbox list in every row's
  * menu, which would repeat it for every page in the tree.
@@ -1206,7 +1205,7 @@ export function labelsDashboardLayout(v: LabelsDashboardView): string {
       ${v.selected.length || v.query ? `<a class="label-clear" href="${escapeHtml(labelsHref(v.spaceKey))}">Clear</a>` : ""}
     </div>
   </form>`
-    : `<p class="dash-empty">No labels in <strong>${escapeHtml(v.spaceTitle)}</strong> yet. Create one below, or open a page's ⋯ menu in the sidebar and choose “Labels…”.</p>`;
+    : `<p class="dash-empty">No labels in <strong>${escapeHtml(v.spaceTitle)}</strong> yet. Create one below, or open a page's ⋯ menu in the sidebar and choose “Labels”.</p>`;
 
   const items = v.results
     .map((r) => {
@@ -4150,7 +4149,7 @@ const FOLDER_DIALOG_SCRIPT = `
 `;
 
 /**
- * The label dialog. A row's "Labels…" item opens it for that page: the list is
+ * The label dialog. A row's "Labels" item opens it for that page: the list is
  * rebuilt from the palette plus whatever the page already carries (an orphan
  * stays listed so it can be unticked), built with createElement and
  * textContent only — label names were typed by people and agents. Saving is

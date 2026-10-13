@@ -260,7 +260,7 @@ test("issue #4: the sidebar Create menu offers Page and Folder", () => {
   // Folder asks for its name in the folder dialog, not in a box inside the menu.
   assert.match(
     html,
-    /<button type="button" data-folder-new data-folder-parent="kb25" data-folder-parent-title="KB25">Folder…<\/button>/
+    /<button type="button" data-folder-new data-folder-parent="kb25" data-folder-parent-title="KB25">Folder<\/button>/
   );
   // The old single-purpose button is gone.
   assert.doesNotMatch(html, /Create page/);
@@ -317,7 +317,7 @@ test("issue #4: the sidebar ⋯ menu offers New folder", () => {
   const html = layout(pageView({ tree: [node({ slug: "kb25/guide", title: "Guide" })] }));
   assert.match(
     html,
-    /<button type="button" data-folder-new data-folder-parent="kb25\/guide" data-folder-parent-title="Guide">New folder…<\/button>/
+    /<button type="button" data-folder-new data-folder-parent="kb25\/guide" data-folder-parent-title="Guide">New folder<\/button>/
   );
 });
 
@@ -330,7 +330,7 @@ test("the ⋯ menu for a folder shows Rename, not Edit/Download", () => {
   // Folder menu offers Rename, opening the folder dialog for that folder…
   assert.match(
     html,
-    /<button type="button" data-folder-rename data-folder-slug="kb25\/box" data-folder-title="Box">Rename…<\/button>/
+    /<button type="button" data-folder-rename data-folder-slug="kb25\/box" data-folder-title="Box">Rename<\/button>/
   );
   // …and omits the page-only Edit/Download actions for that node.
   assert.doesNotMatch(html, /href="\/_edit\/kb25\/box"/);
@@ -1547,7 +1547,7 @@ test("label dialog: a page's ⋯ menu opens it with the page and its labels", ()
   );
   assert.match(
     html,
-    /<button type="button" data-label-open data-label-slug="kb25\/deploy" data-label-title="Deploy" data-label-current="\[&quot;Draft&quot;\]">Labels…<\/button>/
+    /<button type="button" data-label-open data-label-slug="kb25\/deploy" data-label-title="Deploy" data-label-current="\[&quot;Draft&quot;\]">Labels<\/button>/
   );
 });
 
