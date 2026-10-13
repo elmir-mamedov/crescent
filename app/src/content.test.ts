@@ -952,3 +952,118 @@ test("a wiki-link into a section follows its page across a move, fragment intact
     await kb.cleanup();
   }
 });
+
+test("labels: setLabels writes the list, the tree reports it, and an empty list removes the key", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Docs");
+    const page = await content.createPage("docs", "Deploy", "# Deploy\n\nSteps.\n");
+
+    const set = await content.setLabels(page.slug, ["Draft", " Needs review "]);
+    assert.deepEqual(set?.changedFsPaths, [page.fsPath]);
+    const raw = await fs.readFile(page.fsPath, "utf8");
+    assert.match(raw, /labels:\n {2}- Draft\n {2}- Needs review\n/);
+    assert.match(raw, new RegExp(`id: ${page.id}`));
+    assert.match(raw, /\n# Deploy\n\nSteps\.\n$/);
+
+    const tree = await content.spaceTree("docs");
+    assert.deepEqual(tree.find((n) => n.slug === page.slug)?.labels, ["Draft", "Needs review"]);
+
+    const cleared = await content.setLabels(page.slug, []);
+    assert.deepEqual(cleared?.changedFsPaths, [page.fsPath]);
+    assert.doesNotMatch(await fs.readFile(page.fsPath, "utf8"), /labels/);
+    const after = await content.spaceTree("docs");
+    assert.equal(after.find((n) => n.slug === page.slug)?.labels, undefined);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("labels: an unchanged set is a no-op that leaves the file byte-identical", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Docs");
+    const page = await content.createPage("docs", "Deploy", "# Deploy\n");
+    // Hand-written flow style: a reserialise would restyle it as a block list.
+    const original = `---\ntitle: Deploy\nid: ${page.id}\ntags: [ops, deploy]\nlabels: [Draft, Review]\n---\n# Deploy\n`;
+    await fs.writeFile(page.fsPath, original, "utf8");
+
+    const result = await content.setLabels(page.slug, ["Review", "Draft"]);
+    assert.deepEqual(result?.changedFsPaths, []);
+    assert.equal(await fs.readFile(page.fsPath, "utf8"), original);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("labels: an existing odd name is kept, but a new one must follow the rules", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Docs");
+    const page = await content.createPage("docs", "Deploy", "# Deploy\n");
+    await fs.writeFile(page.fsPath, `---\ntitle: Deploy\nlabels: ["a, b"]\n---\n`, "utf8");
+
+    const kept = await content.setLabels(page.slug, ["a, b", "Draft"]);
+    assert.deepEqual(kept?.changedFsPaths, [page.fsPath]);
+    await assert.rejects(() => content.setLabels(page.slug, ["c, d"]), /comma/);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("labels: folders and unknown slugs cannot be labelled", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Docs");
+    const folder = await content.createFolder("docs", "Runbooks");
+    await assert.rejects(() => content.setLabels(folder.slug, ["Draft"]), /Folders cannot/);
+    assert.equal(await content.setLabels("docs/missing", ["Draft"]), null);
+    await assert.rejects(() => content.setLabels("", ["Draft"]), /root/);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("labels: they survive a move, an archive round trip and an editor save", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Docs");
+    await content.createFolder("docs", "Box");
+    const page = await content.createPage("docs", "Deploy", "# Deploy\n");
+    await content.setLabels(page.slug, ["Draft"]);
+
+    const moved = await content.movePage(page.slug, "docs/box");
+    assert.equal(moved?.newSlug, "docs/box/deploy");
+    assert.deepEqual((await content.load("docs/box/deploy"))?.data.labels, ["Draft"]);
+
+    await content.updateArchive("docs/box/deploy", true);
+    await content.updateArchive("docs/box/deploy", false);
+    assert.deepEqual((await content.load("docs/box/deploy"))?.data.labels, ["Draft"]);
+
+    const raw = (await content.loadRaw("docs/box/deploy"))!.raw;
+    await content.updateRaw("docs/box/deploy", raw.replace("# Deploy", "# Deploy v2"));
+    assert.deepEqual((await content.load("docs/box/deploy"))?.data.labels, ["Draft"]);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("spaceDir: names a top-level folder and refuses anything else", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    assert.equal(content.spaceDir("docs"), path.join(kb.dir, "docs"));
+    assert.equal(content.spaceDir("/docs/"), path.join(kb.dir, "docs"));
+    assert.equal(content.spaceDir(""), null);
+    assert.equal(content.spaceDir("docs/sub"), null);
+    assert.equal(content.spaceDir(".."), null);
+    assert.equal(content.spaceDir("_assets"), null);
+  } finally {
+    await kb.cleanup();
+  }
+});

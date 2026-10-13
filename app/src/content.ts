@@ -2,7 +2,12 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import matter from "gray-matter";
-import { parsePage, type Frontmatter } from "./frontmatter.js";
+import {
+  cleanLabelNames,
+  normalizeLabelName,
+  parsePage,
+  type Frontmatter,
+} from "./frontmatter.js";
 import { resolveWikiTarget, splitFragment } from "./markdown.js";
 
 export type TreeFilter = "live" | "archived" | "all";
@@ -37,6 +42,11 @@ export interface PageNode {
    * stamping, or one that has left the group it was arranged into.
    */
   order?: number;
+  /**
+   * Label names from frontmatter, tidied by `cleanLabelNames`. Absent on
+   * folders, which cannot be labelled, and on pages that carry none.
+   */
+  labels?: string[];
   children: PageNode[];
 }
 
@@ -244,6 +254,7 @@ export class Content {
         let archivedAt: string | undefined;
         let order: number | undefined;
         let isFolder = false;
+        let labels: string[] | undefined;
         try {
           const parsed = await this.readParsed(indexPath);
           if (parsed) {
@@ -254,6 +265,7 @@ export class Content {
             backing = indexPath;
             order = parsed.data.order;
             isFolder = isFolderPage(parsed.data);
+            labels = isFolder ? undefined : nodeLabels(parsed.data);
           }
         } catch {
           /* no/invalid index.md — still a navigable container */
@@ -270,6 +282,7 @@ export class Content {
             archived,
             archivedAt,
             order,
+            ...(labels ? { labels } : {}),
             children,
           });
         }
@@ -282,6 +295,7 @@ export class Content {
         let archived = false;
         let archivedAt: string | undefined;
         let order: number | undefined;
+        let labels: string[] | undefined;
         try {
           const parsed = await this.readParsed(fsPath);
           if (parsed) {
@@ -290,12 +304,25 @@ export class Content {
             archived = parsed.data.archived === true;
             archivedAt = parsed.data.archivedAt;
             order = parsed.data.order;
+            labels = nodeLabels(parsed.data);
           }
         } catch {
           /* fall back to filename */
         }
         if (this.includeNode(filter, archived, 0)) {
-          nodes.push({ slug, id, title, fsPath, isSection: false, isFolder: false, archived, archivedAt, order, children: [] });
+          nodes.push({
+            slug,
+            id,
+            title,
+            fsPath,
+            isSection: false,
+            isFolder: false,
+            archived,
+            archivedAt,
+            order,
+            ...(labels ? { labels } : {}),
+            children: [],
+          });
         }
       }
     }
@@ -633,6 +660,69 @@ export class Content {
 
     await fs.writeFile(fsPath, nextRaw, "utf8");
     return { slug: clean, fsPath, changedFsPaths: [fsPath] };
+  }
+
+  /**
+   * Replace a page's labels (its frontmatter `labels`). An empty list removes
+   * the key rather than leaving `labels: []` behind.
+   *
+   * Names the page already carries are kept as written, even if a hand edit put
+   * something odd there; only names being added are held to the label rules, so
+   * removing one label never fails on a neighbour. Returns an empty
+   * `changedFsPaths` when the set is unchanged — checked before re-serialising,
+   * because the YAML writer would otherwise restyle untouched keys and turn a
+   * no-op into a commit. Null when the slug does not resolve.
+   */
+  async setLabels(
+    slug: string,
+    names: readonly string[]
+  ): Promise<{ slug: string; fsPath: string; changedFsPaths: string[] } | null> {
+    const clean = cleanSlug(slug);
+    if (!clean) throw new Error("The KB root cannot carry labels.");
+    const fsPath = await this.resolve(clean);
+    if (!fsPath) return null;
+
+    const raw = await fs.readFile(fsPath, "utf8");
+    const { data } = parsePage(raw, fsPath);
+    if (isFolderPage(data)) {
+      throw new Error("Folders cannot carry labels — label the pages inside instead.");
+    }
+
+    const onDisk = data.labels ?? [];
+    const next = cleanLabelNames(names).map((name) =>
+      onDisk.includes(name) ? name : normalizeLabelName(name)
+    );
+    if (onDisk.length === next.length && next.every((name) => onDisk.includes(name))) {
+      return { slug: clean, fsPath, changedFsPaths: [] };
+    }
+
+    // gray-matter hands back the object it caches for this exact text, so build
+    // a fresh one rather than editing it in place.
+    const parsed = matter(raw);
+    const { labels: _previous, ...rest } = parsed.data as Record<string, unknown>;
+    const nextData = next.length ? { ...parsed.data, labels: next } : rest;
+    const nextRaw = matter.stringify(parsed.content, nextData);
+    parsePage(nextRaw, fsPath);
+
+    await fs.writeFile(fsPath, nextRaw, "utf8");
+    // Two writes inside one mtime tick would otherwise serve the old parse.
+    this.parseCache.delete(fsPath);
+    return { slug: clean, fsPath, changedFsPaths: [fsPath] };
+  }
+
+  /**
+   * Absolute path of a space's folder, or null when the key cannot name one.
+   * Purely lexical — it does not check the folder exists — so per-space files
+   * that live beside the pages (the label palette) can be located without a
+   * round trip through `resolve`.
+   */
+  spaceDir(key: string): string | null {
+    const clean = cleanSlug(key);
+    if (!clean || clean.includes("/") || clean.startsWith(".") || clean.startsWith("_")) {
+      return null;
+    }
+    const dir = path.join(this.root, clean);
+    return path.dirname(dir) === this.root ? dir : null;
   }
 
   /** Create a new space: a top-level folder with an index.md home page. */
@@ -1544,6 +1634,12 @@ export function flatten(nodes: PageNode[]): PageNode[] {
  */
 export function isFolderPage(data: Frontmatter): boolean {
   return data.type === "folder";
+}
+
+/** A page's tidied label list for its tree node, or undefined when it has none. */
+function nodeLabels(data: Frontmatter): string[] | undefined {
+  const labels = cleanLabelNames(data.labels ?? []);
+  return labels.length ? labels : undefined;
 }
 
 /**
