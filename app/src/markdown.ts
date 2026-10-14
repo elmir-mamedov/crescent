@@ -427,43 +427,109 @@ function mathInline(state: StateInline, silent: boolean): boolean {
 }
 
 /**
- * A `$$` display formula standing as its own block. The inline rule would take
- * it too, but only while its lines read as a paragraph — a line inside it that
- * starts `- ` or `1. ` would break it into a list first. A blank line ends the
- * search for the closing `$$` (TeX refuses one in math anyway), so a formula
- * left unclosed costs a paragraph of raw text rather than the rest of the page.
+ * LaTeX's own delimiters, `\(…\)` inline and `\[…\]` on display. They are what
+ * most AI tools write, so a page an agent drafted arrives with them (feedback
+ * issue #8). In Markdown both openers are escapes, so unclaimed they come out as
+ * a bare `(` and `[` and the formula between them is damaged like any other TeX.
+ *
+ * The closer has to be in the same paragraph, or the opener stays an escape. A
+ * `\[…\]` must also read as TeX (see `readsAsTex`): escaping a bracket is how
+ * Markdown keeps `\[1\]` or `\[sic\]` from starting a link, and converters such
+ * as Pandoc write every bracket that way. A parenthesis rarely needs escaping,
+ * so `\(n\)` is taken as it stands.
+ */
+function mathBracketInline(state: StateInline, silent: boolean): boolean {
+  const src = state.src;
+  const start = state.pos;
+  if (src.charCodeAt(start) !== 0x5c /* \ */) return false;
+  const opener = src.charCodeAt(start + 1);
+  const display = opener === 0x5b; /* [ */
+  if (!display && opener !== 0x28 /* ( */) return false;
+  const closer = display ? 0x5d /* ] */ : 0x29; /* ) */
+
+  let end = -1;
+  for (let pos = start + 2; pos < state.posMax - 1; pos += 1) {
+    if (src.charCodeAt(pos) !== 0x5c) continue;
+    if (src.charCodeAt(pos + 1) === closer) {
+      end = pos;
+      break;
+    }
+    pos += 1; // `\\`, `\{` and the like are TeX's own, never the closer
+  }
+  if (end < 0) return false;
+  const tex = src.slice(start + 2, end).trim();
+  if (!tex || (display && !readsAsTex(tex))) return false;
+
+  if (!silent) {
+    const token = state.push("math_inline", "math", 0);
+    token.content = tex;
+    token.markup = display ? "\\[" : "\\(";
+  }
+  state.pos = end + 2;
+  return true;
+}
+
+/**
+ * Whether the text between `\[` and `\]` is a formula rather than escaped
+ * brackets around prose: a command such as `\frac`, or a sub- or superscript,
+ * brace, or relation that prose between brackets would not have. A display
+ * formula with none of them — a lone `\[x\]` — stays text.
+ */
+function readsAsTex(tex: string): boolean {
+  return /\\[A-Za-z]|[\^_{}=<>+]/.test(tex);
+}
+
+/** Whether a math token's delimiters ask for display rather than inline. */
+function isDisplayMath(markup: string): boolean {
+  return markup === "$$" || markup === "\\[";
+}
+
+/**
+ * A `$$` or `\[` display formula standing as its own block. The inline rules
+ * would take it too, but only while its lines read as a paragraph — a line
+ * inside it that starts `- ` or `1. ` would break it into a list first. A blank
+ * line ends the search for the closer (TeX refuses one in math anyway), so a
+ * formula left unclosed costs a paragraph of raw text rather than the rest of
+ * the page.
  */
 function mathBlock(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
   if (state.sCount[startLine] - state.blkIndent >= 4) return false;
   const first = blockLine(state, startLine);
-  if (!first.startsWith("$$")) return false;
+  // Both pairs are two characters, which the slicing below relies on.
+  const delimiters = first.startsWith("$$")
+    ? ["$$", "$$"]
+    : first.startsWith("\\[")
+      ? ["\\[", "\\]"]
+      : undefined;
+  if (!delimiters) return false;
+  const [opener, closer] = delimiters;
 
   let tex: string;
   let last = startLine;
-  const close = first.indexOf("$$", 2);
+  const close = first.indexOf(closer, 2);
   if (close >= 0) {
     // One line, `$$ … $$`. Anything after the closer makes it a paragraph that
-    // opens with a formula, which the inline rule handles.
+    // opens with a formula, which the inline rules handle.
     if (first.slice(close + 2).trim()) return false;
     tex = first.slice(2, close);
   } else {
     for (last = startLine + 1; last < endLine; last += 1) {
       const line = blockLine(state, last);
       if (!line.trim() || state.sCount[last] < state.blkIndent) return false;
-      if (line.trimEnd().endsWith("$$")) break;
+      if (line.trimEnd().endsWith(closer)) break;
     }
     if (last >= endLine) return false;
     const between =
       last > startLine + 1 ? [state.getLines(startLine + 1, last, state.blkIndent, false)] : [];
     tex = [first.slice(2), ...between, blockLine(state, last).trimEnd().slice(0, -2)].join("\n");
   }
-  if (!tex.trim()) return false;
+  if (!tex.trim() || (opener === "\\[" && !readsAsTex(tex))) return false;
   if (silent) return true;
 
   const token = state.push("math_block", "math", 0);
   token.block = true;
   token.content = tex.trim();
-  token.markup = "$$";
+  token.markup = opener;
   token.map = [startLine, last + 1];
   state.line = last + 1;
   return true;
@@ -1087,15 +1153,17 @@ export function createRenderer(
   // the only way to size an image given `html: false` above.
   md.inline.ruler.at("image", imageWithSize);
 
-  // TeX math (see mathInline). A formula is taken whole, so the escape and
-  // emphasis rules never see inside it. The block form carries the source
-  // anchor like any other top-level block, so a note can sit on an equation.
+  // TeX math (see mathInline and mathBracketInline). A formula is taken whole,
+  // so the escape and emphasis rules never see inside it. The block form
+  // carries the source anchor like any other top-level block, so a note can sit
+  // on an equation.
   md.inline.ruler.before("escape", "math_inline", mathInline);
+  md.inline.ruler.before("escape", "math_bracket", mathBracketInline);
   md.block.ruler.after("fence", "math_block", mathBlock, {
     alt: ["paragraph", "reference", "blockquote", "list"],
   });
   md.renderer.rules.math_inline = (tokens, idx) =>
-    typeset(md, tokens[idx].content, tokens[idx].markup === "$$");
+    typeset(md, tokens[idx].content, isDisplayMath(tokens[idx].markup));
   md.renderer.rules.math_block = (tokens, idx, _options, _env, self) =>
     `<div class="math-block"${self.renderAttrs(tokens[idx])}>` +
     `${typeset(md, tokens[idx].content, true)}</div>\n`;

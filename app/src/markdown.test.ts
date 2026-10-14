@@ -130,6 +130,61 @@ test("a heading's formula appears in the rail as its TeX", () => {
   assert.equal(section.text, "Rate of r_A");
 });
 
+test("\\(…\\) and \\[…\\] are typeset by KaTeX with their backslashes intact", () => {
+  // Issue #8: the escape rule read `\[` as a literal bracket and `\,` and `\!`
+  // as escaped punctuation, so the page showed `[ 2,\mathrm{NH_3}… ]`.
+  const html = render(
+    String.raw`Equilibrium \[ 2\,\mathrm{NH_3}\rightleftharpoons \mathrm{N_2} \]` +
+      String.raw` with no products other than \(\mathrm{N_2}\) and \(k_0\exp\!\left(-\frac{E_a}{RT}\right)\).`
+  );
+  assert.deepEqual(texOf(html), [
+    String.raw`2\,\mathrm{NH_3}\rightleftharpoons \mathrm{N_2}`,
+    String.raw`\mathrm{N_2}`,
+    String.raw`k_0\exp\!\left(-\frac{E_a}{RT}\right)`,
+  ]);
+  assert.match(html, /Equilibrium <span class="katex-display">/);
+  assert.equal(html.match(/<span class="katex-display">/g)?.length, 1);
+  assert.doesNotMatch(html, /\\\[|\\\(/);
+});
+
+test("a \\[ … \\] block is display math, anchored like any other block", () => {
+  const html = render("Intro.\n\n\\[\nQ = a \\\\\n- b\n\\]\n\nAfter.\n");
+  assert.doesNotMatch(html, /<ul>/);
+  assert.match(html, /<div class="math-block" data-src-line="2" data-src-hash="[0-9a-f]{8}"><span class="katex-display">/);
+  assert.deepEqual(texOf(html), ["Q = a \\\\\n- b"]);
+  assert.match(html, /<p[^>]*>After\.<\/p>/);
+});
+
+test("a one-line \\[ … \\] is a display block too", () => {
+  const html = render("\\[ E = mc^2 \\]\n");
+  assert.match(html, /<div class="math-block"[^>]*><span class="katex-display">/);
+  assert.deepEqual(texOf(html), ["E = mc^2"]);
+});
+
+test("escaped brackets around prose stay brackets", () => {
+  const html = render(String.raw`See \[1\] and \[sic\], tick \[x\].` + "\n\n" + String.raw`\[Editor's note\]`);
+  assert.doesNotMatch(html, /katex/);
+  assert.match(html, /See \[1\] and \[sic\], tick \[x\]\./);
+  assert.match(html, /<p[^>]*>\[Editor’s note\]<\/p>/);
+});
+
+test("an unclosed \\( or \\[ is still an escape", () => {
+  const html = render(String.raw`Opens \(a and \[b_1 but never closes.`);
+  assert.doesNotMatch(html, /katex/);
+  assert.match(html, /Opens \(a and \[b_1 but never closes\./);
+});
+
+test("a \\\\ inside \\(…\\) is TeX's, not the closer", () => {
+  const html = render(String.raw`Matrix \(\begin{matrix} a \\ b \end{matrix}\) here.`);
+  assert.deepEqual(texOf(html), [String.raw`\begin{matrix} a \\ b \end{matrix}`]);
+  assert.match(html, /here\.<\/p>/);
+});
+
+test("a heading's \\(…\\) formula appears in the rail as its TeX", () => {
+  const [section] = extractSections(String.raw`### Arrhenius factor \(k(T)=k_0e^{-E_a/RT}\)` + "\n");
+  assert.equal(section.text, "Arrhenius factor k(T)=k_0e^{-E_a/RT}");
+});
+
 test("[[id:<id>]] resolves to the target's current slug and title", () => {
   const md = createRenderer(
     (slug) => (slug === "kb25/moved-here" ? "Moved Page" : undefined),
