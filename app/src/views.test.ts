@@ -647,6 +647,17 @@ test("the collapse script keeps nothing beyond a reload of the same page", () =>
   assert.match(move, /pane\.scrollTop \+=/);
 });
 
+test("a shift-click range skips rows folded away inside a collapsed group", () => {
+  const html = layout(pageView());
+  const move = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes("function selectRange"));
+  assert.ok(move, "the selection script is emitted with the page");
+  // Groups start collapsed, so a range across top-level rows would otherwise
+  // sweep up every hidden descendant between them and drag it along.
+  assert.match(move, /if \(orderedLinks\[i\]\.offsetParent !== null\) selected\.add/);
+});
+
 test("issue #2: every group gets an insertion line above each row and one closing it", () => {
   const html = layout(
     pageView({

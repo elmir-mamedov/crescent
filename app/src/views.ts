@@ -2399,11 +2399,15 @@ const MOVE_SCRIPT = `
     }
   }
 
+  // Rows inside a collapsed group are skipped: a range covers what the reader
+  // can see between the two clicks, not the pages folded away under it.
   function selectRange(a, b) {
     selected.clear();
     const lo = Math.min(a, b);
     const hi = Math.max(a, b);
-    for (let i = lo; i <= hi; i++) selected.add(slugOf(orderedLinks[i]));
+    for (let i = lo; i <= hi; i++) {
+      if (orderedLinks[i].offsetParent !== null) selected.add(slugOf(orderedLinks[i]));
+    }
     applySelection();
   }
 
