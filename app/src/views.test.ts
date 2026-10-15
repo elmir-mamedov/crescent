@@ -629,22 +629,68 @@ test("the archive tree has no carets, so it never renders a group shut", () => {
  * the very same page. None of this executes under `npm test`, so these assert
  * on the emitted source; the runtime behaviour has to be driven in a browser.
  */
-test("the collapse script keeps nothing beyond a reload of the same page", () => {
+test("the collapse scripts keep nothing beyond a reload of the same page", () => {
   const html = layout(pageView());
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-  const move = scripts.find((s) => s.includes("kb:expanded"));
-  assert.ok(move, "the collapse script is emitted with the page");
+  const place = scripts.find((s) => s.includes("sessionStorage.getItem(EXPANDED_KEY)"));
+  const move = scripts.find((s) => s.includes("sessionStorage.setItem(EXPANDED_KEY"));
+  assert.ok(place, "the script that reopens the tree is emitted with the page");
+  assert.ok(move, "the script that writes the hand-off is emitted with the page");
 
-  // localStorage is only ever cleared of what older versions left there.
-  assert.doesNotMatch(move, /localStorage\.setItem/);
+  // Both ends of the hand-off agree on its key, and localStorage is only ever
+  // cleared of what older versions left there.
+  for (const src of [place, move]) {
+    assert.match(src, /const EXPANDED_KEY = "kb:expanded";/);
+    assert.doesNotMatch(src, /localStorage\.setItem/);
+  }
   assert.match(move, /localStorage\.removeItem\("kb:collapsed"\)/);
   // The hand-off is consumed by whichever page loads next, and honoured only
   // when that load is a reload of the URL that wrote it.
-  assert.match(move, /sessionStorage\.removeItem\(EXPANDED_KEY\)/);
-  assert.match(move, /saved\.url === location\.href && nav && nav\.type === "reload"/);
+  assert.match(place, /sessionStorage\.removeItem\(EXPANDED_KEY\)/);
+  assert.match(place, /saved\.url === location\.href && nav && nav\.type === "reload"/);
   // The row is scrolled into view by moving the sidebar's own scroll box, so
   // the window never travels with it.
-  assert.match(move, /pane\.scrollTop \+=/);
+  assert.match(place, /pane\.scrollTop \+=/);
+});
+
+/**
+ * A browser may paint while it is still parsing the article and the scripts at
+ * the end of <body>. When those scripts placed the tree, such a paint showed the
+ * top of it for a frame before it jumped to the open page's row.
+ */
+test("the sidebar is opened and scrolled before the page can paint it", () => {
+  const html = layout(pageView());
+  const aside = html.match(/<aside class="sidebar">[\s\S]*?<\/aside>/)?.[0];
+  assert.ok(aside, "the page has a sidebar");
+  // The placing script runs straight after the tree, and the marker that lifts
+  // the paint hold follows it: Chromium lifts the hold as soon as the marker is
+  // inserted, so a marker wrapping the script would lift it too early.
+  assert.match(
+    aside,
+    /<\/nav>\s*<script>[\s\S]*?pane\.scrollTop \+=[\s\S]*?<\/script>\s*<span id="kb-sidebar-placed" hidden><\/span>\s*<\/aside>$/
+  );
+  assert.match(html, /<head>[\s\S]*<link rel="expect" href="#kb-sidebar-placed" blocking="render" \/>[\s\S]*<\/head>/);
+  // Nothing after the sidebar moves it any more.
+  assert.doesNotMatch(html.slice(html.indexOf("</aside>")), /scrollTop \+=/);
+});
+
+test("every view with a sidebar holds the first paint for it, and only those", () => {
+  const views: Array<[string, string]> = [
+    ["page", layout(pageView())],
+    ["archived page", layout(pageView({ isArchiveView: true }))],
+    ["outside a space", layout(pageView({ spaceKey: "", tree: [], activeSlug: "" }))],
+    ["folder", folderLayout(folderView())],
+    ["edit", editLayout(editView())],
+    ["dashboard", dashboardLayout(dashboardView())],
+    ["login", loginLayout({ siteTitle: "KB", next: "/" } as LoginView)],
+    ["spaces", spacesLayout(spacesView())],
+  ];
+  for (const [name, html] of views) {
+    const sidebar = html.includes('<aside class="sidebar">');
+    assert.equal(/<link rel="expect" href="#kb-sidebar-placed" blocking="render" \/>/.test(html), sidebar, name);
+    // Without its marker, a held page would stay unpainted until it all parsed.
+    if (sidebar) assert.match(html, /<span id="kb-sidebar-placed" hidden><\/span>\s*<\/aside>/, name);
+  }
 });
 
 test("a shift-click range skips rows folded away inside a collapsed group", () => {

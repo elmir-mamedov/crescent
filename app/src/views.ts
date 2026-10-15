@@ -429,6 +429,7 @@ function sidebarHtml(
   <a class="brand" href="/">${escapeHtml(siteTitle)}</a>
   <a class="sidebar-link${archiveCls}" href="/_archive">Archive</a>
   <nav class="tree">${list}</nav>
+  ${SIDEBAR_PLACED_MARKER}
 </aside>`;
   }
 
@@ -485,7 +486,8 @@ function sidebarHtml(
     collapsible: !isArchiveView,
     parentSlug: spaceKey,
     labelSet,
-  })}</nav>
+  })}</nav>${isArchiveView ? "" : `\n  <script>${TREE_PLACE_SCRIPT}</script>`}
+  ${SIDEBAR_PLACED_MARKER}
 </aside>
 <script>${SEARCH_SCRIPT}</script>
 ${isArchiveView ? "" : `${labelDialog(spaceKey, offered)}
@@ -691,10 +693,24 @@ ${HELP_DIALOG}${desktop ? QUIT_DIALOG : ""}
 }
 
 /**
+ * Holds the first paint until the sidebar has been parsed (Chromium; other
+ * browsers ignore it), so a page never shows its tree before TREE_PLACE_SCRIPT
+ * has opened and scrolled it. Chromium lifts the hold as soon as the expected
+ * element is inserted, not when it closes, so the target is an empty marker
+ * after that script rather than the <aside> itself. The sidebar comes first in
+ * <body>, so the hold costs nothing of the page itself. Only for views that
+ * render a sidebar: without the marker, the hold would last the whole parse.
+ */
+const SIDEBAR_PLACED_ID = "kb-sidebar-placed";
+const SIDEBAR_RENDER_HOLD = `\n<link rel="expect" href="#${SIDEBAR_PLACED_ID}" blocking="render" />`;
+const SIDEBAR_PLACED_MARKER = `<span id="${SIDEBAR_PLACED_ID}" hidden></span>`;
+
+/**
  * The shared document <head>: theming meta, favicons, the inlined stylesheet, and
  * the FOUC-safe theme script. The script sets `data-theme` on <html> before the
  * body paints (from localStorage, else the OS preference) and wires the toggle.
- * `extra` is for a stylesheet only some pages need, such as KaTeX's.
+ * `extra` is for head markup only some pages need, such as KaTeX's stylesheet
+ * or SIDEBAR_RENDER_HOLD.
  */
 function renderHead(title: string, extra = ""): string {
   return `<head>
@@ -815,7 +831,7 @@ export function layout(v: PageView): string {
 
   return `<!doctype html>
 <html lang="en">
-${renderHead(`${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, mathCss)}
+${renderHead(`${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, `${SIDEBAR_RENDER_HOLD}${mathCss}`)}
 <body>
 ${sessionCorner(v.username, v.spaceKey)}
 ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, v.isArchiveView, v.labelSet)}
@@ -908,7 +924,7 @@ export function folderLayout(v: FolderView): string {
 
   return `<!doctype html>
 <html lang="en">
-${renderHead(`${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`)}
+${renderHead(`${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, SIDEBAR_RENDER_HOLD)}
 <body>
 ${sessionCorner(v.username, v.spaceKey)}
 ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.labelSet)}
@@ -1372,7 +1388,7 @@ export function editLayout(v: EditView): string {
 
   return `<!doctype html>
 <html lang="en">
-${renderHead(`Edit ${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`)}
+${renderHead(`Edit ${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, SIDEBAR_RENDER_HOLD)}
 <body>
 ${sessionCorner(v.username, v.spaceKey)}
 ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.labelSet)}
@@ -1480,7 +1496,7 @@ export function diffLayout(v: DiffView): string {
 
   return `<!doctype html>
 <html lang="en">
-${renderHead(`History ${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`)}
+${renderHead(`History ${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, SIDEBAR_RENDER_HOLD)}
 <body>
 ${sessionCorner(v.username, v.spaceKey)}
 ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.labelSet)}
@@ -2364,6 +2380,59 @@ const INSTRUCTIONS_COUNT_SCRIPT = `
 })();
 `;
 
+/**
+ * Puts the sidebar tree in the shape it is read in: groups opened by hand come
+ * back on a reload of the same page, and the open page's row is scrolled into
+ * the sidebar's view. Emitted inside the <aside>, straight after the tree,
+ * rather than with MOVE_SCRIPT at the end of <body>: a browser may paint while
+ * it is still parsing the article and the scripts below it, and a sidebar
+ * painted before this ran showed the top of the tree for a frame, then
+ * jumped. SIDEBAR_RENDER_HOLD keeps Chromium from painting until the marker
+ * after this script, by which point it has run; elsewhere, running this early
+ * leaves only the tree's own parse for a paint to land in.
+ *
+ * MOVE_SCRIPT owns the rest of the collapse behaviour: the carets and the
+ * hand-off it writes as the page goes away.
+ */
+const TREE_PLACE_SCRIPT = `
+(() => {
+  // The reload hand-off lasts exactly one load: it is removed by the next page
+  // to start, whether or not that page is the reload it was meant for.
+  const EXPANDED_KEY = "kb:expanded";
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(EXPANDED_KEY) || "null");
+    sessionStorage.removeItem(EXPANDED_KEY);
+    const nav = performance.getEntriesByType("navigation")[0];
+    if (saved && saved.url === location.href && nav && nav.type === "reload") {
+      const reopened = new Set(saved.slugs);
+      for (const li of document.querySelectorAll(".tree li.collapsed[data-tree-slug]")) {
+        if (!reopened.has(li.getAttribute("data-tree-slug"))) continue;
+        li.classList.remove("collapsed");
+        const toggle = li.querySelector(":scope > .tree-row .tree-toggle");
+        if (toggle) toggle.setAttribute("aria-expanded", "true");
+      }
+    }
+  } catch {}
+
+  // Revealing a row is pointless if it sits outside the sidebar's scroll box.
+  // Measured after the reopening above, because a reopened group can push this
+  // row down. The overflow test skips trees that already fit and skips the
+  // narrow layout, where .sidebar is static and scrolling would move the window
+  // instead -- pulling the reader off the page they just opened. scrollTop, not
+  // scrollIntoView, for the same reason.
+  const activeLink = document.querySelector(".tree a.active");
+  const pane = document.querySelector(".sidebar");
+  if (activeLink && pane && pane.scrollHeight > pane.clientHeight) {
+    const row = activeLink.closest(".tree-row") || activeLink;
+    const paneBox = pane.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    if (rowBox.top < paneBox.top || rowBox.bottom > paneBox.bottom) {
+      pane.scrollTop += rowBox.top - paneBox.top - (pane.clientHeight - rowBox.height) / 2;
+    }
+  }
+})();
+`;
+
 const MOVE_SCRIPT = `
 (() => {
   const treeEl = document.querySelector(".tree");
@@ -2772,22 +2841,12 @@ const MOVE_SCRIPT = `
   // navigation starts over from the new page's branch alone. The exception is a
   // reload of the same page -- after a reorder, a label change, or F5 -- which
   // re-renders what the reader is already looking at and so keeps the groups
-  // they opened by hand. That hand-off lasts exactly one load: it is written as
-  // the page goes away and removed by the next page to start, whether or not
-  // that page is the reload it was meant for.
+  // they opened by hand. That hand-off is written here as the page goes away;
+  // TREE_PLACE_SCRIPT reads it back before the tree first paints.
   const EXPANDED_KEY = "kb:expanded";
   // 0.7.1 and earlier remembered every collapsed group here indefinitely.
   try {
     localStorage.removeItem("kb:collapsed");
-  } catch {}
-  const reopened = new Set();
-  try {
-    const saved = JSON.parse(sessionStorage.getItem(EXPANDED_KEY) || "null");
-    sessionStorage.removeItem(EXPANDED_KEY);
-    const nav = performance.getEntriesByType("navigation")[0];
-    if (saved && saved.url === location.href && nav && nav.type === "reload") {
-      for (const slug of saved.slugs) reopened.add(slug);
-    }
   } catch {}
 
   function setExpanded(li, toggle, expanded) {
@@ -2801,7 +2860,6 @@ const MOVE_SCRIPT = `
     if (!toggle) continue;
     const slug = li.getAttribute("data-tree-slug") || "";
     groups.push({ li, slug });
-    if (reopened.has(slug)) setExpanded(li, toggle, true);
     toggle.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -2814,23 +2872,6 @@ const MOVE_SCRIPT = `
       sessionStorage.setItem(EXPANDED_KEY, JSON.stringify({ url: location.href, slugs }));
     } catch {}
   });
-
-  // Revealing a row is pointless if it sits outside the sidebar's scroll box.
-  // Measured after the loop, because groups reopened by a reload can push this
-  // row down. The overflow test skips trees that already fit and skips the
-  // narrow layout, where .sidebar is static and scrolling would move the window
-  // instead -- pulling the reader off the page they just opened. scrollTop, not
-  // scrollIntoView, for the same reason.
-  const activeLink = document.querySelector(".tree a.active");
-  const pane = document.querySelector(".sidebar");
-  if (activeLink && pane && pane.scrollHeight > pane.clientHeight) {
-    const row = activeLink.closest(".tree-row") || activeLink;
-    const paneBox = pane.getBoundingClientRect();
-    const rowBox = row.getBoundingClientRect();
-    if (rowBox.top < paneBox.top || rowBox.bottom > paneBox.bottom) {
-      pane.scrollTop += rowBox.top - paneBox.top - (pane.clientHeight - rowBox.height) / 2;
-    }
-  }
 })();
 `;
 
