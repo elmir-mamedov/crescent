@@ -135,9 +135,9 @@ function renameFolderButton(slug: string, title: string, text: string, cls = "")
 }
 
 /**
- * What a sidebar row shows after its title: a glowing dot on a page an agent
- * created and nobody has opened yet, or, on a group that is shut, a ring when
- * such a page is folded away inside it. The ring is drawn on every group with
+ * What a sidebar row shows after its title: a glowing dot on a page nobody has
+ * opened yet, whoever added it, or, on a group that is shut, a ring when such a
+ * page is folded away inside it. The ring is drawn on every group with
  * a fresh page below and CSS shows it only while the group is collapsed, so a
  * caret click hides and shows it with no script. A row that is fresh itself
  * shows only the dot, which already draws the eye to it.
@@ -147,7 +147,7 @@ function renameFolderButton(slug: string, title: string, text: string, cls = "")
  */
 function freshMark(node: PageNode): string {
   if (node.fresh) {
-    return `<span class="tree-fresh" role="img" aria-label="New, not opened yet" title="New — an agent created this page and it has not been opened yet"></span>`;
+    return `<span class="tree-fresh" role="img" aria-label="New, not opened yet" title="New — this page has not been opened yet"></span>`;
   }
   return node.children.some(hasFresh)
     ? `<span class="tree-fresh-within" role="img" aria-label="Contains new pages" title="Contains new pages that have not been opened yet"></span>`
@@ -1682,7 +1682,7 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog>
   </form>
   <section class="help-section">
     <h3>About KB25</h3>
-    <p>KB25 is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. A glowing blue dot beside a page in the sidebar means an agent created it and it has not been opened yet; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
+    <p>KB25 is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
   </section>
   <section class="help-section">
     <h3>Keyboard shortcuts</h3>
@@ -5333,7 +5333,7 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
   padding:12px 20px; border-top:1px solid var(--line);
 }
 .label-dialog-manage{margin-right:auto; font-size:13px}
-/* A page an agent created and nobody has opened: an accent dot with a steady
+/* A page nobody has opened since it appeared: an accent dot with a steady
    glow, no pulse, so it marks the row without pulling at the eye while reading. */
 .tree-fresh,.tree-fresh-within{
   flex:0 0 auto; width:8px; height:8px; margin:0 8px 0 6px; border-radius:50%;

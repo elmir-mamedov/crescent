@@ -48,8 +48,8 @@ export interface PageNode {
    */
   labels?: string[];
   /**
-   * An agent created this page and nobody has opened it yet (fresh.ts). Set by
-   * the web server for the sidebar; Content never sets it.
+   * Nobody has opened this page in the viewer since it appeared (seen.ts). Set
+   * by the web server for the sidebar; Content never sets it.
    */
   fresh?: boolean;
   children: PageNode[];

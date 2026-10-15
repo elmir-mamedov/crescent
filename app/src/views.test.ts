@@ -1646,7 +1646,7 @@ test("labels: sidebar rows carry no label dots, while the rest of the label UI s
   assert.match(html, /data-search-labels="[^"]*Draft/);
 });
 
-test("fresh: a page an agent created shows a glowing dot after its title", () => {
+test("fresh: a page nobody has opened shows a glowing dot after its title", () => {
   const html = layout(
     pageView({ tree: [node({ slug: "kb25/a", title: "A", fresh: true }), node({ slug: "kb25/b", title: "B" })] })
   );

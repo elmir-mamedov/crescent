@@ -10,6 +10,7 @@ import fastifyStatic from "@fastify/static";
 import {
   Content,
   downloadFilename,
+  flatten,
   isFolderPage,
   type ArchiveMutation,
   type BatchMoveMutation,
@@ -21,8 +22,8 @@ import {
   type SpaceInfo,
   type TreeFilter,
 } from "./content.js";
-import { makeFreshPages } from "./fresh.js";
 import { makeGit } from "./git.js";
+import { makeSeenPages } from "./seen.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
 import { crossSiteRefusal, isLoopbackHost } from "./loopback.js";
 import { envFlag, envNumber, syncFromEnv } from "./sync.js";
@@ -159,8 +160,11 @@ const SESSION_COOKIE = "kb_session";
 const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 
 const content = new Content(KB_DIR);
-// Pages the MCP server created that nobody has opened; the sidebar dots them.
-const fresh = makeFreshPages(KB_DIR);
+// The pages opened in this viewer, and every page that was already there when
+// the list began; the sidebar dots the rest as new.
+const seen = makeSeenPages(KB_DIR, async () =>
+  flatten(await content.tree("all")).flatMap((n) => (n.id ? [n.id] : []))
+);
 // Multi-machine sync, off unless KB_SYNC is set. Every auto-commit re-arms a
 // debounced push; failures never reach the request that triggered them.
 const sync = syncFromEnv(KB_DIR);
@@ -537,27 +541,31 @@ async function findSpace(key: string): Promise<SpaceInfo | null> {
 
 /**
  * What every page with a sidebar draws around its content in one space: the
- * navigation tree, with the pages an agent created and nobody has opened
- * marked fresh, and the label palette its search filter and label dialog
- * offer.
+ * navigation tree, with the pages nobody has opened yet marked fresh, and the
+ * label palette its search filter and label dialog offer.
  */
 async function spaceChrome(
   spaceKey: string,
   filter: TreeFilter = "live"
 ): Promise<{ tree: PageNode[]; labelSet: LabelDef[] }> {
-  const [tree, labelSet, freshIds] = await Promise.all([
+  const [tree, labelSet, seenIds] = await Promise.all([
     content.spaceTree(spaceKey, filter),
     loadLabelSet(content, spaceKey),
-    fresh.ids(),
+    seen.ids(),
   ]);
-  if (freshIds.size) markFresh(tree, freshIds);
+  markFresh(tree, seenIds);
   return { tree, labelSet };
 }
 
-function markFresh(nodes: PageNode[], ids: ReadonlySet<string>): void {
+/**
+ * A folder has nothing to read, so only a page can be fresh; a closed folder
+ * still shows a ring when a fresh page is inside it. A page without an id
+ * predates the id backfill and cannot be tracked.
+ */
+function markFresh(nodes: PageNode[], seenIds: ReadonlySet<string>): void {
   for (const n of nodes) {
-    if (n.id && ids.has(n.id)) n.fresh = true;
-    markFresh(n.children, ids);
+    if (!n.isFolder && n.id && !seenIds.has(n.id)) n.fresh = true;
+    markFresh(n.children, seenIds);
   }
 }
 
@@ -570,7 +578,7 @@ async function markVisited(tree: PageNode[], slug: string): Promise<void> {
   const node = findNode(tree, slug);
   if (!node?.fresh || !node.id) return;
   node.fresh = false;
-  await fresh.clear(node.id);
+  await seen.add(node.id);
 }
 
 function pagePath(slug: string): string {
