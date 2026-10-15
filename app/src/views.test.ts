@@ -533,24 +533,115 @@ test("a view with no open page marks no row as current", () => {
   assert.doesNotMatch(dashboardLayout(dashboardView()), /aria-current/);
 });
 
+/** A tree three groups deep on one side, so every rule below has a row to land on. */
+function branchyTree(): PageNode[] {
+  return [
+    node({
+      slug: "kb25/handbook",
+      title: "Handbook",
+      isSection: true,
+      children: [
+        node({
+          slug: "kb25/handbook/intro",
+          title: "Intro",
+          isSection: true,
+          children: [
+            node({
+              slug: "kb25/handbook/intro/setup",
+              title: "Setup",
+              isSection: true,
+              children: [node({ slug: "kb25/handbook/intro/setup/mac", title: "Mac" })],
+            }),
+          ],
+        }),
+        node({
+          slug: "kb25/handbook/style",
+          title: "Style",
+          isSection: true,
+          children: [node({ slug: "kb25/handbook/style/tone", title: "Tone" })],
+        }),
+      ],
+    }),
+    node({
+      slug: "kb25/ops",
+      title: "Ops",
+      isSection: true,
+      children: [node({ slug: "kb25/ops/deploy", title: "Deploy" })],
+    }),
+  ];
+}
+
+/** How a group rendered: whether its <li> is shut and what its caret announces. */
+function groupState(html: string, slug: string): { collapsed: boolean; ariaExpanded: string } {
+  const m = html.match(
+    new RegExp(
+      `<li data-tree-slug="${slug.replace(/\//g, "\\/")}"( class="collapsed")?><div class="tree-row"><button type="button" class="tree-toggle" aria-label="Toggle subpages" aria-expanded="(true|false)">`
+    )
+  );
+  assert.ok(m, `no group row for ${slug}`);
+  return { collapsed: !!m[1], ariaExpanded: m[2] };
+}
+
+test("only the open page's branch renders expanded", () => {
+  const html = layout(pageView({ tree: branchyTree(), activeSlug: "kb25/handbook/intro" }));
+
+  // The ancestor, so the open row is on screen, and the open page itself, so
+  // its children are listed.
+  assert.deepEqual(groupState(html, "kb25/handbook"), { collapsed: false, ariaExpanded: "true" });
+  assert.deepEqual(groupState(html, "kb25/handbook/intro"), { collapsed: false, ariaExpanded: "true" });
+  // Below the open page, beside it, and in another branch: all shut.
+  assert.deepEqual(groupState(html, "kb25/handbook/intro/setup"), { collapsed: true, ariaExpanded: "false" });
+  assert.deepEqual(groupState(html, "kb25/handbook/style"), { collapsed: true, ariaExpanded: "false" });
+  assert.deepEqual(groupState(html, "kb25/ops"), { collapsed: true, ariaExpanded: "false" });
+});
+
+test("a leaf deep in the tree opens every group above it and nothing else", () => {
+  const html = layout(pageView({ tree: branchyTree(), activeSlug: "kb25/handbook/intro/setup/mac" }));
+  for (const slug of ["kb25/handbook", "kb25/handbook/intro", "kb25/handbook/intro/setup"]) {
+    assert.equal(groupState(html, slug).collapsed, false, slug);
+  }
+  for (const slug of ["kb25/handbook/style", "kb25/ops"]) {
+    assert.equal(groupState(html, slug).collapsed, true, slug);
+  }
+});
+
+test("a view with no open page renders every group collapsed", () => {
+  const html = dashboardLayout(dashboardView({ tree: branchyTree() }));
+  for (const slug of [
+    "kb25/handbook",
+    "kb25/handbook/intro",
+    "kb25/handbook/intro/setup",
+    "kb25/handbook/style",
+    "kb25/ops",
+  ]) {
+    assert.equal(groupState(html, slug).collapsed, true, slug);
+  }
+});
+
+test("the archive tree has no carets, so it never renders a group shut", () => {
+  const html = layout(pageView({ isArchiveView: true, activeSlug: "", tree: branchyTree() }));
+  assert.doesNotMatch(html, /<li [^>]*class="collapsed"/);
+});
+
 /**
- * The reveal of the open page's chain is transient by construction: it skips
- * the collapse instead of undoing it, and has no write path at all. Only the
- * toggle's own click handler may reach localStorage — that is what makes an
- * automatic expansion fall shut again on the next page while the reader's own
- * clicks survive. None of this executes under `npm test`, so these assert on
- * the emitted source; the runtime behaviour has to be driven in a browser.
+ * Nothing about the tree is remembered across navigation: the server decides
+ * what is open, and the script only carries hand-opened groups over a reload of
+ * the very same page. None of this executes under `npm test`, so these assert
+ * on the emitted source; the runtime behaviour has to be driven in a browser.
  */
-test("the collapse script reveals the open page without persisting it", () => {
+test("the collapse script keeps nothing beyond a reload of the same page", () => {
   const html = layout(pageView());
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-  const move = scripts.find((s) => s.includes("kb:collapsed"));
+  const move = scripts.find((s) => s.includes("kb:expanded"));
   assert.ok(move, "the collapse script is emitted with the page");
 
-  // Ancestors of the open page — and the page's own node — keep their children.
-  assert.match(move, /!\(activeLi && li\.contains\(activeLi\)\)/);
-  // Storage is written from the click handler and nowhere else.
-  assert.equal([...move.matchAll(/saveCollapsed\(/g)].length, 2);
+  // localStorage is only ever cleared of what older versions left there.
+  assert.doesNotMatch(move, /localStorage\.setItem/);
+  assert.match(move, /localStorage\.removeItem\("kb:collapsed"\)/);
+  // The hand-off is consumed by whichever page loads next, and honoured only
+  // when that load is a reload of the URL that wrote it.
+  assert.match(move, /sessionStorage\.removeItem\(EXPANDED_KEY\)/);
+  assert.match(move, /saved\.url === location\.href && nav && nav\.type === "reload"/);
   // The row is scrolled into view by moving the sidebar's own scroll box, so
   // the window never travels with it.
   assert.match(move, /pane\.scrollTop \+=/);
@@ -572,7 +663,7 @@ test("issue #2: every group gets an insertion line above each row and one closin
   );
 
   // Top level: above handbook, above notes, and one appending to the space root.
-  assert.match(html, /<li class="drop-line" data-drop-line data-drop-parent="kb25" data-drop-before="kb25\/handbook"><\/li><li data-tree-slug="kb25\/handbook">/);
+  assert.match(html, /<li class="drop-line" data-drop-line data-drop-parent="kb25" data-drop-before="kb25\/handbook"><\/li><li data-tree-slug="kb25\/handbook"[^>]*>/);
   assert.match(html, /<li class="drop-line" data-drop-line data-drop-parent="kb25" data-drop-before="kb25\/notes"><\/li><li data-tree-slug="kb25\/notes">/);
   // The closing line of a group carries no anchor — that means "append here".
   assert.match(html, /<li class="drop-line" data-drop-line data-drop-parent="kb25"><\/li><\/ul>/);

@@ -74,12 +74,18 @@ function renderTree(
           ? `<span class="tree-label">${escapeHtml(n.title)}</span>`
           : `<a href="${slugPath(n.slug)}"${activeAttrs}${dragAttrs}>${escapeHtml(n.title)}</a>`;
       const hasChildren = n.children.length > 0;
+      // Only the open page's branch renders expanded: its ancestors, so its row
+      // is on screen, and the page itself, so its children are listed. Every
+      // other group starts shut, and a view with no open page starts with the
+      // whole tree shut. Rendered here rather than by script, so nothing a reader
+      // opened on the previous page carries over and the tree never flashes open.
+      const collapsed = !!options.collapsible && hasChildren && !containsSlug(n, activeSlug);
       // Every row opens with one 18px marker column holding exactly one glyph, so
       // an expandable row's caret lands on the same vertical as a sibling leaf's
       // dot instead of a column to its left. Expanding or collapsing swaps the
       // caret's rotation, never its slot, so nothing shifts sideways.
       const toggle = options.collapsible && hasChildren
-        ? `<button type="button" class="tree-toggle" aria-label="Toggle subpages" aria-expanded="true"></button>`
+        ? `<button type="button" class="tree-toggle" aria-label="Toggle subpages" aria-expanded="${collapsed ? "false" : "true"}"></button>`
         : "";
       // A content page with no caret of its own fills the marker column with a
       // dot, so it reads unambiguously as a standalone page. Folders get a spacer
@@ -105,10 +111,15 @@ function renderTree(
             parentSlug: n.slug,
           })}</div>`
         : "";
-      return `${dropLine(n.slug)}<li data-tree-slug="${escapeHtml(n.slug)}">${row}${children}</li>`;
+      return `${dropLine(n.slug)}<li data-tree-slug="${escapeHtml(n.slug)}"${collapsed ? ' class="collapsed"' : ""}>${row}${children}</li>`;
     })
     .join("");
   return `<ul>${items}${dropLine("")}</ul>`;
+}
+
+/** Whether `slug` is `node` itself or one of its descendants. */
+function containsSlug(node: PageNode, slug: string): boolean {
+  return node.slug === slug || node.children.some((c) => containsSlug(c, slug));
 }
 
 /**
@@ -2752,58 +2763,61 @@ const MOVE_SCRIPT = `
     }
   });
 
-  // Collapsible sidebar tree. Collapsed slugs persist in localStorage so the
-  // chosen layout survives the full-page reloads that navigation triggers.
-  const COLLAPSE_KEY = "kb:collapsed";
-  function loadCollapsed() {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "[]"));
-    } catch {
-      return new Set();
+  // Collapsible sidebar tree. The server renders only the open page's branch
+  // expanded (renderTree), so a caret click lasts for this page view and every
+  // navigation starts over from the new page's branch alone. The exception is a
+  // reload of the same page -- after a reorder, a label change, or F5 -- which
+  // re-renders what the reader is already looking at and so keeps the groups
+  // they opened by hand. That hand-off lasts exactly one load: it is written as
+  // the page goes away and removed by the next page to start, whether or not
+  // that page is the reload it was meant for.
+  const EXPANDED_KEY = "kb:expanded";
+  // 0.7.1 and earlier remembered every collapsed group here indefinitely.
+  try {
+    localStorage.removeItem("kb:collapsed");
+  } catch {}
+  const reopened = new Set();
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(EXPANDED_KEY) || "null");
+    sessionStorage.removeItem(EXPANDED_KEY);
+    const nav = performance.getEntriesByType("navigation")[0];
+    if (saved && saved.url === location.href && nav && nav.type === "reload") {
+      for (const slug of saved.slugs) reopened.add(slug);
     }
-  }
-  function saveCollapsed(set) {
-    try {
-      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(Array.from(set)));
-    } catch {}
+  } catch {}
+
+  function setExpanded(li, toggle, expanded) {
+    li.classList.toggle("collapsed", !expanded);
+    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
   }
 
-  const collapsed = loadCollapsed();
-  // The open page's row must always be on screen, so a branch the reader
-  // collapsed earlier is skipped below rather than un-collapsed: the reveal
-  // lasts exactly this page load, never reaches localStorage, and navigating
-  // away leaves the branch the way the reader left it. contains() reports true
-  // for the node itself, so this covers the open page's own node too -- its
-  // direct children get listed -- while everything below it keeps the state it
-  // had.
-  const activeLink = document.querySelector(".tree a.active");
-  const activeLi = activeLink ? activeLink.closest("li[data-tree-slug]") : null;
-  const treeItems = Array.from(document.querySelectorAll(".tree li[data-tree-slug]"));
-  for (const li of treeItems) {
+  const groups = [];
+  for (const li of document.querySelectorAll(".tree li[data-tree-slug]")) {
     const toggle = li.querySelector(":scope > .tree-row .tree-toggle");
     if (!toggle) continue;
     const slug = li.getAttribute("data-tree-slug") || "";
-    if (collapsed.has(slug) && !(activeLi && li.contains(activeLi))) {
-      li.classList.add("collapsed");
-      toggle.setAttribute("aria-expanded", "false");
-    }
+    groups.push({ li, slug });
+    if (reopened.has(slug)) setExpanded(li, toggle, true);
     toggle.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const isCollapsed = li.classList.toggle("collapsed");
-      toggle.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
-      if (isCollapsed) collapsed.add(slug);
-      else collapsed.delete(slug);
-      saveCollapsed(collapsed);
+      setExpanded(li, toggle, li.classList.contains("collapsed"));
     });
   }
+  window.addEventListener("pagehide", () => {
+    const slugs = groups.filter((g) => !g.li.classList.contains("collapsed")).map((g) => g.slug);
+    try {
+      sessionStorage.setItem(EXPANDED_KEY, JSON.stringify({ url: location.href, slugs }));
+    } catch {}
+  });
 
   // Revealing a row is pointless if it sits outside the sidebar's scroll box.
-  // Measured after the loop, because collapsing the other branches is what
-  // decides where this row ended up. The overflow test skips trees that already
-  // fit and skips the narrow layout, where .sidebar is static and scrolling
-  // would move the window instead -- pulling the reader off the page they just
-  // opened. scrollTop, not scrollIntoView, for the same reason.
+  // Measured after the loop, because groups reopened by a reload can push this
+  // row down. The overflow test skips trees that already fit and skips the
+  // narrow layout, where .sidebar is static and scrolling would move the window
+  // instead -- pulling the reader off the page they just opened. scrollTop, not
+  // scrollIntoView, for the same reason.
+  const activeLink = document.querySelector(".tree a.active");
   const pane = document.querySelector(".sidebar");
   if (activeLink && pane && pane.scrollHeight > pane.clientHeight) {
     const row = activeLink.closest(".tree-row") || activeLink;
