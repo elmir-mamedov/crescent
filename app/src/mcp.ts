@@ -8,6 +8,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import * as z from "zod/v4";
 import { Content, flatten, isFolderPage, type PageNode, type TreeFilter } from "./content.js";
+import { makeFreshPages } from "./fresh.js";
 import { makeGit } from "./git.js";
 import { collectNotes } from "./note-index.js";
 import { parseNotes, splitFrontmatter, type Note, type NoteKind } from "./notes.js";
@@ -67,6 +68,9 @@ const content = new Content(KB_DIR);
 // repos as the web server, so it hooks the same commit callback.
 const sync = syncFromEnv(KB_DIR);
 const git = makeGit(KB_DIR, sync ? (repoRoot) => sync.notifyCommit(repoRoot) : undefined);
+// A page created here is marked until a person opens it in the viewer, whose
+// sidebar dots it meanwhile.
+const fresh = makeFreshPages(KB_DIR);
 
 interface ListedPage {
   slug: string;
@@ -657,6 +661,9 @@ server.registerTool(
       const commit = mutation.changedFsPaths
         ? await git.commitMovedPaths(mutation.changedFsPaths, message)
         : await git.commitFiles([mutation.fsPath], message);
+      // The page exists and is committed whether or not the mark lands; a
+      // missing dot is not worth failing the call over.
+      await fresh.mark(mutation.id).catch(() => {});
       return textResult({
         created: true,
         slug: mutation.slug,

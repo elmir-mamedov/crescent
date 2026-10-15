@@ -43,8 +43,6 @@ function renderTree(
     dragEnabled?: boolean;
     collapsible?: boolean;
     parentSlug?: string;
-    /** The space's label palette; rows of labelled pages get coloured dots. */
-    labelSet?: readonly LabelDef[];
   } = {}
 ): string {
   if (nodes.length === 0) return "";
@@ -99,11 +97,12 @@ function renderTree(
       // as "container" — distinct from an ordinary content page that merely
       // happens to have child pages.
       const folderIcon = n.isFolder ? FOLDER_ICON : "";
-      // Dots come after the title, never in the marker column: that column
-      // holds exactly one glyph per row, which keeps carets and leaf dots aligned.
-      const dots = options.archiveMode ? "" : treeLabelDots(n, options.labelSet ?? []);
+      // The fresh mark comes after the title, never in the marker column: that
+      // column holds exactly one glyph per row, which keeps carets and leaf dots
+      // aligned.
+      const fresh = options.archiveMode ? "" : freshMark(n);
       const row = options.dragEnabled
-        ? `<div class="tree-row">${marker}${folderIcon}${label}${dots}${treeMenu(n)}</div>`
+        ? `<div class="tree-row">${marker}${folderIcon}${label}${fresh}${treeMenu(n)}</div>`
         : label;
       const children = hasChildren
         ? `<div class="children">${renderTree(n.children, activeSlug, {
@@ -135,27 +134,28 @@ function renameFolderButton(slug: string, title: string, text: string, cls = "")
   return `<button type="button"${cls ? ` class="${cls}"` : ""} data-folder-rename data-folder-slug="${escapeHtml(slug)}" data-folder-title="${escapeHtml(title)}">${escapeHtml(text)}</button>`;
 }
 
-/** How many label dots a sidebar row shows before collapsing the rest into "+N". */
-const TREE_LABEL_DOTS_MAX = 3;
-
 /**
- * A labelled page's dots in the sidebar: one per label, in the page's order,
- * coloured from the palette. The names ride along as the tooltip and the
- * accessible name, since a colour alone says nothing to a screen reader.
+ * What a sidebar row shows after its title: a glowing dot on a page an agent
+ * created and nobody has opened yet, or, on a group that is shut, a ring when
+ * such a page is folded away inside it. The ring is drawn on every group with
+ * a fresh page below and CSS shows it only while the group is collapsed, so a
+ * caret click hides and shows it with no script. A row that is fresh itself
+ * shows only the dot, which already draws the eye to it.
+ *
+ * Label dots used to sit here; labels now show in the page header, the label
+ * dialog and the dashboards, and the sidebar keeps this one signal.
  */
-function treeLabelDots(node: PageNode, labelSet: readonly LabelDef[]): string {
-  const labels = node.labels ?? [];
-  if (!labels.length) return "";
-  const names = escapeHtml(labels.join(", "));
-  const dots = labels
-    .slice(0, TREE_LABEL_DOTS_MAX)
-    .map((name) => `<span class="label-dot" data-label-color="${colorOf(labelSet, name)}"></span>`)
-    .join("");
-  const more =
-    labels.length > TREE_LABEL_DOTS_MAX
-      ? `<span class="tree-label-more">+${labels.length - TREE_LABEL_DOTS_MAX}</span>`
-      : "";
-  return `<span class="tree-label-dots" role="img" aria-label="Labels: ${names}" title="${names}">${dots}${more}</span>`;
+function freshMark(node: PageNode): string {
+  if (node.fresh) {
+    return `<span class="tree-fresh" role="img" aria-label="New, not opened yet" title="New — an agent created this page and it has not been opened yet"></span>`;
+  }
+  return node.children.some(hasFresh)
+    ? `<span class="tree-fresh-within" role="img" aria-label="Contains new pages" title="Contains new pages that have not been opened yet"></span>`
+    : "";
+}
+
+function hasFresh(node: PageNode): boolean {
+  return !!node.fresh || node.children.some(hasFresh);
 }
 
 /**
@@ -222,7 +222,7 @@ export interface PageView {
   title: string;
   /** The page's own labels, shown as chips under the title. */
   labels?: string[];
-  /** The active space's label palette, for the sidebar dots and the chips. */
+  /** The active space's label palette, for the chips, the search filter and the label dialog. */
   labelSet?: LabelDef[];
   tags?: string[];
   contentHtml: string;
@@ -485,7 +485,6 @@ function sidebarHtml(
     dragEnabled: !isArchiveView,
     collapsible: !isArchiveView,
     parentSlug: spaceKey,
-    labelSet,
   })}</nav>${isArchiveView ? "" : `\n  <script>${TREE_PLACE_SCRIPT}</script>`}
   ${SIDEBAR_PLACED_MARKER}
 </aside>
@@ -1683,7 +1682,7 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog>
   </form>
   <section class="help-section">
     <h3>About KB25</h3>
-    <p>KB25 is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as dots in the sidebar, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
+    <p>KB25 is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. A glowing blue dot beside a page in the sidebar means an agent created it and it has not been opened yet; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
   </section>
   <section class="help-section">
     <h3>Keyboard shortcuts</h3>
@@ -4380,6 +4379,8 @@ const STYLES = `
   color-scheme:light;
   --bg:#fff; --fg:#1f2328; --muted:#6b7280; --line:#e5e7eb;
   --accent:#2563eb; --on-accent:#fff; --sidebar:#f7f8fa; --code-bg:#f6f8fa;
+  /* The halo around a fresh page's dot in the sidebar: the accent, softened. */
+  --fresh-glow:rgba(37,99,235,.55);
   --maxw:1216px;
   --fg-secondary:#374151;
   --surface:#fff; --surface-hover:#eef0f3; --surface-hover-2:#f7f8fa;
@@ -4427,6 +4428,7 @@ const STYLES = `
   color-scheme:dark;
   --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d;
   --accent:#4493f8; --on-accent:#0d1117; --sidebar:#0b0e14; --code-bg:#161b22;
+  --fresh-glow:rgba(68,147,248,.6);
   --fg-secondary:#c9d1d9;
   --surface:#161b22; --surface-hover:#21262d; --surface-hover-2:#21262d;
   --active-bg:#1f2d44; --selected-bg:#253a5e;
@@ -4463,6 +4465,7 @@ const STYLES = `
     color-scheme:dark;
     --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d;
     --accent:#4493f8; --on-accent:#0d1117; --sidebar:#0b0e14; --code-bg:#161b22;
+    --fresh-glow:rgba(68,147,248,.6);
     --fg-secondary:#c9d1d9;
     --surface:#161b22; --surface-hover:#21262d; --surface-hover-2:#21262d;
     --active-bg:#1f2d44; --selected-bg:#253a5e;
@@ -5330,11 +5333,17 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
   padding:12px 20px; border-top:1px solid var(--line);
 }
 .label-dialog-manage{margin-right:auto; font-size:13px}
-.tree-label-dots{
-  display:inline-flex; align-items:center; gap:3px; flex:0 0 auto;
-  padding:0 6px 0 4px;
+/* A page an agent created and nobody has opened: an accent dot with a steady
+   glow, no pulse, so it marks the row without pulling at the eye while reading. */
+.tree-fresh,.tree-fresh-within{
+  flex:0 0 auto; width:8px; height:8px; margin:0 8px 0 6px; border-radius:50%;
 }
-.tree-label-more{font-size:10px; line-height:1; color:var(--muted)}
+.tree-fresh{background:var(--accent); box-shadow:0 0 6px 1px var(--fresh-glow)}
+/* A shut group hiding such a page: a hollow ring, quieter than the dot, so it
+   reads as "in here" rather than "this one". Gone once the group is open and
+   the dot itself is on screen. */
+.tree-fresh-within{display:none; border:1.5px solid var(--accent)}
+.tree li.collapsed > .tree-row > .tree-fresh-within{display:block}
 .label-filter{display:flex; flex-direction:column; gap:12px; margin:0 0 24px}
 /* A fieldset's default min-width is its min-content, which a long row of chips
    would push past the viewport. */

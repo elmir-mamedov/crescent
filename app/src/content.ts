@@ -47,6 +47,11 @@ export interface PageNode {
    * folders, which cannot be labelled, and on pages that carry none.
    */
   labels?: string[];
+  /**
+   * An agent created this page and nobody has opened it yet (fresh.ts). Set by
+   * the web server for the sidebar; Content never sets it.
+   */
+  fresh?: boolean;
   children: PageNode[];
 }
 

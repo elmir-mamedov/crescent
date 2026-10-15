@@ -1623,39 +1623,93 @@ test("labels view: ticking a label submits the form, and the page links back to 
   assert.match(html, /<title>KB25 · Labels · KB<\/title>/);
 });
 
-test("labels: a labelled page's sidebar row carries its dots after the title", () => {
+/** The sidebar's <nav class="tree">, where the rows live. */
+function sidebarTree(html: string): string {
+  return html.match(/<nav class="tree">[\s\S]*?<\/nav>/)?.[0] ?? "";
+}
+
+test("labels: sidebar rows carry no label dots, while the rest of the label UI stays", () => {
   const html = layout(
     pageView({
+      activeSlug: "kb25/deploy",
+      labels: ["Draft"],
       tree: [node({ slug: "kb25/deploy", title: "Deploy", labels: ["Draft", "Legacy"] })],
       labelSet: [{ name: "Draft", color: "yellow" }],
     })
   );
-  const row = html.match(/<div class="tree-row">[\s\S]*?<details class="tree-menu">/)?.[0] ?? "";
-  assert.match(
-    row,
-    /Deploy<\/a><span class="tree-label-dots" role="img" aria-label="Labels: Draft, Legacy" title="Draft, Legacy"><span class="label-dot" data-label-color="yellow"><\/span><span class="label-dot" data-label-color="gray"><\/span><\/span>/
-  );
-  // Still exactly one marker glyph at the head of the row.
-  assert.equal([...row.matchAll(/class="(tree-toggle|tree-toggle-spacer|tree-page-dot)"/g)].length, 1);
+  const tree = sidebarTree(html);
+  assert.doesNotMatch(tree, /label-dot|tree-label-dots|Labels: /);
+  // The row's ⋯ menu still opens the label dialog with the page's labels…
+  assert.match(tree, /data-label-open data-label-slug="kb25\/deploy"[^>]*data-label-current="\[&quot;Draft&quot;,&quot;Legacy&quot;\]"/);
+  // …the page header still shows them as chips, and search still filters by them.
+  assert.match(html, /class="label-chip[^"]*" data-label-color="yellow"/);
+  assert.match(html, /data-search-labels="[^"]*Draft/);
 });
 
-test("labels: a row shows at most three dots and counts the rest", () => {
+test("fresh: a page an agent created shows a glowing dot after its title", () => {
   const html = layout(
-    pageView({ tree: [node({ slug: "kb25/a", title: "A", labels: ["a", "b", "c", "d", "e"] })] })
+    pageView({ tree: [node({ slug: "kb25/a", title: "A", fresh: true }), node({ slug: "kb25/b", title: "B" })] })
   );
-  const dots = html.match(/<span class="tree-label-dots"[\s\S]*?<\/span><\/span>/)?.[0] ?? "";
-  assert.equal(dots.match(/<span class="label-dot"/g)?.length, 3);
-  assert.match(html, /<span class="tree-label-more">\+2<\/span>/);
+  const rows = sidebarTree(html).match(/<div class="tree-row">[\s\S]*?<details class="tree-menu">/g) ?? [];
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /A<\/a><span class="tree-fresh" role="img" aria-label="New, not opened yet" title="[^"]+"><\/span><details/);
+  assert.doesNotMatch(rows[1], /tree-fresh/);
+  // Still exactly one marker glyph at the head of the row.
+  assert.equal([...rows[0].matchAll(/class="(tree-toggle|tree-toggle-spacer|tree-page-dot)"/g)].length, 1);
+  // A steady glow: no animation anywhere on it.
+  assert.match(html, /\.tree-fresh\{background:var\(--accent\); box-shadow:0 0 6px 1px var\(--fresh-glow\)\}/);
+  assert.doesNotMatch(html, /\.tree-fresh[^{]*\{[^}]*animation/);
 });
 
-test("labels: an unlabelled row has no dots, and label names in the tooltip are escaped", () => {
-  const plain = layout(pageView({ tree: [node({ slug: "kb25/a", title: "A" })] }));
-  assert.doesNotMatch(plain, /<span class="tree-label-dots"/);
-
-  const odd = layout(
-    pageView({ tree: [node({ slug: "kb25/a", title: "A", labels: ['"><b>x'] })] })
+test("fresh: a group hiding a fresh page shows a ring, drawn only while it is shut", () => {
+  const html = layout(
+    pageView({
+      activeSlug: "kb25/notes",
+      tree: [
+        node({
+          slug: "kb25/research",
+          title: "Research",
+          isSection: true,
+          children: [
+            node({
+              slug: "kb25/research/topics",
+              title: "Topics",
+              isSection: true,
+              children: [node({ slug: "kb25/research/topics/new", title: "New", fresh: true })],
+            }),
+          ],
+        }),
+        node({
+          slug: "kb25/ideas",
+          title: "Ideas",
+          isSection: true,
+          fresh: true,
+          children: [node({ slug: "kb25/ideas/one", title: "One", fresh: true })],
+        }),
+        node({ slug: "kb25/notes", title: "Notes" }),
+      ],
+    })
   );
-  assert.match(odd, /aria-label="Labels: &quot;&gt;&lt;b&gt;x"/);
+  const row = (slug: string) =>
+    html.match(new RegExp(`<li data-tree-slug="${slug.replace(/\//g, "\\/")}"[^>]*><div class="tree-row">[\\s\\S]*?<details`))?.[0] ?? "";
+  // Every ancestor of the fresh page carries the ring, however deep.
+  assert.match(row("kb25/research"), /<span class="tree-fresh-within" role="img" aria-label="Contains new pages"/);
+  assert.match(row("kb25/research/topics"), /tree-fresh-within/);
+  assert.match(row("kb25/research/topics/new"), /class="tree-fresh"/);
+  // A fresh group shows its own dot, never the ring as well.
+  assert.match(row("kb25/ideas"), /class="tree-fresh"/);
+  assert.doesNotMatch(row("kb25/ideas"), /tree-fresh-within/);
+  assert.doesNotMatch(row("kb25/notes"), /tree-fresh/);
+  // CSS, not script, hides the ring once its group is open.
+  assert.match(html, /\.tree-fresh-within\{display:none;/);
+  assert.match(html, /\.tree li\.collapsed > \.tree-row > \.tree-fresh-within\{display:block\}/);
+});
+
+test("fresh: the archive tree never shows the mark", () => {
+  const html = layout(
+    pageView({ isArchiveView: true, tree: [node({ slug: "kb25/a", title: "A", archived: true, fresh: true })] })
+  );
+  assert.doesNotMatch(sidebarTree(html), /tree-fresh/);
 });
 
 test("labels: the page header shows its labels as chips linking to the Labels view", () => {

@@ -21,6 +21,7 @@ import {
   type SpaceInfo,
   type TreeFilter,
 } from "./content.js";
+import { makeFreshPages } from "./fresh.js";
 import { makeGit } from "./git.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
 import { crossSiteRefusal, isLoopbackHost } from "./loopback.js";
@@ -158,6 +159,8 @@ const SESSION_COOKIE = "kb_session";
 const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 
 const content = new Content(KB_DIR);
+// Pages the MCP server created that nobody has opened; the sidebar dots them.
+const fresh = makeFreshPages(KB_DIR);
 // Multi-machine sync, off unless KB_SYNC is set. Every auto-commit re-arms a
 // debounced push; failures never reach the request that triggered them.
 const sync = syncFromEnv(KB_DIR);
@@ -534,17 +537,40 @@ async function findSpace(key: string): Promise<SpaceInfo | null> {
 
 /**
  * What every page with a sidebar draws around its content in one space: the
- * navigation tree, and the label palette that colours the dots in it.
+ * navigation tree, with the pages an agent created and nobody has opened
+ * marked fresh, and the label palette its search filter and label dialog
+ * offer.
  */
 async function spaceChrome(
   spaceKey: string,
   filter: TreeFilter = "live"
 ): Promise<{ tree: PageNode[]; labelSet: LabelDef[] }> {
-  const [tree, labelSet] = await Promise.all([
+  const [tree, labelSet, freshIds] = await Promise.all([
     content.spaceTree(spaceKey, filter),
     loadLabelSet(content, spaceKey),
+    fresh.ids(),
   ]);
+  if (freshIds.size) markFresh(tree, freshIds);
   return { tree, labelSet };
+}
+
+function markFresh(nodes: PageNode[], ids: ReadonlySet<string>): void {
+  for (const n of nodes) {
+    if (n.id && ids.has(n.id)) n.fresh = true;
+    markFresh(n.children, ids);
+  }
+}
+
+/**
+ * Opening a page, or its editor, is what clears its fresh mark. The tree passed
+ * in is the one about to be drawn around the page, so it is updated too and
+ * the sidebar already shows the page as seen.
+ */
+async function markVisited(tree: PageNode[], slug: string): Promise<void> {
+  const node = findNode(tree, slug);
+  if (!node?.fresh || !node.id) return;
+  node.fresh = false;
+  await fresh.clear(node.id);
 }
 
 function pagePath(slug: string): string {
@@ -594,6 +620,7 @@ async function renderPage(
 
   const spaceKey = content.spaceKeyOf(page.slug);
   const { tree, labelSet } = await spaceChrome(spaceKey);
+  await markVisited(tree, page.slug);
 
   // A folder is a pure container: render its contents listing, never prose.
   if (isFolderPage(page.data)) {
@@ -719,12 +746,11 @@ async function renderNotesDashboard(
  */
 async function renderDashboardsHub(space: SpaceInfo): Promise<string> {
   const filter = space.archived ? "all" : "live";
-  const [spaces, tree, titles, tasks, labelSet, nodes] = await Promise.all([
+  const [spaces, { tree, labelSet }, titles, tasks, nodes] = await Promise.all([
     content.spaces(),
-    content.spaceTree(space.key, filter),
+    spaceChrome(space.key, filter),
     content.titleIndex(),
     collectNotes(content, filter, { space: space.key, kind: "task" }),
-    loadLabelSet(content, space.key),
     spaceNodes(content, space.key, filter),
   ]);
   const query = `?space=${encodeURIComponent(space.key)}`;
@@ -772,11 +798,10 @@ async function renderLabelsDashboard(
   notice?: ViewNotice
 ): Promise<string> {
   const filter = space.archived ? "all" : "live";
-  const [spaces, tree, titles, labelSet, nodes] = await Promise.all([
+  const [spaces, { tree, labelSet }, titles, nodes] = await Promise.all([
     content.spaces(),
-    content.spaceTree(space.key, filter),
+    spaceChrome(space.key, filter),
     content.titleIndex(),
-    loadLabelSet(content, space.key),
     spaceNodes(content, space.key, filter),
   ]);
 
@@ -868,6 +893,7 @@ async function renderEditPage(
 
   const spaceKey = content.spaceKeyOf(page.slug);
   const { tree, labelSet } = await spaceChrome(spaceKey);
+  await markVisited(tree, page.slug);
   const fallbackTitle = page.slug.split("/").pop() || "Home";
 
   // A space's instructions file is deliberately absent from the title index (the
