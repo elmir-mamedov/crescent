@@ -1938,8 +1938,8 @@ test("views: every page with the corner has the chat, told which page is open", 
     [spacesLayout(spacesView()), ""],
   ];
   for (const [html, slug] of cases) {
-    assert.match(html, /<button type="button" class="chat-button" data-chat-open aria-expanded="false" aria-label="Chat with Claude"/);
-    assert.match(html, new RegExp(`<section class="chat-drawer" data-chat data-chat-slug="${slug}" aria-label="Chat with Claude" hidden>`));
+    assert.match(html, /<button type="button" class="chat-button" data-chat-open aria-expanded="false" aria-label="Chat"/);
+    assert.match(html, new RegExp(`<section class="chat-drawer" data-chat data-chat-slug="${slug}" aria-label="Chat" hidden>`));
     assert.match(html, /data-chat-pages \/> Write to KB/);
   }
   assert.doesNotMatch(loginLayout({ siteTitle: "KB", next: "/" } as LoginView), /data-chat/);
@@ -1954,7 +1954,7 @@ test("views: the chat posts to its thread and follows the turn's event stream", 
   const html = layout(pageView());
   const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
   assert.match(script, /fetch\("\/_chat\/threads\/" \+ threadId \+ "\/messages"/);
-  assert.match(script, /JSON\.stringify\(\{ text, forcePages: pages\.checked, slug \}\)/);
+  assert.match(script, /JSON\.stringify\(\{ text, forcePages: pages\.checked, slug, engine: threadEngine \? undefined : engine \}\)/);
   assert.match(script, /new EventSource\("\/_chat\/threads\/" \+ threadId \+ "\/events"\)/);
   assert.match(script, /"\/_chat\/status" \+ \(fresh \? "\?fresh=1" : ""\)/);
   // The report links every page the turn wrote, and server text stays text.
@@ -1962,4 +1962,16 @@ test("views: the chat posts to its thread and follows the turn's event stream", 
   assert.match(script, /new DOMParser\(\)\.parseFromString\(message\.html, "text\/html"\)/);
   // Open/closed and the Write to KB toggle survive the page loads between them.
   assert.match(script, /localStorage\.setItem\("kb25\.chat\." \+ key, value\)/);
+});
+
+test("views: the chat offers Claude or Codex for a new chat and names a thread's engine", () => {
+  const html = layout(pageView());
+  assert.match(html, /<div class="chat-engines" data-chat-engines role="radiogroup" aria-label="Run this chat on" hidden><\/div>/);
+  assert.match(html, /<span class="chat-engine" data-chat-engine hidden><\/span>/);
+  const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
+  // The switch only when two engines are ready and the chat has not begun.
+  assert.match(script, /enginePicker\.hidden = !\(both && !threadEngine\)/);
+  assert.match(script, /saved\.set\("engine", engine\.id\)/);
+  // Setup help covers both programs.
+  assert.match(script, /codex: \{ url: "https:\/\/github\.com\/openai\/codex", login: "codex login", update: "codex update" \}/);
 });

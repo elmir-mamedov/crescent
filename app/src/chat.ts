@@ -14,7 +14,7 @@
  * so its own text after a write is only ever a caveat.
  */
 import type { PageNode } from "./content.js";
-import type { AgentEvent, AgentStatus, Engine, McpServerSpec } from "./agent-cli.js";
+import type { AgentEvent, AgentStatus, Engine, EngineId, McpServerSpec } from "./agent-cli.js";
 import {
   isThreadId,
   threadTitle,
@@ -73,14 +73,24 @@ export type RunEvent =
   | { type: "message"; message: ChatMessage }
   | { type: "done" };
 
+/** An engine as the drawer sees it: which one, what it is called, and whether it is ready. */
+export interface EngineState {
+  id: EngineId;
+  name: string;
+  status: AgentStatus;
+}
+
 export type SendOutcome =
   | { ok: true; thread: ChatThread }
-  | { ok: false; status: 400 | 409 | 503; error: string; claude?: AgentStatus };
+  | { ok: false; status: 400 | 409 | 503; error: string; engine?: EngineState };
 
 export interface ChatDeps {
   store: ChatStore;
-  /** The agent program turns run on. */
-  engine: Engine;
+  /**
+   * The agent programs a thread can run on, in order of preference: a new
+   * thread that names none takes the first one ready.
+   */
+  engines: Engine[];
   /** How to start the kb25 MCP server for a turn. */
   mcp: McpServerSpec;
   /** Where engines run: outside the KB and any project (see EngineTurnOptions.dir). */
@@ -95,12 +105,16 @@ export interface ChatThreadSummary extends ThreadSummary {
 }
 
 export interface Chat {
-  /** The engine's state, checked at most every 30 seconds unless `fresh`. */
-  status(fresh?: boolean): Promise<AgentStatus>;
+  /** Every engine's state, each checked at most every 30 seconds unless `fresh`. */
+  status(fresh?: boolean): Promise<EngineState[]>;
   list(): Promise<ChatThreadSummary[]>;
   thread(id: string): Promise<ChatThread | null>;
-  /** Start a turn; the thread is created by its first message. */
-  send(id: string, input: { text: string; forcePages: boolean; slug?: string }): Promise<SendOutcome>;
+  /**
+   * Start a turn; the thread is created by its first message, on `engine`
+   * (else the first one ready). A thread keeps its engine: `engine` is
+   * ignored once it exists.
+   */
+  send(id: string, input: SendInput): Promise<SendOutcome>;
   running(id: string): boolean;
   /**
    * Follow a thread's running turn: the events so far, then the rest live.
@@ -116,6 +130,13 @@ export interface Chat {
   onIdle(listener: () => void): void;
   /** Stop every turn and wait for them to wind down (a quitting server). */
   stopAll(): Promise<void>;
+}
+
+export interface SendInput {
+  text: string;
+  forcePages: boolean;
+  slug?: string;
+  engine?: EngineId;
 }
 
 /** Long enough for a pasted article, short of a runaway paste. */
@@ -142,11 +163,18 @@ export function makeChat(deps: ChatDeps): Chat {
 
   // The drawer asks on every page load; installing or signing in reaches it
   // within 30 seconds, or at once through `fresh` (opening it, Retry).
-  let checked: { at: number; status: Promise<AgentStatus> } | null = null;
-  function status(fresh = false): Promise<AgentStatus> {
-    if (!fresh && checked && Date.now() - checked.at < 30_000) return checked.status;
-    checked = { at: Date.now(), status: deps.engine.check() };
-    return checked.status;
+  const checked = new Map<EngineId, { at: number; status: Promise<AgentStatus> }>();
+  function engineStatus(engine: Engine, fresh = false): Promise<AgentStatus> {
+    const last = checked.get(engine.id);
+    if (!fresh && last && Date.now() - last.at < 30_000) return last.status;
+    const status = engine.check();
+    checked.set(engine.id, { at: Date.now(), status });
+    return status;
+  }
+  async function status(fresh = false): Promise<EngineState[]> {
+    return Promise.all(
+      deps.engines.map(async (engine) => ({ id: engine.id, name: engine.name, status: await engineStatus(engine, fresh) }))
+    );
   }
 
   function emit(run: Run, event: RunEvent): void {
@@ -154,24 +182,45 @@ export function makeChat(deps: ChatDeps): Chat {
     for (const listener of run.listeners) listener(event);
   }
 
-  async function send(id: string, input: { text: string; forcePages: boolean; slug?: string }): Promise<SendOutcome> {
+  /** The engine a thread runs on: its own, else the one asked for, else the first one ready. */
+  async function pickEngine(existing: ChatThread | null, wanted?: EngineId): Promise<Engine | undefined> {
+    const byId = (id?: EngineId) => deps.engines.find((engine) => engine.id === id);
+    if (existing) return byId(existing.engine);
+    if (byId(wanted)) return byId(wanted);
+    for (const engine of deps.engines) {
+      if ((await engineStatus(engine)).state === "ok") return engine;
+    }
+    return deps.engines[0];
+  }
+
+  async function send(id: string, input: SendInput): Promise<SendOutcome> {
     if (!isThreadId(id)) return { ok: false, status: 400, error: "Not a thread id." };
     const text = input.text.trim();
     if (!text) return { ok: false, status: 400, error: "The message is empty." };
     if (text.length > MAX_MESSAGE_LENGTH) return { ok: false, status: 400, error: "The message is too long." };
     if (runs.has(id)) return { ok: false, status: 409, error: "This chat is still answering." };
-    const claude = await status();
-    if (claude.state !== "ok") return { ok: false, status: 503, error: `${deps.engine.name} is not ready.`, claude };
+    const existing = await deps.store.get(id);
+    const engine = await pickEngine(existing, input.engine);
+    if (!engine) return { ok: false, status: 503, error: "No chat engine is set up." };
+    const ready = await engineStatus(engine);
+    if (ready.state !== "ok") {
+      return {
+        ok: false,
+        status: 503,
+        error: `${engine.name} is not ready.`,
+        engine: { id: engine.id, name: engine.name, status: ready },
+      };
+    }
     // Checked again: the status check above can take a moment.
     if (runs.has(id)) return { ok: false, status: 409, error: "This chat is still answering." };
 
     const at = now();
-    const thread: ChatThread = (await deps.store.get(id)) ?? {
+    const thread: ChatThread = existing ?? {
       id,
       title: threadTitle(text),
       createdAt: at,
       updatedAt: at,
-      started: false,
+      engine: engine.id,
       messages: [],
     };
     const userMessage: ChatMessage = {
@@ -206,13 +255,13 @@ export function makeChat(deps: ChatDeps): Chat {
       try {
         const pages = await deps.pages();
         const prompt = `${contextBlock(input.slug, input.forcePages, pages)}\n\n${text}`;
-        const outcome = await runTurn(thread, run, claude.path, prompt, () => {
-          if (!thread.started) {
-            thread.started = true;
+        const outcome = await runTurn(engine, thread, run, ready.path, prompt, (sessionId) => {
+          if (sessionId && thread.sessionId !== sessionId) {
+            thread.sessionId = sessionId;
             save();
           }
         });
-        for (const message of finishMessages(outcome, run.stopped, pages, now(), deps.engine.name)) {
+        for (const message of finishMessages(outcome, run.stopped, pages, now(), engine.name)) {
           thread.messages.push(message);
           emit(run, { type: "message", message });
         }
@@ -236,31 +285,33 @@ export function makeChat(deps: ChatDeps): Chat {
 
   /**
    * Run one turn to the end. A thread whose session the engine no longer has
-   * (its transcript cleared) is started afresh under the same id, once,
-   * rather than left unable to continue.
+   * (its transcript cleared) gets a new session, once, rather than being left
+   * unable to continue.
    */
   async function runTurn(
+    engine: Engine,
     thread: ChatThread,
     run: Run,
     programPath: string,
     prompt: string,
-    onStarted: () => void
+    onStarted: (sessionId: string) => void
   ): Promise<TurnOutcome> {
-    const attempt = async (resume: boolean): Promise<TurnOutcome> => {
+    const attempt = async (sessionId: string | undefined): Promise<TurnOutcome> => {
       const outcome: TurnOutcome = { texts: [], streamed: "", calls: [], code: null, stderr: "" };
       const byId = new Map<string, ToolCall>();
       let breakBefore = false;
-      const turn = await deps.engine.startTurn({
+      const turn = await engine.startTurn({
         path: programPath,
         dir: deps.workDir,
         mcp: deps.mcp,
         prompt: CHAT_PROMPT,
-        session: { id: thread.id, resume },
+        // An engine that names its own sessions ignores the id of a new one.
+        session: sessionId ? { id: sessionId, resume: true } : { id: thread.id, resume: false },
         text: prompt,
         onEvent: (event: AgentEvent) => {
           switch (event.type) {
             case "init":
-              onStarted();
+              onStarted(event.sessionId);
               break;
             case "text": {
               const text = (breakBefore ? "\n\n" : "") + event.text;
@@ -304,9 +355,9 @@ export function makeChat(deps: ChatDeps): Chat {
       return outcome;
     };
 
-    const first = await attempt(thread.started);
-    const lost = thread.started && !first.result && !run.stopped && deps.engine.lostSession(first.stderr);
-    return lost ? attempt(false) : first;
+    const first = await attempt(thread.sessionId);
+    const lost = !!thread.sessionId && !first.result && !run.stopped && engine.lostSession(first.stderr);
+    return lost ? attempt(undefined) : first;
   }
 
   return {

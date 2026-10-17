@@ -235,13 +235,13 @@ const INIT: AgentEvent = { type: "init", sessionId: ID };
 const result = (text = "", isError = false): AgentEvent => ({ type: "result", isError, text });
 
 /** An engine whose turns are the fake's, and whose check reports `status`. */
-function fakeEngine(fake: ReturnType<typeof fakeTurns>, status: AgentStatus): Engine {
+function fakeEngine(fake: ReturnType<typeof fakeTurns>, status: AgentStatus, id: "claude" | "codex" = "claude"): Engine {
   return {
-    id: "claude",
-    name: "Claude Code",
+    id,
+    name: id === "claude" ? "Claude Code" : "Codex",
     check: async () => status,
     startTurn: fake.startTurn,
-    lostSession: (stderr) => /no conversation found/i.test(stderr),
+    lostSession: (stderr) => /no conversation found|no rollout found/i.test(stderr),
   };
 }
 
@@ -255,7 +255,7 @@ async function withChat(
     const fake = fakeTurns(scripts);
     const chat = makeChat({
       store: makeChatStore(kb.dir),
-      engine: fakeEngine(fake, status),
+      engines: [fakeEngine(fake, status)],
       workDir: path.join(kb.dir, "work"),
       mcp: { command: "/usr/bin/node", args: ["mcp.mjs"], env: { KB_DIR: kb.dir, KB25_COMMIT_VIA: "chat" } },
       pages: async () => PAGES,
@@ -320,7 +320,9 @@ test("a chat-only turn stores the question and the answer, and no report", async
 
       const thread = await chat.thread(ID);
       assert.equal(thread?.title, "what is an incentive model?");
-      assert.equal(thread?.started, true);
+      // Claude Code takes the thread's id for its session.
+      assert.equal(thread?.engine, "claude");
+      assert.equal(thread?.sessionId, ID);
       assert.deepEqual(
         thread?.messages.map((m) => [m.role, "text" in m ? m.text : ""]),
         [
@@ -435,7 +437,11 @@ test("nothing runs while Claude Code is missing or signed out", async () => {
       assert.equal(sent.ok, false);
       if (!sent.ok) {
         assert.equal(sent.status, 503);
-        assert.deepEqual(sent.claude, { state: "signed-out", path: "/bin/claude", version: "2.1.302" });
+        assert.deepEqual(sent.engine, {
+          id: "claude",
+          name: "Claude Code",
+          status: { state: "signed-out", path: "/bin/claude", version: "2.1.302" },
+        });
       }
       assert.equal(fake.calls.length, 0);
       assert.equal(await chat.thread(ID), null);
@@ -533,10 +539,138 @@ test("the thread list marks the one that is answering", async () => {
   await withChat([{ events: [INIT], hold: true }], async ({ chat, fake }) => {
     await chat.send(ID, { text: "hello", forcePages: false });
     await untilHeld(fake);
-    assert.deepEqual(await chat.list(), [{ id: ID, title: "hello", updatedAt: "2026-10-17T10:00:00.000Z", running: true }]);
+    assert.deepEqual(await chat.list(), [
+      { id: ID, title: "hello", updatedAt: "2026-10-17T10:00:00.000Z", engine: "claude", running: true },
+    ]);
     const done = finished(chat, ID);
     fake.releases[0]();
     await done;
     assert.equal((await chat.list())[0].running, false);
   });
+});
+
+const MISSING: AgentStatus = { state: "missing" };
+const CODEX_INIT: AgentEvent = { type: "init", sessionId: "01a1498f-2501-78b3" };
+
+/** A chat with both engines, each with its own fake turns and status. */
+async function withEngines(
+  claude: { scripts: Parameters<typeof fakeTurns>[0]; status: AgentStatus },
+  codex: { scripts: Parameters<typeof fakeTurns>[0]; status: AgentStatus },
+  body: (ctx: {
+    chat: ReturnType<typeof makeChat>;
+    claude: ReturnType<typeof fakeTurns>;
+    codex: ReturnType<typeof fakeTurns>;
+  }) => Promise<void>
+) {
+  const kb = await makeTempKb();
+  try {
+    const claudeTurns = fakeTurns(claude.scripts);
+    const codexTurns = fakeTurns(codex.scripts);
+    const chat = makeChat({
+      store: makeChatStore(kb.dir),
+      engines: [fakeEngine(claudeTurns, claude.status, "claude"), fakeEngine(codexTurns, codex.status, "codex")],
+      workDir: path.join(kb.dir, "work"),
+      mcp: { command: "/usr/bin/node", args: ["mcp.mjs"], env: { KB_DIR: kb.dir } },
+      pages: async () => PAGES,
+      now: () => new Date("2026-10-17T10:00:00.000Z"),
+    });
+    await body({ chat, claude: claudeTurns, codex: codexTurns });
+  } finally {
+    await kb.cleanup();
+  }
+}
+
+test("the status names every engine and whether it is ready", async () => {
+  await withEngines({ scripts: [], status: OK }, { scripts: [], status: MISSING }, async ({ chat }) => {
+    assert.deepEqual(await chat.status(), [
+      { id: "claude", name: "Claude Code", status: OK },
+      { id: "codex", name: "Codex", status: MISSING },
+    ]);
+  });
+});
+
+test("a new chat runs on the engine asked for, resuming the session it named", async () => {
+  await withEngines(
+    { scripts: [], status: OK },
+    {
+      scripts: [
+        { events: [CODEX_INIT, { type: "assistant", blocks: [{ type: "text", text: "one" }] }, result("")] },
+        { events: [CODEX_INIT, { type: "assistant", blocks: [{ type: "text", text: "two" }] }, result("")] },
+      ],
+      status: OK,
+    },
+    async ({ chat, claude, codex }) => {
+      await chat.send(ID, { text: "first", forcePages: false, engine: "codex" });
+      await finished(chat, ID);
+      // Once a thread exists it keeps its engine, whatever a later message asks.
+      await chat.send(ID, { text: "second", forcePages: false, engine: "claude" });
+      await finished(chat, ID);
+      assert.equal(claude.calls.length, 0);
+      assert.deepEqual(
+        codex.calls.map((c) => c.session),
+        [
+          { id: ID, resume: false },
+          { id: "01a1498f-2501-78b3", resume: true },
+        ]
+      );
+      const thread = await chat.thread(ID);
+      assert.equal(thread?.engine, "codex");
+      assert.equal(thread?.sessionId, "01a1498f-2501-78b3");
+      assert.deepEqual(await chat.list(), [
+        { id: ID, title: "first", updatedAt: "2026-10-17T10:00:00.000Z", engine: "codex", running: false },
+      ]);
+    }
+  );
+});
+
+test("a new chat that names no engine takes the first one ready", async () => {
+  await withEngines(
+    { scripts: [], status: MISSING },
+    { scripts: [{ events: [CODEX_INIT, result("")] }], status: OK },
+    async ({ chat, codex }) => {
+      const sent = await chat.send(ID, { text: "hi", forcePages: false });
+      assert.equal(sent.ok, true);
+      await finished(chat, ID);
+      assert.equal(codex.calls.length, 1);
+      assert.equal((await chat.thread(ID))?.engine, "codex");
+    }
+  );
+});
+
+test("a thread whose engine is not ready is refused, though the other one is", async () => {
+  await withEngines(
+    { scripts: [], status: OK },
+    { scripts: [], status: { state: "signed-out", path: "/bin/codex", version: "0.157.0" } },
+    async ({ chat, claude }) => {
+      const sent = await chat.send(ID, { text: "hi", forcePages: false, engine: "codex" });
+      assert.equal(sent.ok ? 0 : sent.status, 503);
+      assert.equal(sent.ok ? "" : sent.engine?.id, "codex");
+      assert.equal(claude.calls.length, 0);
+    }
+  );
+});
+
+test("a Codex session that has gone is replaced by a new one", async () => {
+  await withEngines(
+    { scripts: [], status: OK },
+    {
+      scripts: [
+        { events: [CODEX_INIT, result("")] },
+        { events: [], code: 1, stderr: "Error: thread/resume failed: no rollout found for thread id 01a1498f-2501-78b3" },
+        { events: [{ type: "init", sessionId: "01a1499a-new" }, result("")] },
+      ],
+      status: OK,
+    },
+    async ({ chat, codex }) => {
+      await chat.send(ID, { text: "one", forcePages: false, engine: "codex" });
+      await finished(chat, ID);
+      await chat.send(ID, { text: "two", forcePages: false });
+      await finished(chat, ID);
+      assert.deepEqual(
+        codex.calls.map((c) => c.session.resume),
+        [false, true, false]
+      );
+      assert.equal((await chat.thread(ID))?.sessionId, "01a1499a-new");
+    }
+  );
 });

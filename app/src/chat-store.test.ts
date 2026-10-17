@@ -14,7 +14,8 @@ function thread(id: string, updatedAt: string, title = "A thread"): ChatThread {
     title,
     createdAt: "2026-10-17T09:00:00.000Z",
     updatedAt,
-    started: true,
+    engine: "claude",
+    sessionId: id,
     messages: [
       { role: "user", text: "what is an incentive model?", at: updatedAt, forcePages: false, slug: "demo" },
       { role: "assistant", text: "A short answer.", at: updatedAt },
@@ -59,8 +60,8 @@ test("the list is newest first and skips files that are not threads", async () =
     await fs.writeFile(path.join(store.dir, "threads", "notes.json"), "{}");
     await fs.writeFile(path.join(store.dir, "threads", `${ID_A.replace("0b", "ff")}.json`), "not json");
     assert.deepEqual(await store.list(), [
-      { id: ID_B, title: "Newer", updatedAt: "2026-10-17T10:00:00.000Z" },
-      { id: ID_A, title: "Older", updatedAt: "2026-10-17T09:05:00.000Z" },
+      { id: ID_B, title: "Newer", updatedAt: "2026-10-17T10:00:00.000Z", engine: "claude" },
+      { id: ID_A, title: "Older", updatedAt: "2026-10-17T09:05:00.000Z", engine: "claude" },
     ]);
   } finally {
     await kb.cleanup();
@@ -106,4 +107,44 @@ test("a title is the first line of the first message, cut to fit", () => {
   const long = threadTitle("explain classic compute in databricks from the ground up, with every detail there is");
   assert.ok(long.length <= 60);
   assert.ok(long.endsWith("…"));
+});
+
+test("a thread saved before Codex reads as Claude's, its session under its own id once started", async () => {
+  const kb = await makeTempKb();
+  try {
+    const store = makeChatStore(kb.dir);
+    await fs.mkdir(path.join(store.dir, "threads"), { recursive: true });
+    const legacy = (id: string, started: boolean) => ({
+      id,
+      title: "Old",
+      createdAt: "2026-10-17T09:00:00.000Z",
+      updatedAt: "2026-10-17T09:00:00.000Z",
+      started,
+      messages: [],
+    });
+    await fs.writeFile(path.join(store.dir, "threads", `${ID_A}.json`), JSON.stringify(legacy(ID_A, true)));
+    await fs.writeFile(path.join(store.dir, "threads", `${ID_B}.json`), JSON.stringify(legacy(ID_B, false)));
+    const started = await store.get(ID_A);
+    assert.equal(started?.engine, "claude");
+    assert.equal(started?.sessionId, ID_A);
+    assert.equal("started" in (started ?? {}), false);
+    const unstarted = await store.get(ID_B);
+    assert.equal(unstarted?.engine, "claude");
+    assert.equal(unstarted?.sessionId, undefined);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("a Codex thread keeps the session id Codex chose", async () => {
+  const kb = await makeTempKb();
+  try {
+    const store = makeChatStore(kb.dir);
+    await store.save({ ...thread(ID_A, "2026-10-17T09:05:00.000Z"), engine: "codex", sessionId: "01a1498f-2501-78b3" });
+    const read = await store.get(ID_A);
+    assert.equal(read?.engine, "codex");
+    assert.equal(read?.sessionId, "01a1498f-2501-78b3");
+  } finally {
+    await kb.cleanup();
+  }
 });

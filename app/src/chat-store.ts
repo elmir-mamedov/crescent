@@ -5,12 +5,13 @@
  * folder's leading dot keeps space discovery and sync from taking it for a
  * space.
  *
- * A thread's id is also its Claude session id: the first turn starts the
- * session under that id and every later turn resumes it, so Claude keeps the
- * conversation itself and these files only hold what the drawer shows.
+ * A thread runs on one engine, Claude Code or Codex, for its whole life; the
+ * engine keeps the conversation itself under its own session id, which every
+ * later turn resumes, so these files only hold what the drawer shows.
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { EngineId } from "./agent-cli.js";
 
 /** One page (or folder, or space) a turn changed, for the report card. */
 export interface PageChange {
@@ -34,11 +35,13 @@ export interface ChatThread {
   title: string;
   createdAt: string;
   updatedAt: string;
+  engine: EngineId;
   /**
-   * True once Claude has started the session, after which turns resume it.
-   * Until then a turn must name it instead: resuming an unknown id fails.
+   * The engine's id for the conversation, once it has started one; later
+   * turns resume it. Claude Code takes the thread's id for it, Codex picks
+   * its own.
    */
-  started: boolean;
+  sessionId?: string;
   messages: ChatMessage[];
 }
 
@@ -46,6 +49,7 @@ export interface ThreadSummary {
   id: string;
   title: string;
   updatedAt: string;
+  engine: EngineId;
 }
 
 export interface ChatStore {
@@ -81,9 +85,16 @@ export function makeChatStore(kbDir: string): ChatStore {
   async function read(id: string): Promise<ChatThread | null> {
     if (!isThreadId(id)) return null;
     try {
-      const data = JSON.parse(await fs.readFile(fileOf(id), "utf8")) as ChatThread;
+      const data = JSON.parse(await fs.readFile(fileOf(id), "utf8")) as ChatThread & { started?: boolean };
       if (data?.id !== id || !Array.isArray(data.messages)) return null;
-      return data;
+      // Threads from before Codex: Claude's, with its session under the
+      // thread's own id once `started`.
+      const { started, ...thread } = data;
+      return {
+        ...thread,
+        engine: thread.engine === "codex" ? "codex" : "claude",
+        ...(!thread.sessionId && started && { sessionId: id }),
+      };
     } catch {
       return null;
     }
@@ -103,7 +114,7 @@ export function makeChatStore(kbDir: string): ChatStore {
       );
       return threads
         .filter((thread): thread is ChatThread => thread !== null)
-        .map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
+        .map(({ id, title, updatedAt, engine }) => ({ id, title, updatedAt, engine }))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     },
     get: read,

@@ -32,6 +32,7 @@ import { DEFAULT_FEEDBACK_RELAY, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedb
 import { createRenderer, noteSegments, sourceBlocks, type Section } from "./markdown.js";
 import { makePresence } from "./presence.js";
 import { claudeEngine } from "./claude-cli.js";
+import { codexEngine } from "./codex-cli.js";
 import { makeChat, messageView, type ChatMessageView, type RunEvent } from "./chat.js";
 import { makeChatStore, type ChatMessage } from "./chat-store.js";
 import { collectNotes, groupNotesByPage, summarizeNotes } from "./note-index.js";
@@ -2282,13 +2283,13 @@ await app.register(async (scope) => {
   });
 });
 
-// The chat drawer: the person's own Claude Code, run one turn at a time with
-// the kb25 MCP server attached (chat.ts). The MCP server is this install's
-// bundle when there is one, else the checkout's source through tsx.
+// The chat drawer: the person's own Claude Code or Codex, run one turn at a
+// time with the kb25 MCP server attached (chat.ts). The MCP server is this
+// install's bundle when there is one, else the checkout's source through tsx.
 const BUNDLED_MCP = path.join(__dirname, "mcp.mjs");
 const chat = makeChat({
   store: makeChatStore(KB_DIR),
-  engine: claudeEngine,
+  engines: [claudeEngine, codexEngine],
   mcp: {
     command: process.execPath,
     args: fs.existsSync(BUNDLED_MCP)
@@ -2318,7 +2319,7 @@ function chatThreadId(req: FastifyRequest): string {
 
 app.get("/_chat/status", async (req, reply) => {
   const fresh = (req.query as { fresh?: string }).fresh === "1";
-  return reply.header("cache-control", "no-store").send(await chat.status(fresh));
+  return reply.header("cache-control", "no-store").send({ engines: await chat.status(fresh) });
 });
 
 app.get("/_chat/threads", async (_req, reply) => {
@@ -2332,19 +2333,21 @@ app.get("/_chat/threads/:id", async (req, reply) => {
   return reply.header("cache-control", "no-store").send({
     id: thread.id,
     title: thread.title,
+    engine: thread.engine,
     running: chat.running(id),
     messages: await chatViews(thread.messages),
   });
 });
 
 app.post("/_chat/threads/:id/messages", async (req, reply) => {
-  const body = (req.body ?? {}) as { text?: unknown; forcePages?: unknown; slug?: unknown };
+  const body = (req.body ?? {}) as { text?: unknown; forcePages?: unknown; slug?: unknown; engine?: unknown };
   const sent = await chat.send(chatThreadId(req), {
     text: typeof body.text === "string" ? body.text : "",
     forcePages: body.forcePages === true,
     slug: typeof body.slug === "string" && body.slug ? body.slug : undefined,
+    engine: body.engine === "claude" || body.engine === "codex" ? body.engine : undefined,
   });
-  if (!sent.ok) return reply.code(sent.status).send({ error: sent.error, claude: sent.claude });
+  if (!sent.ok) return reply.code(sent.status).send({ error: sent.error, engine: sent.engine });
   return reply.code(202).send({ ok: true, title: sent.thread.title });
 });
 
