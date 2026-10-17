@@ -100,6 +100,8 @@ writes those headers itself.
 The MCP server runs over stdio and exposes the same Markdown knowledge base to
 MCP clients for both reading and writing. Every write is auto-committed in the
 `kb/` Git repo as `... via mcp` (mirroring the web editor's `... via web`).
+`KB25_COMMIT_VIA` changes that suffix; the viewer's chat starts its copy with
+`chat`, so its edits commit as `... via chat`.
 
 ```bash
 cd app

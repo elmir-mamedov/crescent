@@ -1425,7 +1425,7 @@ ${v.instructions ? `<script>${INSTRUCTIONS_COUNT_SCRIPT}</script>` : ""}
 /** A small pill labeling who made an edit, inferred from the commit-message suffix. */
 function editSourceBadge(subject: string): string {
   const s = subject.toLowerCase();
-  if (s.endsWith("via mcp")) return `<span class="badge badge-mcp">LLM</span>`;
+  if (s.endsWith("via mcp") || s.endsWith("via chat")) return `<span class="badge badge-mcp">LLM</span>`;
   if (s.endsWith("via web")) return `<span class="badge badge-web">Person</span>`;
   return "";
 }

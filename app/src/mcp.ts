@@ -60,6 +60,12 @@ const SITE_TITLE = process.env.SITE_TITLE ?? "Knowledge Base";
  * person's name.
  */
 const NOTE_AUTHOR = "agent";
+/**
+ * The `via` suffix on every commit this server makes. `mcp` unless whoever
+ * started it says otherwise: the viewer's chat starts its own copy with
+ * `chat`, so the history tells a chat edit from one made in another client.
+ */
+const COMMIT_VIA = /^[a-z]+$/.test(process.env.KB25_COMMIT_VIA ?? "") ? process.env.KB25_COMMIT_VIA! : "mcp";
 const VERSION = "0.1.0";
 
 const content = new Content(KB_DIR);
@@ -352,7 +358,9 @@ const server = new McpServer(
   },
   {
     instructions:
-      "Read and write access to the Markdown knowledge base. The KB is organized into spaces: top-level containers, each its own git repo, and the first segment of every page slug — so every page must live inside a space. Every write is auto-committed to its space's repo as `... via mcp`. SPACE INSTRUCTIONS: a space may carry standing instructions written by its owner — language, register, formatting, standing domain context — that govern everything you write there and how you answer questions about it. They arrive as a `spaceInstructions` block on the first tool result scoped to that space, and they are binding: follow them in preference to your own defaults, and do not restate or negotiate them. Later results in the same space carry a short block marked `unchanged` with the token but no text — the instructions delivered earlier still apply in full, and if you can no longer see them, call `kb_get_space_instructions` to get them back. Where a space has them, writing into it also requires passing that block's `token` back as the write tool's `spaceInstructionsToken` — so read a space before you write to it. The token changes whenever a person edits the instructions; a refused write returns the current text and a fresh token, so retry once with those. `kb_get_space_instructions` fetches them directly, and `kb_list_spaces` reports which spaces have them. LINKING: every page has a stable `id`, returned by the read and create tools. Prefer a wiki-link by id — `[[id:<id>]]` or `[[id:<id>|Link text]]` — which keeps resolving even after the target is moved or renamed; a slug-based link like `[[space/some/slug]]` or `[text](/space/some/slug)` breaks when the target moves. To point at one section of a page rather than the whole thing, append its anchor: `[[id:<id>#<anchor>]]` or `[[space/some/slug#<anchor>]]`. Anchors come back in `kb_get_page`'s `sections` and on each `kb_search` match — read them, do not guess them from the heading text.",
+      "Read and write access to the Markdown knowledge base. The KB is organized into spaces: top-level containers, each its own git repo, and the first segment of every page slug — so every page must live inside a space. " +
+      `Every write is auto-committed to its space's repo as \`... via ${COMMIT_VIA}\`.` +
+      " SPACE INSTRUCTIONS: a space may carry standing instructions written by its owner — language, register, formatting, standing domain context — that govern everything you write there and how you answer questions about it. They arrive as a `spaceInstructions` block on the first tool result scoped to that space, and they are binding: follow them in preference to your own defaults, and do not restate or negotiate them. Later results in the same space carry a short block marked `unchanged` with the token but no text — the instructions delivered earlier still apply in full, and if you can no longer see them, call `kb_get_space_instructions` to get them back. Where a space has them, writing into it also requires passing that block's `token` back as the write tool's `spaceInstructionsToken` — so read a space before you write to it. The token changes whenever a person edits the instructions; a refused write returns the current text and a fresh token, so retry once with those. `kb_get_space_instructions` fetches them directly, and `kb_list_spaces` reports which spaces have them. LINKING: every page has a stable `id`, returned by the read and create tools. Prefer a wiki-link by id — `[[id:<id>]]` or `[[id:<id>|Link text]]` — which keeps resolving even after the target is moved or renamed; a slug-based link like `[[space/some/slug]]` or `[text](/space/some/slug)` breaks when the target moves. To point at one section of a page rather than the whole thing, append its anchor: `[[id:<id>#<anchor>]]` or `[[space/some/slug#<anchor>]]`. Anchors come back in `kb_get_page`'s `sections` and on each `kb_search` match — read them, do not guess them from the heading text.",
   }
 );
 
@@ -653,7 +661,7 @@ server.registerTool(
 
     try {
       const mutation = await content.createPage(parent ?? "", title, body ?? "", { tags, summary });
-      const message = `Create ${git.kbRelPath(mutation.fsPath)} via mcp`;
+      const message = `Create ${git.kbRelPath(mutation.fsPath)} via ${COMMIT_VIA}`;
       const commit = mutation.changedFsPaths
         ? await git.commitMovedPaths(mutation.changedFsPaths, message)
         : await git.commitFiles([mutation.fsPath], message);
@@ -699,7 +707,7 @@ server.registerTool(
 
     try {
       const mutation = await content.createFolder(parent ?? "", title);
-      const message = `Create ${git.kbRelPath(mutation.fsPath)} via mcp`;
+      const message = `Create ${git.kbRelPath(mutation.fsPath)} via ${COMMIT_VIA}`;
       const commit = mutation.changedFsPaths
         ? await git.commitMovedPaths(mutation.changedFsPaths, message)
         : await git.commitFiles([mutation.fsPath], message);
@@ -745,7 +753,7 @@ server.registerTool(
       const mutation = await content.renameFolder(slug, name);
       if (!mutation) return errorResult(`Folder not found: ${cleanSlug(slug)}`);
       const commit = mutation.changedFsPaths.length
-        ? await git.commitFiles(mutation.changedFsPaths, `Rename folder ${mutation.slug} via mcp`)
+        ? await git.commitFiles(mutation.changedFsPaths, `Rename folder ${mutation.slug} via ${COMMIT_VIA}`)
         : null;
       return textResult({
         renamed: true,
@@ -789,7 +797,7 @@ server.registerTool(
       if (!mutation) return errorResult(`Page not found: ${cleanSlug(slug) || "(home)"}`);
       const commit = await git.commitFiles(
         [mutation.fsPath],
-        `Update ${git.kbRelPath(mutation.fsPath)} via mcp`
+        `Update ${git.kbRelPath(mutation.fsPath)} via ${COMMIT_VIA}`
       );
       return textResult({
         updated: true,
@@ -823,7 +831,7 @@ async function commitNoteWrite(slug: string, header: string, body: string, verb:
   return {
     slug: mutation.slug,
     path: relPath,
-    commit: await git.commitFiles([mutation.fsPath], `${verb} ${relPath} via mcp`),
+    commit: await git.commitFiles([mutation.fsPath], `${verb} ${relPath} via ${COMMIT_VIA}`),
   };
 }
 
@@ -971,7 +979,7 @@ server.registerTool(
       if (!mutation) return errorResult(`Page not found: ${cleanSlug(slug)}`);
       const commit = await git.commitFiles(
         mutation.changedFsPaths,
-        `Archive ${commitTarget(mutation)} via mcp`
+        `Archive ${commitTarget(mutation)} via ${COMMIT_VIA}`
       );
       return textResult({
         archived: true,
@@ -1014,7 +1022,7 @@ server.registerTool(
       if (!mutation) return errorResult(`Page not found: ${cleanSlug(slug)}`);
       const commit = await git.commitFiles(
         mutation.changedFsPaths,
-        `Restore ${commitTarget(mutation)} via mcp`
+        `Restore ${commitTarget(mutation)} via ${COMMIT_VIA}`
       );
       return textResult({
         restored: true,
@@ -1064,7 +1072,7 @@ server.registerTool(
       if (!mutation) return errorResult(`Page not found: ${cleanSlug(sourceSlug)}`);
       const commit = await git.commitMovedPaths(
         mutation.changedFsPaths,
-        `Move ${mutation.oldSlug} to ${mutation.newSlug} via mcp`
+        `Move ${mutation.oldSlug} to ${mutation.newSlug} via ${COMMIT_VIA}`
       );
       return textResult({
         moved: true,
@@ -1111,7 +1119,7 @@ server.registerTool(
       }
       const commit = await git.commitMovedPaths(
         mutation.changedFsPaths,
-        `Rename ${mutation.oldSlug} to ${mutation.newSlug} via mcp`
+        `Rename ${mutation.oldSlug} to ${mutation.newSlug} via ${COMMIT_VIA}`
       );
       return textResult({
         renamed: true,
@@ -1155,7 +1163,7 @@ server.registerTool(
       if (!mutation) return errorResult(`Page not found: ${cleanSlug(slug)}`);
       const commit = await git.commitFiles(
         mutation.deletedFsPaths,
-        `Delete ${commitTarget(mutation)} via mcp`
+        `Delete ${commitTarget(mutation)} via ${COMMIT_VIA}`
       );
       return textResult({
         deleted: true,
@@ -1193,7 +1201,7 @@ server.registerTool(
       await git.initSpaceRepo(mutation.slug);
       const commit = await git.commitFiles(
         mutation.changedFsPaths ?? [mutation.fsPath],
-        `Create ${git.kbRelPath(mutation.fsPath)} via mcp`
+        `Create ${git.kbRelPath(mutation.fsPath)} via ${COMMIT_VIA}`
       );
       return textResult({ created: true, slug: mutation.slug, id: mutation.id, path: git.kbRelPath(mutation.fsPath), commit });
     } catch (err) {
