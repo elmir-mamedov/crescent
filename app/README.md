@@ -47,6 +47,7 @@ pointing everyone at one exposed process.
 | `KB25_RELEASES_URL` | the GitHub releases | Where that check and the update look. For testing updates against a local copy. |
 | `KB25_FEEDBACK_RELAY` | the feedback relay | Where the feedback dialog's reports go: a relay built from [`@elmir-mamedov/feedback`](https://github.com/elmir-mamedov/feedback). For testing against `wrangler dev` (`http://localhost:8787`). |
 | `KB25_CLAUDE_PATH` | searched | The `claude` program the chat runs. Unset, the viewer looks on `PATH` and in the usual install folders; set, it uses only this. |
+| `KB25_CODEX_PATH` | searched | The same for `codex`. |
 
 ```bash
 KB_DIR=/path/to/kb PORT=8080 SITE_TITLE="Team Wiki" npm start
@@ -99,19 +100,35 @@ writes those headers itself.
 ## Chat
 
 The sparkles button in the corner opens a chat drawer on every page. It runs
-the person's own Claude Code non-interactively (`claude -p`), one process per
-message, with the kb25 MCP server attached, so the chat can answer questions
-and, when asked in so many words or with the **Write to KB** toggle, write
-pages. It needs Claude Code 2.1.259 or newer, installed and signed in; the
-drawer says so when it is not.
+the person's own Claude Code (`claude -p`) or Codex (`codex exec`)
+non-interactively, one process per message, with the kb25 MCP server
+attached, so the chat can answer questions and, when asked in so many words or
+with the **Write to KB** toggle, write pages. Each thread runs on one engine
+for life; with both ready, the drawer offers a switch for new chats. It needs
+Claude Code 2.1.259 or Codex 0.157.0 or newer, installed and signed in; the
+drawer says what is missing.
 
-- `src/claude-cli.ts` finds `claude` (a launcher-started server has a bare
-  `PATH`, so the usual install folders are searched too), checks it, and runs a
-  turn: `--session-id` starts a thread's session and `--resume` continues it;
-  `--strict-mcp-config` attaches kb25 alone; `--tools WebSearch,WebFetch`
-  leaves no shell or file tools; `--setting-sources project`, from an empty
-  working folder, keeps the person's plugins and hooks out while still using
-  their sign-in (`--bare` would not, and `--safe-mode` drops `--mcp-config`).
+- `src/agent-cli.ts` holds what both engines share: finding the program (a
+  launcher-started server has a bare `PATH`, so the usual install folders are
+  searched too), checking it, and running a turn as a child process, through a
+  shell for a Windows `.cmd` shim. Turns run from a folder in the system temp
+  directory, one per KB, because both programs read `CLAUDE.md` and
+  `AGENTS.md` files in the folders above where they run, and a KB inside a
+  repository would hand them the repository's.
+- `src/claude-cli.ts` runs Claude Code: `--session-id` starts a thread's
+  session and `--resume` continues it; `--strict-mcp-config` attaches kb25
+  alone; `--tools WebSearch,WebFetch` leaves no shell or file tools;
+  `--setting-sources project` keeps the person's plugins and hooks out while
+  still using their sign-in (`--bare` would not, and `--safe-mode` drops
+  `--mcp-config`).
+- `src/codex-cli.ts` runs Codex: `exec --json`, resumed by the session id
+  Codex reports; kb25 attached with `-c mcp_servers.kb25.*`, its tools
+  approved up front (exec has nobody to approve a write);
+  `--ignore-user-config` keeps the person's config out but not their sign-in;
+  the shell, apps, browser and computer tools are disabled and the sandbox is
+  read-only, leaving kb25 and live web search. The chat's instructions go in
+  an `AGENTS.md` in Codex's own working folder. Codex sends messages whole, and
+  one followed by a tool call is shown as activity rather than as the reply.
 - `src/chat.ts` runs turns on the server, so one survives the page that started
   it: a page that loads mid-turn replays it from `/_chat/threads/<id>/events`.
   It also holds the system prompt. When a turn writes, the server reads its
