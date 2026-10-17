@@ -9,6 +9,7 @@ import {
   activityText,
   contextBlock,
   makeChat,
+  messageView,
   pageChanges,
   resolveChanges,
   type RunEvent,
@@ -137,6 +138,43 @@ test("changes resolve to the KB as it stands: by id first, then by slug", () => 
     { kind: "deleted", what: "page", slug: "demo/gone", title: "gone" },
     { kind: "updated", what: "page", slug: "demo/vanished", title: "vanished" },
   ]);
+});
+
+test("a message view renders replies and links report entries where the pages are now", () => {
+  const options = { render: (md: string) => `<p>${md}</p>`, pages: PAGES, href: (slug: string) => `/${slug}` };
+  assert.deepEqual(messageView({ role: "assistant", text: "Hi", at: "t" }, options), { role: "assistant", html: "<p>Hi</p>" });
+  assert.deepEqual(messageView({ role: "user", text: "q", at: "t", forcePages: true, slug: "demo" }, options), {
+    role: "user",
+    text: "q",
+    forcePages: true,
+  });
+  assert.deepEqual(
+    messageView(
+      {
+        role: "report",
+        at: "t",
+        changes: [
+          { kind: "created", what: "page", id: "inc-id", slug: "demo/incentive-model", title: "Incentive model" },
+          { kind: "deleted", what: "page", slug: "demo/old", title: "Old" },
+        ],
+      },
+      options
+    ),
+    {
+      role: "report",
+      changes: [
+        {
+          kind: "created",
+          what: "page",
+          id: "inc-id",
+          slug: "demo/economics/incentive-model",
+          title: "Incentive model",
+          href: "/demo/economics/incentive-model",
+        },
+        { kind: "deleted", what: "page", slug: "demo/old", title: "Old", href: null },
+      ],
+    }
+  );
 });
 
 test("the context names the page, the space home, or nothing, and the toggle", () => {

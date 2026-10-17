@@ -567,6 +567,41 @@ export function pageChanges(calls: { name: string; input: Record<string, unknown
   return changes;
 }
 
+/** A stored message as the drawer shows it: replies rendered, report entries linked. */
+export type ChatMessageView =
+  | { role: "user"; text: string; forcePages: boolean }
+  | { role: "assistant"; html: string }
+  | { role: "report"; changes: (PageChange & { href: string | null })[] }
+  | { role: "error"; text: string };
+
+/**
+ * Turn a stored message into its view. A report is resolved against the KB
+ * as it is now, so its links follow pages moved since; a deleted page has no
+ * link. `render` is the KB's own Markdown renderer, so wiki-links in a reply
+ * resolve as they would on a page.
+ */
+export function messageView(
+  message: ChatMessage,
+  options: { render: (markdown: string) => string; pages: PageNode[]; href: (slug: string) => string }
+): ChatMessageView {
+  switch (message.role) {
+    case "user":
+      return { role: "user", text: message.text, forcePages: message.forcePages };
+    case "assistant":
+      return { role: "assistant", html: options.render(message.text) };
+    case "report":
+      return {
+        role: "report",
+        changes: resolveChanges(message.changes, options.pages).map((change) => ({
+          ...change,
+          href: change.kind === "deleted" ? null : options.href(change.slug),
+        })),
+      };
+    case "error":
+      return { role: "error", text: message.text };
+  }
+}
+
 /**
  * Fill in each change's current slug, title and id from the KB as it stands:
  * by id when the change has one (so it follows a later move), else by slug. A

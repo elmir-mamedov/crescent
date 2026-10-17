@@ -31,6 +31,9 @@ import { parseWordDiff } from "./diff.js";
 import { DEFAULT_FEEDBACK_RELAY, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedback } from "./feedback.js";
 import { createRenderer, noteSegments, sourceBlocks, type Section } from "./markdown.js";
 import { makePresence } from "./presence.js";
+import { checkClaude, type ClaudeStatus } from "./claude-cli.js";
+import { makeChat, messageView, type ChatMessageView, type RunEvent } from "./chat.js";
+import { makeChatStore, type ChatMessage } from "./chat-store.js";
 import { collectNotes, groupNotesByPage, summarizeNotes } from "./note-index.js";
 import {
   insertNote,
@@ -2279,12 +2282,137 @@ await app.register(async (scope) => {
   });
 });
 
+// The chat drawer: the person's own Claude Code, run one turn at a time with
+// the kb25 MCP server attached (chat.ts). The MCP server is this install's
+// bundle when there is one, else the checkout's source through tsx.
+const BUNDLED_MCP = path.join(__dirname, "mcp.mjs");
+const chat = makeChat({
+  store: makeChatStore(KB_DIR),
+  claude: claudeStatus,
+  mcp: {
+    command: process.execPath,
+    args: fs.existsSync(BUNDLED_MCP)
+      ? [BUNDLED_MCP]
+      : ["--import", import.meta.resolve("tsx"), path.join(__dirname, "mcp.ts")],
+    env: { KB_DIR, KB25_COMMIT_VIA: "chat" },
+  },
+  pages: async () => flatten(await content.tree("all")),
+});
+
+let claudeChecked: { at: number; status: Promise<ClaudeStatus> } | null = null;
+/**
+ * Claude Code's state, checked at most every 30 seconds: the drawer asks on
+ * every page load. `fresh` (the drawer's Retry, or opening it) checks again,
+ * so installing or signing in takes effect without a restart.
+ */
+function claudeStatus(fresh = false): Promise<ClaudeStatus> {
+  if (!fresh && claudeChecked && Date.now() - claudeChecked.at < 30_000) return claudeChecked.status;
+  claudeChecked = { at: Date.now(), status: checkClaude() };
+  return claudeChecked.status;
+}
+
+/** A thread message as the drawer shows it, rendered against the KB as it is now. */
+async function chatViews(messages: ChatMessage[]): Promise<ChatMessageView[]> {
+  const [titles, ids, pages] = await Promise.all([
+    content.titleIndex(),
+    content.idIndex(),
+    content.tree("all").then(flatten),
+  ]);
+  const md = createRenderer((s) => titles.get(s), "", (id) => ids.get(id));
+  return messages.map((message) => messageView(message, { render: (text) => md.render(text), pages, href: pagePath }));
+}
+
+function chatThreadId(req: FastifyRequest): string {
+  return (req.params as { id: string }).id;
+}
+
+app.get("/_chat/status", async (req, reply) => {
+  const fresh = (req.query as { fresh?: string }).fresh === "1";
+  return reply.header("cache-control", "no-store").send(await chat.status(fresh));
+});
+
+app.get("/_chat/threads", async (_req, reply) => {
+  return reply.header("cache-control", "no-store").send({ threads: await chat.list() });
+});
+
+app.get("/_chat/threads/:id", async (req, reply) => {
+  const id = chatThreadId(req);
+  const thread = await chat.thread(id);
+  if (!thread) return reply.code(404).send({ error: "No such chat." });
+  return reply.header("cache-control", "no-store").send({
+    id: thread.id,
+    title: thread.title,
+    running: chat.running(id),
+    messages: await chatViews(thread.messages),
+  });
+});
+
+app.post("/_chat/threads/:id/messages", async (req, reply) => {
+  const body = (req.body ?? {}) as { text?: unknown; forcePages?: unknown; slug?: unknown };
+  const sent = await chat.send(chatThreadId(req), {
+    text: typeof body.text === "string" ? body.text : "",
+    forcePages: body.forcePages === true,
+    slug: typeof body.slug === "string" && body.slug ? body.slug : undefined,
+  });
+  if (!sent.ok) return reply.code(sent.status).send({ error: sent.error, claude: sent.claude });
+  return reply.code(202).send({ ok: true, title: sent.thread.title });
+});
+
+// A turn as it happens: what it has said so far, then the rest live, ending
+// with a `done` event. With nothing running it is `done` at once, so a page
+// that reconnects after the turn ended (or after a restart) knows to reload.
+app.get("/_chat/threads/:id/events", async (req, reply) => {
+  reply.hijack();
+  reply.raw.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+  reply.raw.write("retry: 2000\n\n");
+  // Finished messages are rendered before they go out; the chain keeps the
+  // events in the order they happened.
+  let queue: Promise<void> = Promise.resolve();
+  const send = (event: RunEvent) => {
+    queue = queue.then(async () => {
+      let out: unknown = event;
+      if (event.type === "user" || event.type === "message") {
+        out = { type: event.type, message: (await chatViews([event.message]))[0] };
+      }
+      if (reply.raw.writableEnded) return;
+      reply.raw.write(`data: ${JSON.stringify(out)}\n\n`);
+      if (event.type === "done") reply.raw.end();
+    });
+  };
+  const unsubscribe = chat.subscribe(chatThreadId(req), send);
+  if (!unsubscribe) send({ type: "done" });
+  else reply.raw.on("close", unsubscribe);
+});
+
+app.post("/_chat/threads/:id/stop", async (req, reply) => {
+  return reply.send({ ok: chat.stop(chatThreadId(req)) });
+});
+
+app.post("/_chat/threads/:id/delete", async (req, reply) => {
+  const id = chatThreadId(req);
+  if (chat.running(id)) return reply.code(409).send({ error: "This chat is still answering." });
+  return reply.send({ ok: await chat.remove(id) });
+});
+
 // Quitting, for a server a launcher started (DESKTOP). Each browser keeps one
 // event stream here while it has a KB25 tab open, and the server quits once
 // the last one has been gone a while; POST /_quit is the page's Quit button.
+// A chat turn still writing holds the quit until it ends, unless a tab has
+// come back by then.
+let quitWhenChatEnds = false;
 const presence = DESKTOP
-  ? makePresence({ graceMs: QUIT_GRACE_MS, onIdle: () => void shutdown("no KB25 tabs open", false) })
+  ? makePresence({
+      graceMs: QUIT_GRACE_MS,
+      onIdle: () => {
+        if (chat.activeCount() > 0) quitWhenChatEnds = true;
+        else void shutdown("no KB25 tabs open", false);
+      },
+    })
   : null;
+chat.onIdle(() => {
+  if (quitWhenChatEnds && presence?.size() === 0) void shutdown("no KB25 tabs open", false);
+  quitWhenChatEnds = false;
+});
 if (presence) {
   app.get("/_presence", async (_req, reply) => {
     reply.hijack();
@@ -2310,6 +2438,8 @@ async function shutdown(reason: string, quitting: boolean): Promise<void> {
   shuttingDown = true;
   console.log(`KB viewer stopping: ${reason}`);
   presence?.endAll(quitting);
+  // End chat turns cleanly, so their threads are saved and can be resumed.
+  await Promise.race([chat.stopAll(), new Promise((resolve) => setTimeout(resolve, 5000))]);
   // Let a save already under way finish, but never wait on it for long.
   await Promise.race([app.close().catch(() => {}), new Promise((resolve) => setTimeout(resolve, 3000))]);
   if (sync) {
