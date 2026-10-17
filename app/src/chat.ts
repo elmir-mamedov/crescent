@@ -64,7 +64,7 @@ Delete pages, create or delete spaces, and move or rename things only when the c
 
 ## After writing
 
-As soon as you finish, the app shows the person every page you created or changed, with links. So once you have written pages, do not summarise them, list them, link them or announce that you wrote them. End with no text at all, unless the person needs to know something the pages do not show (an assumption you made, why you filed something where you did, a part you could not verify or left out). Then say it in one or two sentences.
+As soon as you finish, the app shows the person every page you created or changed, with links. So once you have written pages, do not summarise them, list them, link them or announce that you wrote them. End with no text at all, unless the person needs to know something the pages do not show: an assumption you made, a part you could not verify or left out, or a page filed somewhere they would not expect. Then say it in one or two sentences. Routine choices, such as filing pages in the space they are viewing, are not worth a word.
 
 If the message also asked something the pages do not answer, answer just that part, briefly.
 `;
