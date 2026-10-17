@@ -205,7 +205,9 @@ export function makeChat(deps: ChatDeps): Chat {
     // Saves of one thread run in order, so a late one never overwrites a newer.
     let saving: Promise<unknown> = Promise.resolve();
     const save = () => (saving = saving.then(() => deps.store.save(thread)).catch(() => {}));
-    save();
+    // On disk before the send is answered, so a page loaded straight after
+    // finds the thread rather than taking it for a new one.
+    await save();
 
     void (async () => {
       try {
