@@ -1,76 +1,116 @@
 # KB25
 
-A personal knowledge base: Markdown pages you browse and edit in your web
-browser, and that Claude can read and write for you.
+KB25 is a personal knowledge base that runs on your computer. Pages are
+Markdown files in a folder you own, organised into spaces, and you browse and
+edit them in your web browser. A built-in chat, driven by Claude Code or
+Codex, answers questions and writes pages, and the Claude app and Claude Code
+can work with the same pages through an MCP connection.
 
-## Install
+## Features
 
-Paste one line into a terminal and press Enter at each question.
+- **Spaces and pages.** Each space is a folder of Markdown files and its own
+  git repository. Folders group pages into sections, and the sidebar shows the
+  tree; pages are moved and reordered by dragging them.
+- **Reading.** Pages render with code highlighting, math (KaTeX) and Mermaid
+  diagrams. Links between pages keep working when a page is moved or renamed.
+  Every heading has a link, and longer pages get an outline beside the text.
+- **Editing and history.** Pages are edited in the browser as Markdown, and
+  each save is committed to the space's repository. The Diff view shows a
+  page's past revisions, and a page can be downloaded as a Markdown file.
+- **Organising.** Labels mark pages with coloured tags such as "Draft". Search
+  covers the current space and can be narrowed by label. Pages can be
+  archived and restored, and pages you haven't opened yet are marked in the
+  sidebar.
+- **Notes.** Tasks, remarks and highlights can be attached to a passage of a
+  page. A dashboard collects open tasks, and another lists pages by label.
+- **Chat.** A side panel on every page sends questions to Claude Code or Codex
+  and shows the answers. On request, it writes or updates pages, then lists
+  the pages it changed, with links.
+- **Space instructions.** Each space can carry standing instructions (such as
+  language, tone or format) that the chat and other AI clients follow when
+  they write there.
+- **Light and dark themes.**
 
-**Mac**: open the Terminal app and paste:
+## Requirements
+
+- macOS or Windows. The installer brings its own copy of Node.js, so nothing
+  needs to be installed beforehand, and it doesn't need administrator rights.
+- For the chat: Claude Code 2.1.259 or later, or Codex 0.157.0 or later,
+  installed and signed in.
+
+## Installation
+
+**macOS**: in Terminal, run:
 
 ```bash
 curl -fsSL https://github.com/elmir-mamedov/kb/releases/latest/download/install.sh | bash
 ```
 
-**Windows**: open PowerShell (Start menu, type "PowerShell") and paste:
+**Windows**: in PowerShell, run:
 
 ```powershell
 irm https://github.com/elmir-mamedov/kb/releases/latest/download/install.ps1 | iex
 ```
 
-That's all. No admin password, and nothing else to install first. Afterwards,
-open **KB25** like any other app: Spotlight on a Mac (Cmd+Space, type "KB25"),
-the Start menu on Windows. Your pages are kept in a `KB25` folder in your home
-folder. If you already have a knowledge base from the kb25 plugin, the
-installer offers to use it where it is instead.
+The installer asks a few yes/no questions; pressing Enter accepts each default.
+It installs KB25 into `~/Library/Application Support/KB25` on macOS or
+`%LOCALAPPDATA%\KB25` on Windows, and keeps pages in a `KB25` folder in your
+home folder. If it finds an existing knowledge base, it offers to use that
+instead. It can also connect KB25 to the Claude app and to Claude Code.
 
-KB25 opens in your browser. Close its last tab and it quits half a minute
-later, or quit it right away with the power button in the top-right corner.
-Open it again the same way as before.
+After installation, KB25 opens from Spotlight on macOS or the Start menu on
+Windows.
 
-If you use the Claude app or Claude Code, the installer offers to connect KB25
-to it, so Claude can find, read and write your pages.
+## Using KB25
 
-## Chat
+KB25 runs a small server on your computer and opens in your default browser.
+The server accepts connections from this computer only. KB25 quits 30 seconds
+after its last browser tab closes, or straight away with the power button in
+the top-right corner.
 
-Click the sparkles in the top-right corner to open the chat beside your pages.
-Ask anything there, about your pages or anything else, and the answer comes
-back in the chat. To have something written into your knowledge base, say so:
-"write a page about…", "add this to the KB", or "write it down" after an
-answer. Or switch on **Write to KB** under the message box. Once pages are
-written, the chat lists them with links.
+**Writing pages.** Create a space from the spaces page, then add pages and
+folders from the sidebar. **Edit** opens a page's Markdown. Saved changes are
+committed to the space's git repository, so earlier versions stay available.
 
-The chat uses Claude Code or Codex on your computer, signed in with your Claude
-or ChatGPT account. If you have both, pick one for each new chat with the
-switch under the message box. If neither is installed or signed in, the chat
-says what to do. Conversations are kept in your KB25 folder (in `.kb25/chat`),
-apart from your pages.
+**Using the chat.** The sparkles button in the top-right corner opens the
+chat. The chat answers questions in the panel. It writes to the knowledge base
+only when asked directly, for example "write a page about…", "add this to the
+KB", or "write it down" after an answer, or when **Write to KB** is switched
+on under the message box. New pages go into the space being viewed, and the
+chat lists every page it created or changed when it finishes.
 
-## Send feedback
+The chat runs the Claude Code or Codex installed on your computer, under the
+account it is signed in with, so its use counts against that account's plan.
+When both are available, a switch under the message box picks one for each
+new chat. Conversations are stored in the `.kb25/chat` folder of your
+knowledge base, separate from the spaces.
 
-Found a bug, or have an idea? Click the speech bubble in the top-right corner
-of the viewer. Write what happened, add screenshots if they help (paste them,
-drop them in, or capture the tab), and press **Send**. Leave your email if
-you'd like a reply.
+**Using KB25 from Claude.** Once connected during installation, the Claude app
+and Claude Code can search, read and write your pages through the kb25 MCP
+server. Changes made this way are committed like any other edit, and the
+sidebar marks the new pages until you open them.
 
-A report goes to the developer of KB25 and nobody else. Along with what you
-write, it carries KB25's version, your operating system, your browser and the
-size of its window.
-The page you were on, recent errors and the end of KB25's log go only if you
-tick them, and **What else is sent** shows exactly what that is before you
-send. If you're offline, KB25 keeps the report and sends it later.
+## Updating and removing
 
-## Update or remove
+When a new version is available, a notice appears in the bottom-right corner
+of KB25. **Update** installs it in the background and reloads the page. Pages
+and settings are kept.
 
-When a new version is out, KB25 says so in the bottom-right corner of the
-viewer: click **Update** and it installs in the background, then the page
-reloads on the new version. Your pages and settings stay as they are.
+Running the install command again also updates KB25 when a newer version
+exists. When KB25 is already up to date, the command offers to remove it.
+Removing KB25 leaves your pages in place.
 
-You can also run the same line again. It updates KB25 when there's a new
-version; when there isn't, it offers to remove KB25. Removing keeps your pages.
+## Feedback
 
-## For developers
+The speech-bubble button in the top-right corner sends a bug report or
+suggestion to the developer, with optional screenshots and an optional email
+address for a reply. Each report includes KB25's version, the operating
+system, the browser and its window size. The current page, recent errors and
+the end of KB25's log are added only if you tick them, and **What else is
+sent** shows their contents before sending. Reports written while offline are
+sent once a connection is available.
 
-The app lives in [`app/`](app/README.md); repository guidelines are in
-[`AGENTS.md`](AGENTS.md).
+## Development
+
+The application is in [`app/`](app/README.md), and repository guidelines are
+in [`AGENTS.md`](AGENTS.md).
