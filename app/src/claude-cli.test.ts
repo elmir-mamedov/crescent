@@ -3,19 +3,17 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { AgentEvent } from "./agent-cli.js";
 import {
   claudeCandidates,
+  claudeEngine,
   findClaude,
-  lineSplitter,
   mcpConfig,
   parseAuthStatus,
   parseLine,
-  parseVersion,
   startTurn,
   turnArgs,
   turnInput,
-  versionAtLeast,
-  type ClaudeEvent,
 } from "./claude-cli.js";
 import { makeTempKb } from "./test-helpers.js";
 
@@ -108,15 +106,6 @@ test("findClaude takes the override when it exists and reports nothing when it d
   }
 });
 
-test("versions parse out of --version and compare numerically", () => {
-  assert.equal(parseVersion("2.1.302 (Claude Code)\n"), "2.1.302");
-  assert.equal(parseVersion("command not found"), null);
-  assert.equal(versionAtLeast("2.1.302", "2.1.259"), true);
-  assert.equal(versionAtLeast("2.1.259", "2.1.259"), true);
-  assert.equal(versionAtLeast("2.1.99", "2.1.259"), false);
-  assert.equal(versionAtLeast("3.0.0", "2.1.259"), true);
-});
-
 test("auth status reads loggedIn, falling back to the exit code", () => {
   assert.equal(parseAuthStatus(0, '{"loggedIn": true, "authMethod": "claude.ai"}'), true);
   assert.equal(parseAuthStatus(1, '{"loggedIn": false, "authMethod": "none"}'), false);
@@ -164,21 +153,9 @@ test("the prompt goes in as one stream-json user message", () => {
   assert.deepEqual(JSON.parse(line), { type: "user", message: { role: "user", content: 'say "hi"\nplease' } });
 });
 
-test("lines split across chunks come out whole", () => {
-  const lines: string[] = [];
-  const splitter = lineSplitter((line) => lines.push(line));
-  splitter.push('{"a":');
-  splitter.push('1}\r\n{"b"');
-  splitter.push(":2}\n\n");
-  splitter.push('{"c":3}');
-  assert.deepEqual(lines, ['{"a":1}', '{"b":2}']);
-  splitter.end();
-  assert.deepEqual(lines, ['{"a":1}', '{"b":2}', '{"c":3}']);
-});
-
 test("stream-json lines become init, text, tool and result events", () => {
   assert.deepEqual(parseLine(INIT), [
-    { type: "init", sessionId: "s-1", model: "claude-opus-5-5", mcpServers: [{ name: "kb25", status: "connected" }] },
+    { type: "init", sessionId: "s-1" },
   ]);
   assert.deepEqual(parseLine(DELTA), [{ type: "text", text: "demo" }]);
   assert.deepEqual(parseLine(TOOL_USE), [
@@ -188,7 +165,7 @@ test("stream-json lines become init, text, tool and result events", () => {
     { type: "tool_result", toolUseId: "toolu_1", isError: false, text: '{"spaces":[]}' },
   ]);
   assert.deepEqual(parseLine(RESULT), [
-    { type: "result", isError: false, subtype: "success", text: "demo", sessionId: "s-1", costUsd: 0.0174 },
+    { type: "result", isError: false, text: "demo" },
   ]);
 });
 
@@ -214,9 +191,14 @@ test("noise, framing, and subagent chatter yield nothing", () => {
   assert.deepEqual(parseLine(JSON.stringify(sub)), []);
 });
 
-test("a retry notice carries the attempt and the cause", () => {
+test("a retry becomes a notice for the activity line", () => {
   const line = JSON.stringify({ type: "system", subtype: "api_retry", attempt: 2, max_retries: 10, error: "overloaded" });
-  assert.deepEqual(parseLine(line), [{ type: "retry", attempt: 2, maxRetries: 10, error: "overloaded" }]);
+  assert.deepEqual(parseLine(line), [{ type: "notice", text: "Claude is busy; trying again (2 of 10)…" }]);
+});
+
+test("a failed result with no text says what kind of failure it was", () => {
+  const line = JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, session_id: "s-1" });
+  assert.deepEqual(parseLine(line), [{ type: "result", isError: true, text: "Claude Code reported error_max_turns." }]);
 });
 
 test("a turn writes the prompt to stdin and streams the events it prints", async () => {
@@ -234,7 +216,7 @@ process.stdin.on("end", () => {
   const kb = await makeTempKb();
   try {
     const seen: { command?: string; args?: string[]; cwd?: string } = {};
-    const events: ClaudeEvent[] = [];
+    const events: AgentEvent[] = [];
     const turn = startTurn({
       claudePath: "/somewhere/claude",
       sessionId: "s-1",
@@ -276,4 +258,39 @@ test("stopping a turn ends the process", async () => {
   setTimeout(() => turn.stop(), 100);
   const { code } = await turn.done;
   assert.notEqual(code, 0);
+});
+
+test("the engine writes the MCP config and prompt, and runs from its own empty folder", async () => {
+  const kb = await makeTempKb();
+  try {
+    const dir = path.join(kb.dir, ".kb25", "chat");
+    await fs.mkdir(dir, { recursive: true });
+    const seen: { args?: string[]; cwd?: string } = {};
+    const turn = await claudeEngine.startTurn({
+      path: "/somewhere/claude",
+      dir,
+      mcp: { command: "/usr/bin/node", args: ["mcp.mjs"], env: { KB_DIR: kb.dir, KB25_COMMIT_VIA: "chat" } },
+      prompt: "Be brief.",
+      session: { id: "s-1", resume: false },
+      text: "hi",
+      onEvent: () => {},
+      spawnImpl: (_command, args, options) => {
+        Object.assign(seen, { args, cwd: options.cwd });
+        return spawn(process.execPath, ["-e", "process.stdin.resume(); process.stdin.on('end', () => {})"], options);
+      },
+    });
+    await turn.done;
+    assert.equal(seen.cwd, path.join(dir, "cwd"));
+    const value = (flag: string) => seen.args?.[seen.args.indexOf(flag) + 1] ?? "";
+    assert.equal(await fs.readFile(value("--append-system-prompt-file"), "utf8"), "Be brief.");
+    assert.match(await fs.readFile(value("--mcp-config"), "utf8"), /"KB25_COMMIT_VIA": "chat"/);
+    assert.equal(value("--session-id"), "s-1");
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("a resume of a session Claude no longer has counts as lost", () => {
+  assert.equal(claudeEngine.lostSession("No conversation found with session ID: abc"), true);
+  assert.equal(claudeEngine.lostSession("error: unknown option"), false);
 });

@@ -1,6 +1,7 @@
 /**
- * The viewer's chat: one conversation per thread, each turn a `claude -p` run
- * (claude-cli.ts) with the kb25 MCP server attached.
+ * The viewer's chat: one conversation per thread, each turn a run of the
+ * person's own agent program (an Engine, agent-cli.ts) with the kb25 MCP
+ * server attached.
  *
  * A turn belongs to the server, not to the page that started it: every click in
  * the viewer is a full page load, so the drawer that sent a message is gone by
@@ -12,17 +13,8 @@
  * appends a report of them, with links. The model is told the app does this,
  * so its own text after a write is only ever a caveat.
  */
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import type { PageNode } from "./content.js";
-import {
-  mcpConfig,
-  startTurn as realStartTurn,
-  type ClaudeEvent,
-  type ClaudeStatus,
-  type TurnFiles,
-  type TurnOptions,
-} from "./claude-cli.js";
+import type { AgentEvent, AgentStatus, Engine, McpServerSpec } from "./agent-cli.js";
 import {
   isThreadId,
   threadTitle,
@@ -34,7 +26,7 @@ import {
 } from "./chat-store.js";
 
 /**
- * Appended to Claude Code's own system prompt for every chat thread. Claude
+ * Added to the engine's own system prompt for every chat thread. The engine
  * records it on a thread's first turn and reuses it after, so a change here
  * reaches new threads only.
  */
@@ -83,17 +75,16 @@ export type RunEvent =
 
 export type SendOutcome =
   | { ok: true; thread: ChatThread }
-  | { ok: false; status: 400 | 409 | 503; error: string; claude?: ClaudeStatus };
+  | { ok: false; status: 400 | 409 | 503; error: string; claude?: AgentStatus };
 
 export interface ChatDeps {
   store: ChatStore;
-  /** Claude Code's state; `fresh` skips any cache. */
-  claude: (fresh?: boolean) => Promise<ClaudeStatus>;
+  /** The agent program turns run on. */
+  engine: Engine;
   /** How to start the kb25 MCP server for a turn. */
-  mcp: { command: string; args: string[]; env: Record<string, string> };
+  mcp: McpServerSpec;
   /** Every page, live and archived, flattened: for the context line and the report. */
   pages: () => Promise<PageNode[]>;
-  startTurn?: (options: TurnOptions) => ReturnType<typeof realStartTurn>;
   now?: () => Date;
 }
 
@@ -102,7 +93,8 @@ export interface ChatThreadSummary extends ThreadSummary {
 }
 
 export interface Chat {
-  status(fresh?: boolean): Promise<ClaudeStatus>;
+  /** The engine's state, checked at most every 30 seconds unless `fresh`. */
+  status(fresh?: boolean): Promise<AgentStatus>;
   list(): Promise<ChatThreadSummary[]>;
   thread(id: string): Promise<ChatThread | null>;
   /** Start a turn; the thread is created by its first message. */
@@ -145,15 +137,14 @@ export function makeChat(deps: ChatDeps): Chat {
   const runs = new Map<string, Run>();
   const idleListeners: (() => void)[] = [];
   const now = () => (deps.now ?? (() => new Date()))().toISOString();
-  const startTurn = deps.startTurn ?? realStartTurn;
 
-  async function turnFiles(): Promise<TurnFiles> {
-    const dir = deps.store.dir;
-    await fs.mkdir(path.join(dir, "cwd"), { recursive: true });
-    const files = { mcpConfig: path.join(dir, "mcp.json"), systemPrompt: path.join(dir, "prompt.md") };
-    await fs.writeFile(files.mcpConfig, mcpConfig(deps.mcp.command, deps.mcp.args, deps.mcp.env));
-    await fs.writeFile(files.systemPrompt, CHAT_PROMPT);
-    return files;
+  // The drawer asks on every page load; installing or signing in reaches it
+  // within 30 seconds, or at once through `fresh` (opening it, Retry).
+  let checked: { at: number; status: Promise<AgentStatus> } | null = null;
+  function status(fresh = false): Promise<AgentStatus> {
+    if (!fresh && checked && Date.now() - checked.at < 30_000) return checked.status;
+    checked = { at: Date.now(), status: deps.engine.check() };
+    return checked.status;
   }
 
   function emit(run: Run, event: RunEvent): void {
@@ -167,8 +158,8 @@ export function makeChat(deps: ChatDeps): Chat {
     if (!text) return { ok: false, status: 400, error: "The message is empty." };
     if (text.length > MAX_MESSAGE_LENGTH) return { ok: false, status: 400, error: "The message is too long." };
     if (runs.has(id)) return { ok: false, status: 409, error: "This chat is still answering." };
-    const claude = await deps.claude();
-    if (claude.state !== "ok") return { ok: false, status: 503, error: "Claude Code is not ready.", claude };
+    const claude = await status();
+    if (claude.state !== "ok") return { ok: false, status: 503, error: `${deps.engine.name} is not ready.`, claude };
     // Checked again: the status check above can take a moment.
     if (runs.has(id)) return { ok: false, status: 409, error: "This chat is still answering." };
 
@@ -212,15 +203,14 @@ export function makeChat(deps: ChatDeps): Chat {
     void (async () => {
       try {
         const pages = await deps.pages();
-        const files = await turnFiles();
         const prompt = `${contextBlock(input.slug, input.forcePages, pages)}\n\n${text}`;
-        const outcome = await runTurn(thread, run, claude.path, files, prompt, () => {
+        const outcome = await runTurn(thread, run, claude.path, prompt, () => {
           if (!thread.started) {
             thread.started = true;
             save();
           }
         });
-        for (const message of finishMessages(outcome, run.stopped, pages, now())) {
+        for (const message of finishMessages(outcome, run.stopped, pages, now(), deps.engine.name)) {
           thread.messages.push(message);
           emit(run, { type: "message", message });
         }
@@ -243,15 +233,14 @@ export function makeChat(deps: ChatDeps): Chat {
   }
 
   /**
-   * Run one turn to the end. A thread whose Claude session has gone (its
-   * transcript cleared) is started afresh under the same id, once, rather
-   * than left unable to continue.
+   * Run one turn to the end. A thread whose session the engine no longer has
+   * (its transcript cleared) is started afresh under the same id, once,
+   * rather than left unable to continue.
    */
   async function runTurn(
     thread: ChatThread,
     run: Run,
-    claudePath: string,
-    files: TurnFiles,
+    programPath: string,
     prompt: string,
     onStarted: () => void
   ): Promise<TurnOutcome> {
@@ -259,14 +248,14 @@ export function makeChat(deps: ChatDeps): Chat {
       const outcome: TurnOutcome = { texts: [], streamed: "", calls: [], code: null, stderr: "" };
       const byId = new Map<string, ToolCall>();
       let breakBefore = false;
-      const turn = startTurn({
-        claudePath,
-        sessionId: thread.id,
-        resume,
-        files,
-        cwd: path.join(deps.store.dir, "cwd"),
+      const turn = await deps.engine.startTurn({
+        path: programPath,
+        dir: deps.store.dir,
+        mcp: deps.mcp,
+        prompt: CHAT_PROMPT,
+        session: { id: thread.id, resume },
         text: prompt,
-        onEvent: (event: ClaudeEvent) => {
+        onEvent: (event: AgentEvent) => {
           switch (event.type) {
             case "init":
               onStarted();
@@ -296,11 +285,8 @@ export function makeChat(deps: ChatDeps): Chat {
               if (call) call.result = { isError: event.isError, text: event.text };
               break;
             }
-            case "retry":
-              emit(run, {
-                type: "activity",
-                text: `Claude is busy; trying again (${event.attempt} of ${event.maxRetries})…`,
-              });
+            case "notice":
+              emit(run, { type: "activity", text: event.text });
               break;
             case "result":
               outcome.result = event;
@@ -317,12 +303,12 @@ export function makeChat(deps: ChatDeps): Chat {
     };
 
     const first = await attempt(thread.started);
-    const lost = thread.started && !first.result && !run.stopped && /no conversation found/i.test(first.stderr);
+    const lost = thread.started && !first.result && !run.stopped && deps.engine.lostSession(first.stderr);
     return lost ? attempt(false) : first;
   }
 
   return {
-    status: (fresh) => deps.claude(fresh),
+    status,
     async list() {
       return (await deps.store.list()).map((summary) => ({ ...summary, running: runs.has(summary.id) }));
     },
@@ -368,7 +354,7 @@ interface TurnOutcome {
   /** Everything streamed, the unfinished last block included. */
   streamed: string;
   calls: ToolCall[];
-  result?: Extract<ClaudeEvent, { type: "result" }>;
+  result?: Extract<AgentEvent, { type: "result" }>;
   code: number | null;
   stderr: string;
 }
@@ -377,7 +363,13 @@ interface TurnOutcome {
  * The messages a finished turn leaves: the report of what it wrote, then its
  * reply (after a write, the caveat that goes with the report), then any failure.
  */
-function finishMessages(outcome: TurnOutcome, stopped: boolean, pages: PageNode[], at: string): ChatMessage[] {
+function finishMessages(
+  outcome: TurnOutcome,
+  stopped: boolean,
+  pages: PageNode[],
+  at: string,
+  engineName: string
+): ChatMessage[] {
   const messages: ChatMessage[] = [];
   const changes = resolveChanges(pageChanges(outcome.calls), pages);
   if (changes.length > 0) messages.push({ role: "report", changes, at });
@@ -390,11 +382,11 @@ function finishMessages(outcome: TurnOutcome, stopped: boolean, pages: PageNode[
     const detail = outcome.stderr.split("\n").filter(Boolean).slice(-3).join("\n");
     messages.push({
       role: "error",
-      text: detail || `Claude Code stopped unexpectedly${outcome.code === null ? "" : ` (exit code ${outcome.code})`}.`,
+      text: detail || `${engineName} stopped unexpectedly${outcome.code === null ? "" : ` (exit code ${outcome.code})`}.`,
       at,
     });
   } else if (outcome.result.isError) {
-    messages.push({ role: "error", text: outcome.result.text || `Claude Code reported ${outcome.result.subtype}.`, at });
+    messages.push({ role: "error", text: outcome.result.text || `${engineName} reported an error.`, at });
   }
   return messages;
 }
@@ -406,7 +398,7 @@ function errorText(err: unknown): string {
 /**
  * The context line a turn's message opens with: what the person is looking at,
  * and whether they asked for pages with the toggle. Sent with every message
- * rather than in the system prompt, which Claude fixes on the first turn.
+ * rather than in the system prompt, which the engine fixes on the first turn.
  */
 export function contextBlock(slug: string | undefined, forcePages: boolean, pages: PageNode[]): string {
   const lines: string[] = [];

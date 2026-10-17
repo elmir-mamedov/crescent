@@ -31,7 +31,7 @@ import { parseWordDiff } from "./diff.js";
 import { DEFAULT_FEEDBACK_RELAY, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedback } from "./feedback.js";
 import { createRenderer, noteSegments, sourceBlocks, type Section } from "./markdown.js";
 import { makePresence } from "./presence.js";
-import { checkClaude, type ClaudeStatus } from "./claude-cli.js";
+import { claudeEngine } from "./claude-cli.js";
 import { makeChat, messageView, type ChatMessageView, type RunEvent } from "./chat.js";
 import { makeChatStore, type ChatMessage } from "./chat-store.js";
 import { collectNotes, groupNotesByPage, summarizeNotes } from "./note-index.js";
@@ -2288,7 +2288,7 @@ await app.register(async (scope) => {
 const BUNDLED_MCP = path.join(__dirname, "mcp.mjs");
 const chat = makeChat({
   store: makeChatStore(KB_DIR),
-  claude: claudeStatus,
+  engine: claudeEngine,
   mcp: {
     command: process.execPath,
     args: fs.existsSync(BUNDLED_MCP)
@@ -2298,18 +2298,6 @@ const chat = makeChat({
   },
   pages: async () => flatten(await content.tree("all")),
 });
-
-let claudeChecked: { at: number; status: Promise<ClaudeStatus> } | null = null;
-/**
- * Claude Code's state, checked at most every 30 seconds: the drawer asks on
- * every page load. `fresh` (the drawer's Retry, or opening it) checks again,
- * so installing or signing in takes effect without a restart.
- */
-function claudeStatus(fresh = false): Promise<ClaudeStatus> {
-  if (!fresh && claudeChecked && Date.now() - claudeChecked.at < 30_000) return claudeChecked.status;
-  claudeChecked = { at: Date.now(), status: checkClaude() };
-  return claudeChecked.status;
-}
 
 /** A thread message as the drawer shows it, rendered against the KB as it is now. */
 async function chatViews(messages: ChatMessage[]): Promise<ChatMessageView[]> {

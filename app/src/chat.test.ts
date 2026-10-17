@@ -1,8 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { ClaudeEvent, ClaudeStatus, TurnOptions } from "./claude-cli.js";
+import type { AgentEvent, AgentStatus, Engine, EngineTurnOptions, Turn } from "./agent-cli.js";
 import { makeChatStore } from "./chat-store.js";
 import {
   CHAT_PROMPT,
@@ -18,7 +17,7 @@ import type { PageNode } from "./content.js";
 import { makeTempKb } from "./test-helpers.js";
 
 const ID = "0b6f3a52-6d3e-4b8e-9a51-2f6c1d9e7a10";
-const OK: ClaudeStatus = { state: "ok", path: "/bin/claude", version: "2.1.302" };
+const OK: AgentStatus = { state: "ok", path: "/bin/claude", version: "2.1.302" };
 
 function node(slug: string, title: string, id?: string, extra: Partial<PageNode> = {}): PageNode {
   return {
@@ -206,14 +205,14 @@ test("the system prompt keeps the hand-off and the explicit-request rule", () =>
 });
 
 /**
- * A stand-in for startTurn. Each call takes the next script: events to emit
- * and how the process exits. A script with `hold` waits until released or
- * stopped, so a test can look at a turn mid-run.
+ * A stand-in for an engine's startTurn. Each call takes the next script:
+ * events to emit and how the process exits. A script with `hold` waits until
+ * released or stopped, so a test can look at a turn mid-run.
  */
-function fakeTurns(scripts: { events: ClaudeEvent[]; code?: number; stderr?: string; hold?: boolean }[]) {
-  const calls: TurnOptions[] = [];
+function fakeTurns(scripts: { events: AgentEvent[]; code?: number; stderr?: string; hold?: boolean }[]) {
+  const calls: EngineTurnOptions[] = [];
   const releases: (() => void)[] = [];
-  const startTurn = (options: TurnOptions) => {
+  const startTurn = async (options: EngineTurnOptions): Promise<Turn> => {
     calls.push(options);
     const script = scripts.shift() ?? { events: [] };
     let finish!: (value: { code: number | null; stderr: string }) => void;
@@ -232,29 +231,33 @@ function fakeTurns(scripts: { events: ClaudeEvent[]; code?: number; stderr?: str
   return { calls, releases, startTurn };
 }
 
-const INIT: ClaudeEvent = { type: "init", sessionId: ID, model: "m", mcpServers: [] };
-const result = (text = "", isError = false): ClaudeEvent => ({
-  type: "result",
-  isError,
-  subtype: isError ? "error_during_execution" : "success",
-  text,
-  sessionId: ID,
-});
+const INIT: AgentEvent = { type: "init", sessionId: ID };
+const result = (text = "", isError = false): AgentEvent => ({ type: "result", isError, text });
+
+/** An engine whose turns are the fake's, and whose check reports `status`. */
+function fakeEngine(fake: ReturnType<typeof fakeTurns>, status: AgentStatus): Engine {
+  return {
+    id: "claude",
+    name: "Claude Code",
+    check: async () => status,
+    startTurn: fake.startTurn,
+    lostSession: (stderr) => /no conversation found/i.test(stderr),
+  };
+}
 
 async function withChat(
   scripts: Parameters<typeof fakeTurns>[0],
   body: (ctx: { chat: ReturnType<typeof makeChat>; fake: ReturnType<typeof fakeTurns>; kbDir: string }) => Promise<void>,
-  status: ClaudeStatus = OK
+  status: AgentStatus = OK
 ) {
   const kb = await makeTempKb();
   try {
     const fake = fakeTurns(scripts);
     const chat = makeChat({
       store: makeChatStore(kb.dir),
-      claude: async () => status,
+      engine: fakeEngine(fake, status),
       mcp: { command: "/usr/bin/node", args: ["mcp.mjs"], env: { KB_DIR: kb.dir, KB25_COMMIT_VIA: "chat" } },
       pages: async () => PAGES,
-      startTurn: fake.startTurn,
       now: () => new Date("2026-10-17T10:00:00.000Z"),
     });
     await body({ chat, fake, kbDir: kb.dir });
@@ -307,13 +310,12 @@ test("a chat-only turn stores the question and the answer, and no report", async
       );
 
       const options = fake.calls[0];
-      assert.equal(options.sessionId, ID);
-      assert.equal(options.resume, false);
-      assert.equal(options.cwd, path.join(kbDir, ".kb25", "chat", "cwd"));
+      assert.deepEqual(options.session, { id: ID, resume: false });
+      assert.equal(options.dir, path.join(kbDir, ".kb25", "chat"));
       assert.match(options.text, /^<kb25-context>\nThe person is viewing the home page of space "demo"/);
       assert.match(options.text, /\n\nwhat is an incentive model\?$/);
-      assert.equal(await fs.readFile(options.files.systemPrompt, "utf8"), CHAT_PROMPT);
-      assert.match(await fs.readFile(options.files.mcpConfig, "utf8"), /"KB25_COMMIT_VIA": "chat"/);
+      assert.equal(options.prompt, CHAT_PROMPT);
+      assert.equal(options.mcp.env.KB25_COMMIT_VIA, "chat");
 
       const thread = await chat.thread(ID);
       assert.equal(thread?.title, "what is an incentive model?");
@@ -357,7 +359,7 @@ test("a writing turn ends with a report of the pages, and the next turn resumes 
       await chat.send(ID, { text: "okay, write it down", forcePages: false, slug: "demo" });
       const events = await finished(chat, ID);
 
-      assert.equal(fake.calls[1].resume, true);
+      assert.equal(fake.calls[1].session.resume, true);
       assert.ok(events.some((e) => e.type === "activity" && e.text === "Writing “Incentive model”…"));
       const thread = await chat.thread(ID);
       const last = thread?.messages.at(-1);
@@ -517,7 +519,7 @@ test("a thread whose Claude session has gone starts a new one under the same id"
       await chat.send(ID, { text: "two", forcePages: false });
       await finished(chat, ID);
       assert.deepEqual(
-        fake.calls.map((c) => c.resume),
+        fake.calls.map((c) => c.session.resume),
         [false, true, false]
       );
       const last = (await chat.thread(ID))?.messages.at(-1);
