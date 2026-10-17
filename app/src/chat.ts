@@ -83,6 +83,8 @@ export interface ChatDeps {
   engine: Engine;
   /** How to start the kb25 MCP server for a turn. */
   mcp: McpServerSpec;
+  /** Where engines run: outside the KB and any project (see EngineTurnOptions.dir). */
+  workDir: string;
   /** Every page, live and archived, flattened: for the context line and the report. */
   pages: () => Promise<PageNode[]>;
   now?: () => Date;
@@ -250,7 +252,7 @@ export function makeChat(deps: ChatDeps): Chat {
       let breakBefore = false;
       const turn = await deps.engine.startTurn({
         path: programPath,
-        dir: deps.store.dir,
+        dir: deps.workDir,
         mcp: deps.mcp,
         prompt: CHAT_PROMPT,
         session: { id: thread.id, resume },

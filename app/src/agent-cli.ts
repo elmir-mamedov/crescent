@@ -59,7 +59,12 @@ export interface McpServerSpec {
 export interface EngineTurnOptions {
   /** The program, as `check` found it. */
   path: string;
-  /** `<KB_DIR>/.kb25/chat`: the engine keeps its working folder and files under it. */
+  /**
+   * A folder of the chat's own, outside the KB and any project, where the
+   * engine keeps its files and working folder. Both programs read instruction
+   * files (CLAUDE.md, AGENTS.md) in the folders above where they run, so a KB
+   * kept inside a repository would otherwise hand them that repository's.
+   */
   dir: string;
   mcp: McpServerSpec;
   /** The chat's instructions, added to the engine's own. */

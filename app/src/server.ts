@@ -2296,6 +2296,8 @@ const chat = makeChat({
       : ["--import", import.meta.resolve("tsx"), path.join(__dirname, "mcp.ts")],
     env: { KB_DIR, KB25_COMMIT_VIA: "chat" },
   },
+  // One per KB, so a checkout's server and an installed one never share it.
+  workDir: path.join(os.tmpdir(), `kb25-chat-${crypto.createHash("sha256").update(KB_DIR).digest("hex").slice(0, 12)}`),
   pages: async () => flatten(await content.tree("all")),
 });
 

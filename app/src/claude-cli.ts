@@ -242,7 +242,7 @@ export const claudeEngine: Engine = {
   async startTurn(options) {
     // Its own folder: Claude Code also reads AGENTS.md files, so it must not
     // share one with an engine that keeps its instructions in one.
-    const cwd = path.join(options.dir, "cwd");
+    const cwd = path.join(options.dir, "claude");
     await fs.mkdir(cwd, { recursive: true });
     const files = { mcpConfig: path.join(options.dir, "mcp.json"), systemPrompt: path.join(options.dir, "prompt.md") };
     await fs.writeFile(files.mcpConfig, mcpConfig(options.mcp.command, options.mcp.args, options.mcp.env));

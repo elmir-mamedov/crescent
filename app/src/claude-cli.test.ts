@@ -263,7 +263,7 @@ test("stopping a turn ends the process", async () => {
 test("the engine writes the MCP config and prompt, and runs from its own empty folder", async () => {
   const kb = await makeTempKb();
   try {
-    const dir = path.join(kb.dir, ".kb25", "chat");
+    const dir = path.join(kb.dir, "work");
     await fs.mkdir(dir, { recursive: true });
     const seen: { args?: string[]; cwd?: string } = {};
     const turn = await claudeEngine.startTurn({
@@ -280,7 +280,7 @@ test("the engine writes the MCP config and prompt, and runs from its own empty f
       },
     });
     await turn.done;
-    assert.equal(seen.cwd, path.join(dir, "cwd"));
+    assert.equal(seen.cwd, path.join(dir, "claude"));
     const value = (flag: string) => seen.args?.[seen.args.indexOf(flag) + 1] ?? "";
     assert.equal(await fs.readFile(value("--append-system-prompt-file"), "utf8"), "Be brief.");
     assert.match(await fs.readFile(value("--mcp-config"), "utf8"), /"KB25_COMMIT_VIA": "chat"/);

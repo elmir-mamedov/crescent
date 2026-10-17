@@ -256,6 +256,7 @@ async function withChat(
     const chat = makeChat({
       store: makeChatStore(kb.dir),
       engine: fakeEngine(fake, status),
+      workDir: path.join(kb.dir, "work"),
       mcp: { command: "/usr/bin/node", args: ["mcp.mjs"], env: { KB_DIR: kb.dir, KB25_COMMIT_VIA: "chat" } },
       pages: async () => PAGES,
       now: () => new Date("2026-10-17T10:00:00.000Z"),
@@ -311,7 +312,7 @@ test("a chat-only turn stores the question and the answer, and no report", async
 
       const options = fake.calls[0];
       assert.deepEqual(options.session, { id: ID, resume: false });
-      assert.equal(options.dir, path.join(kbDir, ".kb25", "chat"));
+      assert.equal(options.dir, path.join(kbDir, "work"));
       assert.match(options.text, /^<kb25-context>\nThe person is viewing the home page of space "demo"/);
       assert.match(options.text, /\n\nwhat is an incentive model\?$/);
       assert.equal(options.prompt, CHAT_PROMPT);
