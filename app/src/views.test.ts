@@ -1929,3 +1929,37 @@ test("folder dialog: a folder title is escaped into the button that opens it", (
   assert.match(html, /data-folder-title="&quot;&gt;&lt;b&gt;x"/);
   assert.match(html, /data-folder-parent-title="&quot;&gt;&lt;b&gt;x"/);
 });
+
+test("views: every page with the corner has the chat, told which page is open", () => {
+  const cases: Array<[string, string]> = [
+    [layout(pageView({ activeSlug: "kb25/notes" })), "kb25/notes"],
+    [folderLayout(folderView()), "kb25/box"],
+    [editLayout(editView()), editView().activeSlug],
+    [spacesLayout(spacesView()), ""],
+  ];
+  for (const [html, slug] of cases) {
+    assert.match(html, /<button type="button" class="chat-button" data-chat-open aria-expanded="false" aria-label="Chat with Claude"/);
+    assert.match(html, new RegExp(`<section class="chat-drawer" data-chat data-chat-slug="${slug}" aria-label="Chat with Claude" hidden>`));
+    assert.match(html, /data-chat-pages \/> Write to KB/);
+  }
+  assert.doesNotMatch(loginLayout({ siteTitle: "KB", next: "/" } as LoginView), /data-chat/);
+});
+
+test("views: the page the chat is told about is escaped into its attribute", () => {
+  const html = layout(pageView({ activeSlug: 'kb25/"><b>x' }));
+  assert.match(html, /data-chat-slug="kb25\/&quot;&gt;&lt;b&gt;x"/);
+});
+
+test("views: the chat posts to its thread and follows the turn's event stream", () => {
+  const html = layout(pageView());
+  const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
+  assert.match(script, /fetch\("\/_chat\/threads\/" \+ threadId \+ "\/messages"/);
+  assert.match(script, /JSON\.stringify\(\{ text, forcePages: pages\.checked, slug \}\)/);
+  assert.match(script, /new EventSource\("\/_chat\/threads\/" \+ threadId \+ "\/events"\)/);
+  assert.match(script, /"\/_chat\/status" \+ \(fresh \? "\?fresh=1" : ""\)/);
+  // The report links every page the turn wrote, and server text stays text.
+  assert.match(script, /link\.href = change\.href/);
+  assert.match(script, /new DOMParser\(\)\.parseFromString\(message\.html, "text\/html"\)/);
+  // Open/closed and the Write to KB toggle survive the page loads between them.
+  assert.match(script, /localStorage\.setItem\("kb25\.chat\." \+ key, value\)/);
+});
