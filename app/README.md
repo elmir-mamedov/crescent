@@ -46,6 +46,7 @@ pointing everyone at one exposed process.
 | `KB25_UPDATE_CHECK` | on    | Installed copies check GitHub for a newer release (at most every 6 hours) and offer an Update button. `0` turns that off. |
 | `KB25_RELEASES_URL` | the GitHub releases | Where that check and the update look. For testing updates against a local copy. |
 | `KB25_FEEDBACK_RELAY` | the feedback relay | Where the feedback dialog's reports go: a relay built from [`@elmir-mamedov/feedback`](https://github.com/elmir-mamedov/feedback). For testing against `wrangler dev` (`http://localhost:8787`). |
+| `KB25_CLAUDE_PATH` | searched | The `claude` program the chat runs. Unset, the viewer looks on `PATH` and in the usual install folders; set, it uses only this. |
 
 ```bash
 KB_DIR=/path/to/kb PORT=8080 SITE_TITLE="Team Wiki" npm start
@@ -94,6 +95,33 @@ writes those headers itself.
   draws the dialog and runs the relay). Reports that can't go yet wait in a
   `feedback-outbox` folder (in KB25's home when installed, else
   `~/.config/kb25/`) and are retried.
+
+## Chat
+
+The sparkles button in the corner opens a chat drawer on every page. It runs
+the person's own Claude Code non-interactively (`claude -p`), one process per
+message, with the kb25 MCP server attached, so the chat can answer questions
+and, when asked in so many words or with the **Write to KB** toggle, write
+pages. It needs Claude Code 2.1.259 or newer, installed and signed in; the
+drawer says so when it is not.
+
+- `src/claude-cli.ts` finds `claude` (a launcher-started server has a bare
+  `PATH`, so the usual install folders are searched too), checks it, and runs a
+  turn: `--session-id` starts a thread's session and `--resume` continues it;
+  `--strict-mcp-config` attaches kb25 alone; `--tools WebSearch,WebFetch`
+  leaves no shell or file tools; `--setting-sources project`, from an empty
+  working folder, keeps the person's plugins and hooks out while still using
+  their sign-in (`--bare` would not, and `--safe-mode` drops `--mcp-config`).
+- `src/chat.ts` runs turns on the server, so one survives the page that started
+  it: a page that loads mid-turn replays it from `/_chat/threads/<id>/events`.
+  It also holds the system prompt. When a turn writes, the server reads its
+  kb25 tool calls and appends a report of the pages created, updated, moved or
+  deleted, with links; the model only adds a caveat.
+- `src/chat-store.ts` keeps each thread as JSON in `<KB_DIR>/.kb25/chat/threads`,
+  beside the spaces rather than in one, so no space commits a conversation.
+- The chat's MCP server commits as `... via chat` (`KB25_COMMIT_VIA=chat`).
+- A launcher-started server does not quit after its last tab closes while a
+  turn is still running; it waits for the turn to end.
 
 ## MCP server
 

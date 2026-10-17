@@ -32,6 +32,19 @@ Open it again the same way as before.
 If you use the Claude app or Claude Code, the installer offers to connect KB25
 to it, so Claude can find, read and write your pages.
 
+## Chat with Claude
+
+Click the sparkles in the top-right corner to open the chat beside your pages.
+Ask anything there, about your pages or anything else, and Claude answers in
+the chat. To have something written into your knowledge base, say so: "write a
+page about…", "add this to the KB", or "write it down" after an answer. Or
+switch on **Write to KB** under the message box. When Claude has written pages,
+the chat lists them with links.
+
+The chat uses Claude Code on your computer, signed in with your Claude account.
+If it isn't installed or signed in, the chat says what to do. Conversations are
+kept in your KB25 folder (in `.kb25/chat`), apart from your pages.
+
 ## Send feedback
 
 Found a bug, or have an idea? Click the speech bubble in the top-right corner
