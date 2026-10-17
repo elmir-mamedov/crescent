@@ -421,6 +421,7 @@ test("stopping a turn keeps what it wrote and says it was stopped", async () => 
           INIT,
           { type: "assistant", blocks: [{ type: "tool_use", id: "t1", name: "mcp__kb25__kb_create_page", input: { title: "A" } }] },
           { type: "tool_result", toolUseId: "t1", isError: false, text: JSON.stringify({ created: true, slug: "demo/a", id: "a1" }) },
+          { type: "text", text: "Now the second" },
         ],
         hold: true,
       },
@@ -437,8 +438,10 @@ test("stopping a turn keeps what it wrote and says it was stopped", async () => 
       const thread = await chat.thread(ID);
       assert.deepEqual(
         thread?.messages.map((m) => m.role),
-        ["user", "report", "error"]
+        ["user", "report", "assistant", "error"]
       );
+      // What it had streamed is kept, though the block never finished.
+      assert.equal(thread?.messages[2] && "text" in thread.messages[2] ? thread.messages[2].text : "", "Now the second");
       assert.deepEqual(thread?.messages.at(-1), { role: "error", text: "Stopped.", at: "2026-10-17T10:00:00.000Z" });
       assert.equal(chat.activeCount(), 0);
       assert.equal(idle, 1);

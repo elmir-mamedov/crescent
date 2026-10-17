@@ -254,7 +254,7 @@ export function makeChat(deps: ChatDeps): Chat {
     onStarted: () => void
   ): Promise<TurnOutcome> {
     const attempt = async (resume: boolean): Promise<TurnOutcome> => {
-      const outcome: TurnOutcome = { texts: [], calls: [], code: null, stderr: "" };
+      const outcome: TurnOutcome = { texts: [], streamed: "", calls: [], code: null, stderr: "" };
       const byId = new Map<string, ToolCall>();
       let breakBefore = false;
       const turn = startTurn({
@@ -269,10 +269,13 @@ export function makeChat(deps: ChatDeps): Chat {
             case "init":
               onStarted();
               break;
-            case "text":
-              emit(run, { type: "text", text: (breakBefore ? "\n\n" : "") + event.text });
+            case "text": {
+              const text = (breakBefore ? "\n\n" : "") + event.text;
+              outcome.streamed += text;
+              emit(run, { type: "text", text });
               breakBefore = false;
               break;
+            }
             case "assistant":
               for (const block of event.blocks) {
                 if (block.type === "text") {
@@ -358,7 +361,10 @@ export function makeChat(deps: ChatDeps): Chat {
 }
 
 interface TurnOutcome {
+  /** The reply's text blocks, each complete. */
   texts: string[];
+  /** Everything streamed, the unfinished last block included. */
+  streamed: string;
   calls: ToolCall[];
   result?: Extract<ClaudeEvent, { type: "result" }>;
   code: number | null;
@@ -373,7 +379,8 @@ function finishMessages(outcome: TurnOutcome, stopped: boolean, pages: PageNode[
   const messages: ChatMessage[] = [];
   const changes = resolveChanges(pageChanges(outcome.calls), pages);
   if (changes.length > 0) messages.push({ role: "report", changes, at });
-  const reply = outcome.texts.join("\n\n").trim();
+  // A stopped turn keeps what it had said, though its last block never finished.
+  const reply = (stopped ? outcome.streamed : outcome.texts.join("\n\n")).trim();
   if (reply) messages.push({ role: "assistant", text: reply, at });
   if (stopped) {
     messages.push({ role: "error", text: "Stopped.", at });
