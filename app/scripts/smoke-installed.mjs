@@ -1,7 +1,8 @@
 // Release CI only: checks a KB25 that install.sh / install.ps1 has just
 // installed with KB25_YES=1 KB25_NO_BROWSER=1. The viewer must answer without
-// a login, the MCP server must list its tools, the launcher must exist, and
-// removal must clean up while leaving the pages alone.
+// a login, the chat must report its engines, the MCP server must list its
+// tools, the launcher must exist, and removal must clean up while leaving the
+// pages alone.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -32,7 +33,24 @@ assert.ok(response, "the viewer never answered");
 assert.equal(response.status, 200, "the viewer should open without a login");
 console.log(`viewer: HTTP ${response.status} on port ${env.PORT}`);
 
-// 2. The MCP server answers tools/list.
+// 2. The chat reports both engines. A runner has neither installed, so this
+// checks that the bundled chat code loads and can look for them.
+const chat = await fetch(`http://localhost:${env.PORT}/_chat/status?fresh=1`);
+assert.equal(chat.status, 200, "the chat status should answer");
+const { engines } = await chat.json();
+assert.deepEqual(
+  engines.map((engine) => engine.id),
+  ["claude", "codex"]
+);
+for (const engine of engines) {
+  assert.ok(
+    ["ok", "missing", "signed-out", "too-old", "broken"].includes(engine.status.state),
+    `unexpected ${engine.id} state ${JSON.stringify(engine.status)}`
+  );
+}
+console.log(`chat: ${engines.map((engine) => `${engine.id} ${engine.status.state}`).join(", ")}`);
+
+// 3. The MCP server answers tools/list.
 const mcp = spawn(node, [path.join(home, "app", "server", "mcp.mjs")], { stdio: ["pipe", "pipe", "inherit"] });
 let out = "";
 mcp.stdout.on("data", (chunk) => (out += chunk));
@@ -53,14 +71,14 @@ mcp.kill();
 assert.ok(tools && tools.length >= 18, `expected the MCP tools, got ${tools?.length}`);
 console.log(`mcp: ${tools.length} tools`);
 
-// 3. The launcher is where Spotlight / the Start menu look for it.
+// 4. The launcher is where Spotlight / the Start menu look for it.
 const launcher = isWindows
   ? path.join(process.env.APPDATA, "Microsoft", "Windows", "Start Menu", "Programs", "KB25.lnk")
   : path.join(os.homedir(), "Applications", "KB25.app");
 assert.ok(fs.existsSync(launcher), `missing launcher ${launcher}`);
 console.log(`launcher: ${launcher}`);
 
-// 4. Removal takes everything but the pages.
+// 5. Removal takes everything but the pages.
 execFileSync(node, [path.join(home, "app", "installer", "setup.mjs")], {
   env: { ...process.env, KB25_UNINSTALL: "1" },
   stdio: "inherit",
