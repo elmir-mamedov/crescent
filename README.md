@@ -82,7 +82,11 @@ chat lists every page it created or changed when it finishes.
 The chat runs the Claude Code or Codex installed on your computer, under the
 account it is signed in with, so its use counts against that account's plan.
 When both are available, a switch under the message box picks one for each
-new chat. Conversations are stored in the `.kb25/chat` folder of your
+new chat. Two menus under the message box set the model and effort level for
+the next message, from those that Claude Code or Codex offers; **Default**
+leaves the choice to the program, and each program keeps its last choice. The
+model settings in your own Claude Code or Codex configuration don't apply to
+the chat. Conversations are stored in the `.kb25/chat` folder of your
 knowledge base, separate from the spaces.
 
 **Using KB25 from Claude.** Once connected during installation, the Claude app
