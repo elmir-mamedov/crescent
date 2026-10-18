@@ -142,9 +142,13 @@ test("a turn gets kb25 alone, web tools only, and no prompts or person's setting
 });
 
 test("a model and effort level are passed only when chosen", () => {
-  const plain = turnArgs({ sessionId: "abc", resume: true, files: FILES });
+  const plain = turnArgs({ sessionId: "abc", resume: false, files: FILES });
   assert.equal(plain.includes("--model"), false);
   assert.equal(plain.includes("--effort"), false);
+  // A resumed session would keep the model it last ran on.
+  const resumed = turnArgs({ sessionId: "abc", resume: true, files: FILES });
+  assert.equal(resumed[resumed.indexOf("--model") + 1], "default");
+  assert.equal(resumed.includes("--effort"), false);
   const chosen = turnArgs({ sessionId: "abc", resume: true, files: FILES, model: "sonnet[1m]", effort: "xhigh" });
   assert.equal(chosen[chosen.indexOf("--model") + 1], "sonnet[1m]");
   assert.equal(chosen[chosen.indexOf("--effort") + 1], "xhigh");

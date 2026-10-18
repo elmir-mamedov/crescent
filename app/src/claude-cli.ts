@@ -87,7 +87,8 @@ export interface TurnFiles {
 /**
  * The arguments for one turn. The prompt itself goes on stdin (`turnInput`).
  * A model or effort level applies to this turn alone, so a resumed session
- * can change either.
+ * can change either. A resumed session otherwise keeps the model it last ran
+ * on, so leaving the model to Claude Code there takes asking for `default`.
  */
 export function turnArgs(options: {
   sessionId: string;
@@ -122,7 +123,7 @@ export function turnArgs(options: {
     "--disable-slash-commands",
     "--append-system-prompt-file",
     options.files.systemPrompt,
-    ...(options.model ? ["--model", options.model] : []),
+    ...(options.model ? ["--model", options.model] : options.resume ? ["--model", "default"] : []),
     ...(options.effort ? ["--effort", options.effort] : []),
   ];
 }
