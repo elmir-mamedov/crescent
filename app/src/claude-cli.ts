@@ -19,13 +19,17 @@ import path from "node:path";
 import {
   checkProgram,
   findProgram,
+  isEffortName,
+  isModelName,
   programCandidates,
   runQuiet,
+  runToEnd,
   startProcessTurn,
   type AgentEvent,
   type AgentStatus,
   type AssistantBlock,
   type Engine,
+  type ModelCatalog,
   type SpawnImpl,
   type Turn,
 } from "./agent-cli.js";
@@ -134,6 +138,69 @@ export function turnInput(text: string): string {
 }
 
 type Json = Record<string, unknown>;
+
+/**
+ * Ask for the models the way the Agent SDK does: an `initialize` request on
+ * stream-json stdin, which `claude -p` answers and then exits, with no turn
+ * run and nothing sent to a model.
+ */
+export const MODELS_REQUEST = `${JSON.stringify({
+  type: "control_request",
+  request_id: "models",
+  request: { subtype: "initialize" },
+})}\n`;
+
+/** The arguments for MODELS_REQUEST: a turn's isolation, minus what only a turn needs. */
+export function modelsArgs(): string[] {
+  return [
+    "-p",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--setting-sources",
+    "project",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+  ];
+}
+
+/**
+ * The catalog in the answer to MODELS_REQUEST (2.1.302): `default` is what
+ * runs with no `--model`, and the model it resolves to names it. Effort
+ * levels are listed only for models that take one.
+ */
+export function parseClaudeModels(stdout: string): ModelCatalog | null {
+  for (const line of stdout.split("\n")) {
+    let raw: Json;
+    try {
+      raw = JSON.parse(line) as Json;
+    } catch {
+      continue;
+    }
+    if (raw?.type !== "control_response") continue;
+    const listed = ((raw.response as Json | undefined)?.response as Json | undefined)?.models;
+    if (!Array.isArray(listed)) continue;
+    const entries = listed.filter((m): m is Json => {
+      const value = m && typeof m === "object" ? (m as Json).value : undefined;
+      return typeof value === "string" && isModelName(value);
+    });
+    const efforts = (m: Json) =>
+      m.supportsEffort === true && Array.isArray(m.supportedEffortLevels)
+        ? m.supportedEffortLevels.filter((e): e is string => typeof e === "string" && isEffortName(e))
+        : [];
+    const name = (m: Json) => (typeof m.displayName === "string" && m.displayName ? m.displayName : String(m.value));
+    const fallback = entries.find((m) => m.value === "default");
+    const others = entries.filter((m) => m !== fallback);
+    const resolved = fallback && others.find((m) => m.resolvedModel === fallback.resolvedModel);
+    return {
+      default: { ...(resolved && { name: name(resolved) }), efforts: fallback ? efforts(fallback) : [] },
+      models: others.map((m) => ({ id: m.value as string, name: name(m), efforts: efforts(m) })),
+    };
+  }
+  return null;
+}
 
 /**
  * The events in one line of stream-json output. Lines that are not JSON, and
@@ -253,6 +320,13 @@ export const claudeEngine: Engine = {
   id: "claude",
   name: "Claude Code",
   check: checkClaude,
+  async models(claudePath, dir) {
+    // The turns' own folder, so the same (absent) project settings apply.
+    const cwd = path.join(dir, "claude");
+    await fs.mkdir(cwd, { recursive: true });
+    const run = await runToEnd(claudePath, modelsArgs(), { cwd, input: MODELS_REQUEST, timeoutMs: 15000 });
+    return run?.code === 0 ? parseClaudeModels(run.stdout) : null;
+  },
   async startTurn(options) {
     // Its own folder: Claude Code also reads AGENTS.md files, so it must not
     // share one with an engine that keeps its instructions in one.

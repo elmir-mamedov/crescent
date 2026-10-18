@@ -22,13 +22,18 @@ import path from "node:path";
 import {
   checkProgram,
   findProgram,
+  isEffortName,
+  isModelName,
   programCandidates,
   runQuiet,
+  runToEnd,
   startProcessTurn,
   type AgentEvent,
   type AgentStatus,
   type Engine,
   type McpServerSpec,
+  type ModelCatalog,
+  type ModelOption,
 } from "./agent-cli.js";
 
 /** The oldest version the chat has been run against. */
@@ -126,6 +131,38 @@ export function codexArgs(options: {
 type Json = Record<string, unknown>;
 
 /**
+ * The catalog `codex debug models` prints (0.157.0): the models Codex lists in
+ * its own picker, in its order. The catalog does not say which one runs when
+ * none is named, so the default offers only the effort levels every model takes.
+ */
+export function parseCodexModels(stdout: string): ModelCatalog | null {
+  let raw: Json;
+  try {
+    raw = JSON.parse(stdout) as Json;
+  } catch {
+    return null;
+  }
+  if (!raw || !Array.isArray(raw.models)) return null;
+  const models: ModelOption[] = (raw.models as unknown[])
+    .filter((m): m is Json => {
+      const slug = m && typeof m === "object" ? (m as Json).slug : undefined;
+      return (m as Json)?.visibility === "list" && typeof slug === "string" && isModelName(slug);
+    })
+    .sort((a, b) => Number(a.priority ?? 0) - Number(b.priority ?? 0))
+    .map((m) => ({
+      id: m.slug as string,
+      name: typeof m.display_name === "string" && m.display_name ? m.display_name : (m.slug as string),
+      efforts: Array.isArray(m.supported_reasoning_levels)
+        ? m.supported_reasoning_levels
+            .map((level) => (level && typeof level === "object" ? (level as Json).effort : level))
+            .filter((effort): effort is string => typeof effort === "string" && isEffortName(effort))
+        : [],
+    }));
+  const shared = (models[0]?.efforts ?? []).filter((effort) => models.every((m) => m.efforts.includes(effort)));
+  return { default: { efforts: shared }, models };
+}
+
+/**
  * A reader for one turn's `--json` output: each line in, the events it means
  * out. Stateful, because a message is held until the turn shows whether it
  * was an aside or the reply; use a new one per turn.
@@ -218,6 +255,13 @@ export const codexEngine: Engine = {
   id: "codex",
   name: "Codex",
   check: checkCodex,
+  async models(codexPath, dir) {
+    // The turns' own folder, so no project's .codex config applies.
+    const cwd = path.join(dir, "codex");
+    await fs.mkdir(cwd, { recursive: true });
+    const run = await runToEnd(codexPath, ["debug", "models"], { cwd, timeoutMs: 15000 });
+    return run?.code === 0 ? parseCodexModels(run.stdout) : null;
+  },
   async startTurn(options) {
     // Its own folder, holding the instructions as AGENTS.md: Claude Code also
     // reads AGENTS.md files, so it must never run here.

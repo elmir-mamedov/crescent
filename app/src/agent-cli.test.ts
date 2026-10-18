@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,10 +11,11 @@ import {
   parseVersion,
   programCandidates,
   runQuiet,
+  runToEnd,
   startProcessTurn,
   versionAtLeast,
 } from "./agent-cli.js";
-import { turnArgs, turnInput } from "./claude-cli.js";
+import { MODELS_REQUEST, modelsArgs, turnArgs, turnInput } from "./claude-cli.js";
 import { codexArgs } from "./codex-cli.js";
 import { makeTempKb } from "./test-helpers.js";
 
@@ -48,6 +50,28 @@ test("lines split across chunks come out whole", () => {
   assert.deepEqual(lines, ['{"a":1}', '{"b":2}']);
   splitter.end();
   assert.deepEqual(lines, ['{"a":1}', '{"b":2}', '{"c":3}']);
+});
+
+test("a program run to the end gets its input and gives back all it printed", async () => {
+  // Past the 1 MB that runQuiet's exec would stop at.
+  const script = `let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{process.stdout.write(s.trim()+":"+"x".repeat(1500000))})`;
+  const run = await runToEnd("node", [], {
+    input: "hello\n",
+    timeoutMs: 15000,
+    spawnImpl: (_command, _args, options) => spawn(process.execPath, ["-e", script], options),
+  });
+  assert.equal(run?.code, 0);
+  assert.equal(run?.stdout.length, "hello:".length + 1500000);
+  assert.ok(run?.stdout.startsWith("hello:x"));
+});
+
+test("a program that cannot start, or does not finish in time, gives nothing", async () => {
+  assert.equal(await runToEnd(path.join(os.tmpdir(), "kb25-no-such-program"), [], { timeoutMs: 15000 }), null);
+  const slow = await runToEnd("node", [], {
+    timeoutMs: 200,
+    spawnImpl: (_command, _args, options) => spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], options),
+  });
+  assert.equal(slow, null);
 });
 
 test("only Claude Code gets its legacy ~/.claude/local folder searched", () => {
@@ -120,6 +144,8 @@ test("windows: Codex's arguments and message survive a codex.cmd shim", windowsO
         args: ["C:\\Users\\Ada Lovelace\\AppData\\Local\\KB25\\app\\server\\mcp.mjs"],
         env: { KB_DIR: "C:\\Users\\Ada Lovelace\\KB25", KB25_COMMIT_VIA: "chat" },
       },
+      model: "gpt-5.6-terra",
+      effort: "xhigh",
     });
     const received = await throughShim(shim, args, AWKWARD);
     assert.deepEqual(received.args, args);
@@ -137,11 +163,24 @@ test("windows: Claude Code's arguments and message survive a claude.cmd shim", w
       sessionId: "0b6f3a52-6d3e-4b8e-9a51-2f6c1d9e7a10",
       resume: false,
       files: { mcpConfig: `${temp}\\mcp.json`, systemPrompt: `${temp}\\prompt.md` },
+      model: "sonnet[1m]",
+      effort: "max",
     });
     const input = turnInput(AWKWARD);
     const received = await throughShim(shim, args, input);
     assert.deepEqual(received.args, args);
     assert.equal(received.stdin, input);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("windows: Claude Code's model request survives a claude.cmd shim", windowsOnly, async () => {
+  const { shim, cleanup } = await fakeShim("claude");
+  try {
+    const run = await runToEnd(shim, modelsArgs(), { cwd: os.tmpdir(), input: MODELS_REQUEST, timeoutMs: 15000 });
+    assert.equal(run?.code, 0, run?.stderr);
+    assert.deepEqual(JSON.parse(run?.stdout ?? "{}"), { args: modelsArgs(), stdin: MODELS_REQUEST });
   } finally {
     await cleanup();
   }

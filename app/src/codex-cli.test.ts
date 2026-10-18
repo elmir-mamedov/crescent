@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { AgentEvent } from "./agent-cli.js";
-import { DISABLED_FEATURES, codexArgs, codexEngine, codexReader, tomlString } from "./codex-cli.js";
+import { DISABLED_FEATURES, codexArgs, codexEngine, codexReader, parseCodexModels, tomlString } from "./codex-cli.js";
 import { makeTempKb } from "./test-helpers.js";
 
 const MCP = {
@@ -132,6 +132,27 @@ test("a model and effort level are set only when chosen, before any resume", () 
   assert.equal(chosen[model - 1], "-c");
   assert.equal(chosen[effort - 1], "-c");
   assert.ok(model < chosen.indexOf("resume") && effort < chosen.indexOf("resume"));
+});
+
+test("the model list is Codex's own picker, in its order, and the default takes what they all take", () => {
+  const level = (effort: string) => ({ effort, description: `${effort} reasoning` });
+  // `codex debug models` as 0.157.0 printed it, trimmed to the fields that matter.
+  const catalog = JSON.stringify({
+    models: [
+      { slug: "gpt-5.6-luna", display_name: "GPT-5.6-Luna", visibility: "list", priority: 9, supported_reasoning_levels: ["low", "medium", "high"].map(level) },
+      { slug: "gpt-reserve", display_name: "GPT-Reserve", visibility: "hide", priority: 4, supported_reasoning_levels: [level("low")] },
+      { slug: "gpt-5.6-terra", display_name: "GPT-5.6-Terra", visibility: "list", priority: 8, supported_reasoning_levels: ["medium", "high", "ultra"].map(level) },
+    ],
+  });
+  assert.deepEqual(parseCodexModels(catalog), {
+    default: { efforts: ["medium", "high"] },
+    models: [
+      { id: "gpt-5.6-terra", name: "GPT-5.6-Terra", efforts: ["medium", "high", "ultra"] },
+      { id: "gpt-5.6-luna", name: "GPT-5.6-Luna", efforts: ["low", "medium", "high"] },
+    ],
+  });
+  assert.equal(parseCodexModels("Error: not logged in"), null);
+  assert.deepEqual(parseCodexModels('{"models":[]}'), { default: { efforts: [] }, models: [] });
 });
 
 test("the engine writes its instructions as AGENTS.md in its own folder and runs there", async () => {

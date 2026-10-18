@@ -9,7 +9,10 @@ import {
   claudeEngine,
   findClaude,
   mcpConfig,
+  modelsArgs,
+  MODELS_REQUEST,
   parseAuthStatus,
+  parseClaudeModels,
   parseLine,
   startTurn,
   turnArgs,
@@ -145,6 +148,53 @@ test("a model and effort level are passed only when chosen", () => {
   const chosen = turnArgs({ sessionId: "abc", resume: true, files: FILES, model: "sonnet[1m]", effort: "xhigh" });
   assert.equal(chosen[chosen.indexOf("--model") + 1], "sonnet[1m]");
   assert.equal(chosen[chosen.indexOf("--effort") + 1], "xhigh");
+});
+
+// The answer to MODELS_REQUEST as 2.1.302 gave it, trimmed to a few models and fields.
+const ALL_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const MODELS_RESPONSE = JSON.stringify({
+  type: "control_response",
+  response: {
+    subtype: "success",
+    request_id: "models",
+    response: {
+      models: [
+        {
+          value: "default",
+          resolvedModel: "claude-opus-5-5",
+          displayName: "Default (recommended)",
+          description: "Opus 5.5 · Best for everyday, complex tasks",
+          supportsEffort: true,
+          supportedEffortLevels: ALL_EFFORTS,
+        },
+        { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus 5.5", supportsEffort: true, supportedEffortLevels: ALL_EFFORTS },
+        { value: "fable", resolvedModel: "claude-fable-5-1", displayName: "Fable 5.1", supportsEffort: true, supportedEffortLevels: ALL_EFFORTS },
+        { value: "claude-haiku-4-5-20251001", resolvedModel: "claude-haiku-4-5-20251001", displayName: "Haiku 4.5", supportsThinkingOff: true },
+      ],
+      claude_code_version: "2.1.302",
+    },
+  },
+});
+
+test("the model list names the default by the model it runs, and only lists efforts a model takes", () => {
+  assert.deepEqual(parseClaudeModels(`not json\n${MODELS_RESPONSE}\n`), {
+    default: { name: "Opus 5.5", efforts: ALL_EFFORTS },
+    models: [
+      { id: "opus", name: "Opus 5.5", efforts: ALL_EFFORTS },
+      { id: "fable", name: "Fable 5.1", efforts: ALL_EFFORTS },
+      { id: "claude-haiku-4-5-20251001", name: "Haiku 4.5", efforts: [] },
+    ],
+  });
+  assert.equal(parseClaudeModels(RESULT), null);
+  assert.equal(parseClaudeModels(""), null);
+});
+
+test("the models are asked for with a turn's isolation and no turn", () => {
+  const args = modelsArgs();
+  assert.equal(args[args.indexOf("--setting-sources") + 1], "project");
+  assert.ok(args.includes("--strict-mcp-config"));
+  assert.equal(args.includes("--mcp-config"), false);
+  assert.deepEqual(JSON.parse(MODELS_REQUEST), { type: "control_request", request_id: "models", request: { subtype: "initialize" } });
 });
 
 test("the MCP config attaches one stdio server named kb25", () => {

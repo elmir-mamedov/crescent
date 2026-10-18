@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import type { AgentEvent, AgentStatus, Engine, EngineTurnOptions, Turn } from "./agent-cli.js";
+import type { AgentEvent, AgentStatus, Engine, EngineTurnOptions, ModelCatalog, Turn } from "./agent-cli.js";
 import { makeChatStore } from "./chat-store.js";
 import {
   CHAT_PROMPT,
@@ -240,6 +240,7 @@ function fakeEngine(fake: ReturnType<typeof fakeTurns>, status: AgentStatus, id:
     id,
     name: id === "claude" ? "Claude Code" : "Codex",
     check: async () => status,
+    models: async () => null,
     startTurn: fake.startTurn,
     lostSession: (stderr) => /no conversation found|no rollout found/i.test(stderr),
   };
@@ -614,6 +615,55 @@ test("the status names every engine and whether it is ready", async () => {
       { id: "codex", name: "Codex", status: MISSING },
     ]);
   });
+});
+
+test("a ready engine's status lists its models, asked of the program once while it stays the same", async () => {
+  const kb = await makeTempKb();
+  try {
+    const workDir = path.join(kb.dir, "work");
+    const catalog: ModelCatalog = {
+      default: { name: "Opus 5.5", efforts: ["low", "high"] },
+      models: [{ id: "sonnet", name: "Sonnet 5.5", efforts: ["low"] }],
+    };
+    let status: AgentStatus = OK;
+    let answer: ModelCatalog | null = null;
+    const asked: string[] = [];
+    const claude: Engine = {
+      ...fakeEngine(fakeTurns([]), OK),
+      check: async () => status,
+      models: async (programPath, dir) => {
+        asked.push(`${programPath} in ${dir}`);
+        return answer;
+      },
+    };
+    const codex: Engine = {
+      ...fakeEngine(fakeTurns([]), MISSING, "codex"),
+      models: async () => assert.fail("a missing engine is not asked"),
+    };
+    const chat = makeChat({
+      store: makeChatStore(kb.dir),
+      engines: [claude, codex],
+      workDir,
+      mcp: { command: "/usr/bin/node", args: ["mcp.mjs"], env: { KB_DIR: kb.dir } },
+      pages: async () => PAGES,
+    });
+    const models = async (fresh = false) => (await chat.status(fresh)).map((engine) => engine.models);
+
+    // It would not say: nothing listed, and not asked again until a fresh check.
+    assert.deepEqual(await models(), [undefined, undefined]);
+    assert.deepEqual(await models(), [undefined, undefined]);
+    assert.deepEqual(asked, [`/bin/claude in ${workDir}`]);
+    answer = catalog;
+    assert.deepEqual(await models(true), [catalog, undefined]);
+    // Once it has answered, a fresh check does not ask again; a new version does.
+    assert.deepEqual(await models(true), [catalog, undefined]);
+    assert.equal(asked.length, 2);
+    status = { ...OK, version: "2.1.400" };
+    await models(true);
+    assert.equal(asked.length, 3);
+  } finally {
+    await kb.cleanup();
+  }
 });
 
 test("a new chat runs on the engine asked for, resuming the session it named", async () => {

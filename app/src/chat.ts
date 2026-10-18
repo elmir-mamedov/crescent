@@ -22,6 +22,7 @@ import {
   type Engine,
   type EngineId,
   type McpServerSpec,
+  type ModelCatalog,
 } from "./agent-cli.js";
 import {
   isThreadId,
@@ -81,12 +82,19 @@ export type RunEvent =
   | { type: "message"; message: ChatMessage }
   | { type: "done" };
 
-/** An engine as the drawer sees it: which one, what it is called, and whether it is ready. */
+/**
+ * An engine as the drawer sees it: which one, what it is called, whether it
+ * is ready, and (once it is, if it would say) the models it offers.
+ */
 export interface EngineState {
   id: EngineId;
   name: string;
   status: AgentStatus;
+  models?: ModelCatalog;
 }
+
+/** How long an engine's list of models is trusted while the program stays the same. */
+const MODELS_TTL_MS = 60 * 60 * 1000;
 
 export type SendOutcome =
   | { ok: true; thread: ChatThread }
@@ -182,9 +190,35 @@ export function makeChat(deps: ChatDeps): Chat {
     checked.set(engine.id, { at: Date.now(), status });
     return status;
   }
+  // Listing the models runs the program, so the list is kept while it is the
+  // same program at the same version, for up to MODELS_TTL_MS; one that came
+  // back empty is asked for again on the next fresh check.
+  type Listing = { key: string; at: number; models: Promise<ModelCatalog | null>; failed: boolean };
+  const listings = new Map<EngineId, Listing>();
+  function engineModels(engine: Engine, ready: { path: string; version: string }, fresh: boolean) {
+    const key = `${ready.path}@${ready.version}`;
+    const last = listings.get(engine.id);
+    if (last && last.key === key && Date.now() - last.at < MODELS_TTL_MS && !(fresh && last.failed)) {
+      return last.models;
+    }
+    const listing: Listing = {
+      key,
+      at: Date.now(),
+      models: engine.models(ready.path, deps.workDir).catch(() => null),
+      failed: false,
+    };
+    void listing.models.then((models) => (listing.failed = !models));
+    listings.set(engine.id, listing);
+    return listing.models;
+  }
+
   async function status(fresh = false): Promise<EngineState[]> {
     return Promise.all(
-      deps.engines.map(async (engine) => ({ id: engine.id, name: engine.name, status: await engineStatus(engine, fresh) }))
+      deps.engines.map(async (engine) => {
+        const state = await engineStatus(engine, fresh);
+        const models = state.state === "ok" ? await engineModels(engine, state, fresh) : null;
+        return { id: engine.id, name: engine.name, status: state, ...(models && { models }) };
+      })
     );
   }
 

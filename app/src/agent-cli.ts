@@ -83,11 +83,34 @@ export interface EngineTurnOptions {
   spawnImpl?: SpawnImpl;
 }
 
+/** A model a program offers, and the effort levels it takes (none, for some). */
+export interface ModelOption {
+  /** What the program takes for it: an alias such as `opus`, or a full name. */
+  id: string;
+  name: string;
+  efforts: string[];
+}
+
+/**
+ * The models a program offers whoever is signed in, as it lists them itself,
+ * and what running with none named means: the default's name when the program
+ * says, and the effort levels it is known to take.
+ */
+export interface ModelCatalog {
+  default: { name?: string; efforts: string[] };
+  models: ModelOption[];
+}
+
 export interface Engine {
   id: EngineId;
   /** What the drawer calls it. */
   name: string;
   check(env?: NodeJS.ProcessEnv): Promise<AgentStatus>;
+  /**
+   * Ask the program (at `path`, as `check` found it) which models it offers,
+   * without running a turn. `dir` is as for a turn. Null when it would not say.
+   */
+  models(path: string, dir: string): Promise<ModelCatalog | null>;
   startTurn(options: EngineTurnOptions): Promise<Turn>;
   /** True when a resume failed because the engine no longer has the session. */
   lostSession(stderr: string): boolean;
@@ -328,6 +351,44 @@ function spawnAgent(command: string, args: string[], options: SpawnOptions, spaw
   if (!isShim(command)) return spawnImpl(command, args, { ...options, env, windowsHide: true });
   const quote = (a: string) => (/[\s"&|<>^]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a);
   return spawnImpl([command, ...args].map(quote).join(" "), [], { ...options, env, shell: true, windowsHide: true });
+}
+
+/**
+ * Run a program to the end with `input` on its stdin: its exit code and
+ * output, or null when it could not start or timed out. Unlike runQuiet, it
+ * takes input, and its output may run past exec's 1 MB.
+ */
+export function runToEnd(
+  command: string,
+  args: string[],
+  options: { cwd?: string; input?: string; timeoutMs: number; spawnImpl?: SpawnImpl }
+): Promise<{ code: number | null; stdout: string; stderr: string } | null> {
+  return new Promise((resolve) => {
+    const child = spawnAgent(command, args, { cwd: options.cwd }, options.spawnImpl ?? spawn);
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(null);
+    }, options.timeoutMs);
+    let settled = false;
+    function finish(value: { code: number | null; stdout: string; stderr: string } | null) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    }
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => (stdout += chunk));
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => (stderr = (stderr + chunk).slice(-4000)));
+    child.stdin?.on("error", () => {
+      // It may exit without reading its input; its exit code says what happened.
+    });
+    child.stdin?.end(options.input ?? "");
+    child.on("error", () => finish(null));
+    child.on("close", (code) => finish({ code, stdout, stderr }));
+  });
 }
 
 /** Run a short command; its exit code and output, or null when it could not start or timed out. */
