@@ -1954,7 +1954,7 @@ test("views: the chat posts to its thread and follows the turn's event stream", 
   const html = layout(pageView());
   const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
   assert.match(script, /fetch\("\/_chat\/threads\/" \+ threadId \+ "\/messages"/);
-  assert.match(script, /JSON\.stringify\(\{ text, forcePages: pages\.checked, slug, engine: threadEngine \? undefined : engine \}\)/);
+  assert.match(script, /JSON\.stringify\(\{\s*text,\s*forcePages: pages\.checked,\s*slug,\s*engine: threadEngine \? undefined : engine,/);
   assert.match(script, /new EventSource\("\/_chat\/threads\/" \+ threadId \+ "\/events"\)/);
   assert.match(script, /"\/_chat\/status" \+ \(fresh \? "\?fresh=1" : ""\)/);
   // The report links every page the turn wrote, and server text stays text.
@@ -1974,4 +1974,23 @@ test("views: the chat offers Claude or Codex for a new chat and names a thread's
   assert.match(script, /saved\.set\("engine", engine\.id\)/);
   // Setup help covers both programs.
   assert.match(script, /codex: \{ url: "https:\/\/github\.com\/openai\/codex", login: "codex login", update: "codex update" \}/);
+});
+
+test("views: the chat picks a model and effort from what the engine listed, per engine", () => {
+  const html = layout(pageView());
+  // A row of their own, hidden until the engine has said what it offers.
+  assert.match(
+    html,
+    /<div class="chat-form-row chat-run" data-chat-run hidden>\s*<select class="chat-select" data-chat-model aria-label="Model"[^>]*><\/select>\s*<select class="chat-select" data-chat-effort aria-label="Effort"[^>]*><\/select>\s*<\/div>/
+  );
+  const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
+  assert.match(script, /runRow\.hidden = !catalog/);
+  // The engine's own list, the default first, each engine's last pick remembered.
+  assert.match(script, /const catalog = \(engines\.find\(\(e\) => e\.id === engine\) \|\| \{\}\)\.models/);
+  assert.match(script, /option\("", catalog\.default\.name \? "Default \(" \+ catalog\.default\.name \+ "\)" : "Default model"\)/);
+  assert.match(script, /saved\.set\("model\." \+ \(threadEngine \|\| chosenEngine\(\)\), modelPicker\.value \|\| null\)/);
+  assert.match(script, /saved\.set\("effort\." \+ \(threadEngine \|\| chosenEngine\(\)\), effortPicker\.value \|\| null\)/);
+  // Only efforts the model takes; Default sends nothing.
+  assert.match(script, /const efforts = model \? model\.efforts : catalog\.default\.efforts/);
+  assert.match(script, /model: modelPicker\.value \|\| undefined,\s*effort: effortPicker\.value \|\| undefined,/);
 });

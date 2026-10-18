@@ -1774,6 +1774,10 @@ function chatDrawer(slug: string): string {
   <div class="chat-activity" data-chat-activity role="status" hidden></div>
   <form class="chat-form" data-chat-form>
     <textarea class="chat-input" data-chat-input rows="1" aria-label="Message" placeholder="Ask anything, or ask for a page…"></textarea>
+    <div class="chat-form-row chat-run" data-chat-run hidden>
+      <select class="chat-select" data-chat-model aria-label="Model" title="The model the next message runs on"></select>
+      <select class="chat-select" data-chat-effort aria-label="Effort" title="How much the model thinks before it answers"></select>
+    </div>
     <div class="chat-form-row">
       <label class="chat-pages" title="Write the answer into the knowledge base as pages, not into the chat"><input type="checkbox" data-chat-pages /> Write to KB</label>
       <div class="chat-engines" data-chat-engines role="radiogroup" aria-label="Run this chat on" hidden></div>
@@ -1810,6 +1814,9 @@ const CHAT_SCRIPT = `
   const titleEl = $("[data-chat-title]");
   const engineLabel = $("[data-chat-engine]");
   const enginePicker = $("[data-chat-engines]");
+  const runRow = $("[data-chat-run]");
+  const modelPicker = $("[data-chat-model]");
+  const effortPicker = $("[data-chat-effort]");
   const slug = drawer.dataset.chatSlug || "";
 
   const saved = {
@@ -1918,22 +1925,60 @@ const CHAT_SCRIPT = `
     engineLabel.hidden = !(both && threadEngine);
     engineLabel.textContent = threadEngine ? engineName(threadEngine) : "";
     enginePicker.hidden = !(both && !threadEngine);
-    if (enginePicker.hidden) return;
-    const current = chosenEngine();
-    enginePicker.replaceChildren(
-      ...list.map((engine) => {
-        const button = el("button", "", engine.name.split(" ")[0]);
-        button.type = "button";
-        button.setAttribute("role", "radio");
-        button.setAttribute("aria-checked", String(engine.id === current));
-        button.title = "Run this chat on " + engine.name;
-        button.addEventListener("click", () => {
-          saved.set("engine", engine.id);
-          renderEngines();
-        });
-        return button;
-      })
-    );
+    if (!enginePicker.hidden) {
+      const current = chosenEngine();
+      enginePicker.replaceChildren(
+        ...list.map((engine) => {
+          const button = el("button", "", engine.name.split(" ")[0]);
+          button.type = "button";
+          button.setAttribute("role", "radio");
+          button.setAttribute("aria-checked", String(engine.id === current));
+          button.title = "Run this chat on " + engine.name;
+          button.addEventListener("click", () => {
+            saved.set("engine", engine.id);
+            renderEngines();
+          });
+          return button;
+        })
+      );
+    }
+    renderRun();
+  }
+
+  const EFFORTS = { minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
+
+  // The model and effort the next message runs with, from what its engine
+  // listed. Each engine remembers its last pick; one it no longer lists, or
+  // an effort the model does not take, shows as Default, which leaves the
+  // choice to the engine and sends nothing.
+  function renderRun() {
+    const engine = threadEngine || chosenEngine();
+    const catalog = (engines.find((e) => e.id === engine) || {}).models;
+    const option = (value, text) => {
+      const node = el("option", "", text);
+      node.value = value;
+      return node;
+    };
+    if (catalog) {
+      const model = catalog.models.find((m) => m.id === saved.get("model." + engine));
+      modelPicker.replaceChildren(
+        option("", catalog.default.name ? "Default (" + catalog.default.name + ")" : "Default model"),
+        ...catalog.models.map((m) => option(m.id, m.name))
+      );
+      modelPicker.value = model ? model.id : "";
+      const efforts = model ? model.efforts : catalog.default.efforts;
+      const effort = saved.get("effort." + engine);
+      effortPicker.replaceChildren(
+        option("", "Default effort"),
+        ...efforts.map((e) => option(e, (EFFORTS[e] || e) + " effort"))
+      );
+      effortPicker.value = efforts.includes(effort) ? effort : "";
+      effortPicker.disabled = !efforts.length;
+    } else {
+      modelPicker.replaceChildren();
+      effortPicker.replaceChildren();
+    }
+    runRow.hidden = !catalog;
   }
 
   const HELP = {
@@ -2147,7 +2192,15 @@ const CHAT_SCRIPT = `
         method: "POST",
         headers: { "content-type": "application/json" },
         // A new chat says which engine to run on; a thread keeps its own.
-        body: JSON.stringify({ text, forcePages: pages.checked, slug, engine: threadEngine ? undefined : engine }),
+        // Model and effort go with every message, unless left to the engine.
+        body: JSON.stringify({
+          text,
+          forcePages: pages.checked,
+          slug,
+          engine: threadEngine ? undefined : engine,
+          model: modelPicker.value || undefined,
+          effort: effortPicker.value || undefined,
+        }),
       });
     } catch {}
     const body = res ? await res.json().catch(() => ({})) : {};
@@ -2178,6 +2231,13 @@ const CHAT_SCRIPT = `
   });
   input.addEventListener("input", autosize);
   pages.addEventListener("change", () => setPages(pages.checked));
+  modelPicker.addEventListener("change", () => {
+    saved.set("model." + (threadEngine || chosenEngine()), modelPicker.value || null);
+    renderRun();
+  });
+  effortPicker.addEventListener("change", () => {
+    saved.set("effort." + (threadEngine || chosenEngine()), effortPicker.value || null);
+  });
 
   stopBtn.addEventListener("click", () => {
     if (threadId) fetch("/_chat/threads/" + threadId + "/stop", { method: "POST" }).catch(() => {});
@@ -6031,6 +6091,14 @@ body.chat-open .session-corner,body.chat-open .update-card{right:416px}
 }
 .chat-engines button + button{border-left:1px solid var(--line)}
 .chat-engines button[aria-checked="true"]{background:var(--active-bg); color:var(--accent)}
+.chat-run{flex-wrap:wrap; gap:6px}
+.chat-select{
+  flex:0 1 auto; min-width:0; max-width:100%; padding:4px 6px; border:1px solid var(--line); border-radius:6px;
+  background:var(--surface); color:var(--fg-secondary); cursor:pointer;
+  font:600 12px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+.chat-select:focus-visible{outline:2px solid var(--focus-ring-soft); border-color:var(--focus-ring)}
+.chat-select:disabled{color:var(--muted); cursor:default}
 .chat-engine{flex:0 0 auto; padding:1px 8px; border:1px solid var(--line); border-radius:999px; color:var(--muted); font-size:11px; font-weight:600; line-height:1.6}
 .chat-drawer[data-pages] .chat-pages{color:var(--accent); font-weight:600}
 .chat-history{position:absolute; top:51px; left:0; right:0; bottom:0; z-index:1; overflow:auto; padding:8px; background:var(--surface)}
