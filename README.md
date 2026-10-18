@@ -83,10 +83,11 @@ The chat runs the Claude Code or Codex installed on your computer, under the
 account it is signed in with, so its use counts against that account's plan.
 When both are available, a switch under the message box picks one for each
 new chat. Two menus under the message box set the model and effort level for
-the next message, from those that Claude Code or Codex offers; **Default**
-leaves the choice to the program, and each program keeps its last choice. The
-model settings in your own Claude Code or Codex configuration don't apply to
-the chat. Conversations are stored in the `.kb25/chat` folder of your
+the next message, from those that Claude Code or Codex offers. The chat starts
+on Opus 5.5 for Claude Code and on GPT-6-Sol for Codex (GPT-6-Luna while
+GPT-6-Sol isn't available to the account), both at extra high effort, and
+keeps your last choice for each program. The model settings in your own
+Claude Code or Codex configuration don't apply to the chat. Conversations are stored in the `.kb25/chat` folder of your
 knowledge base, separate from the spaces.
 
 **Using KB25 from Claude.** Once connected during installation, the Claude app
