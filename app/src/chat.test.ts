@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import type { AgentEvent, AgentStatus, Engine, EngineTurnOptions, ModelCatalog, Turn } from "./agent-cli.js";
+import type { AgentEvent, AgentStatus, Engine, EngineTurnOptions, ModelOption, Turn } from "./agent-cli.js";
 import { makeChatStore } from "./chat-store.js";
 import {
   CHAT_PROMPT,
@@ -11,6 +11,7 @@ import {
   messageView,
   pageChanges,
   resolveChanges,
+  startChoice,
   type RunEvent,
 } from "./chat.js";
 import type { PageNode } from "./content.js";
@@ -240,6 +241,7 @@ function fakeEngine(fake: ReturnType<typeof fakeTurns>, status: AgentStatus, id:
     id,
     name: id === "claude" ? "Claude Code" : "Codex",
     check: async () => status,
+    start: { models: ["opus"], effort: "xhigh" },
     models: async () => null,
     startTurn: fake.startTurn,
     lostSession: (stderr) => /no conversation found|no rollout found/i.test(stderr),
@@ -617,16 +619,16 @@ test("the status names every engine and whether it is ready", async () => {
   });
 });
 
-test("a ready engine's status lists its models, asked of the program once while it stays the same", async () => {
+test("a ready engine's status lists its models and the one to start on, asking the program once", async () => {
   const kb = await makeTempKb();
   try {
     const workDir = path.join(kb.dir, "work");
-    const catalog: ModelCatalog = {
-      default: { name: "Opus 5.5", efforts: ["low", "high"] },
-      models: [{ id: "sonnet", name: "Sonnet 5.5", efforts: ["low"] }],
-    };
+    const listed: ModelOption[] = [
+      { id: "sonnet", name: "Sonnet 5.5", efforts: ["low", "high"] },
+      { id: "opus", name: "Opus 5.5", efforts: ["low", "high", "xhigh"] },
+    ];
     let status: AgentStatus = OK;
-    let answer: ModelCatalog | null = null;
+    let answer: ModelOption[] | null = null;
     const asked: string[] = [];
     const claude: Engine = {
       ...fakeEngine(fakeTurns([]), OK),
@@ -647,23 +649,37 @@ test("a ready engine's status lists its models, asked of the program once while 
       mcp: { command: "/usr/bin/node", args: ["mcp.mjs"], env: { KB_DIR: kb.dir } },
       pages: async () => PAGES,
     });
-    const models = async (fresh = false) => (await chat.status(fresh)).map((engine) => engine.models);
+    const models = async (fresh = false) => (await chat.status(fresh)).map(({ models, start }) => ({ models, start }));
+    const none = { models: undefined, start: undefined };
 
-    // It would not say: nothing listed, and not asked again until a fresh check.
-    assert.deepEqual(await models(), [undefined, undefined]);
-    assert.deepEqual(await models(), [undefined, undefined]);
+    // It would not say, or said nothing: no menus, and not asked again until a fresh check.
+    assert.deepEqual(await models(), [none, none]);
+    answer = [];
+    assert.deepEqual(await models(), [none, none]);
     assert.deepEqual(asked, [`/bin/claude in ${workDir}`]);
-    answer = catalog;
-    assert.deepEqual(await models(true), [catalog, undefined]);
+    assert.deepEqual(await models(true), [none, none]);
+    answer = listed;
+    assert.deepEqual(await models(true), [{ models: listed, start: { model: "opus", effort: "xhigh" } }, none]);
     // Once it has answered, a fresh check does not ask again; a new version does.
-    assert.deepEqual(await models(true), [catalog, undefined]);
-    assert.equal(asked.length, 2);
-    status = { ...OK, version: "2.1.400" };
     await models(true);
     assert.equal(asked.length, 3);
+    status = { ...OK, version: "2.1.400" };
+    await models(true);
+    assert.equal(asked.length, 4);
   } finally {
     await kb.cleanup();
   }
+});
+
+test("a chat starts on the first preferred model offered, at the preferred effort if it takes it", () => {
+  const luna = { id: "gpt-6-luna", name: "GPT-6-Luna", efforts: ["low", "xhigh"] };
+  const terra = { id: "gpt-5.6-terra", name: "GPT-5.6-Terra", efforts: ["low", "high"] };
+  const sol = { id: "gpt-6-sol", name: "GPT-6-Sol", efforts: ["xhigh"] };
+  const start = { models: ["gpt-6-sol", "gpt-6-luna"], effort: "xhigh" };
+  assert.deepEqual(startChoice([terra, luna, sol], start), { model: "gpt-6-sol", effort: "xhigh" });
+  assert.deepEqual(startChoice([terra, luna], start), { model: "gpt-6-luna", effort: "xhigh" });
+  // None of them offered: the first listed, without an effort it does not take.
+  assert.deepEqual(startChoice([terra], start), { model: "gpt-5.6-terra" });
 });
 
 test("a new chat runs on the engine asked for, resuming the session it named", async () => {

@@ -91,26 +91,22 @@ export interface ModelOption {
   efforts: string[];
 }
 
-/**
- * The models a program offers whoever is signed in, as it lists them itself,
- * and what running with none named means: the default's name when the program
- * says, and the effort levels it is known to take.
- */
-export interface ModelCatalog {
-  default: { name?: string; efforts: string[] };
-  models: ModelOption[];
-}
-
 export interface Engine {
   id: EngineId;
   /** What the drawer calls it. */
   name: string;
   check(env?: NodeJS.ProcessEnv): Promise<AgentStatus>;
   /**
-   * Ask the program (at `path`, as `check` found it) which models it offers,
-   * without running a turn. `dir` is as for a turn. Null when it would not say.
+   * What the drawer starts on before the person picks: the first of `models`
+   * the program offers, at `effort`.
    */
-  models(path: string, dir: string): Promise<ModelCatalog | null>;
+  start: { models: string[]; effort: string };
+  /**
+   * Ask the program (at `path`, as `check` found it) which models it offers
+   * whoever is signed in, as it lists them, without running a turn. `dir` is
+   * as for a turn. Null when it would not say.
+   */
+  models(path: string, dir: string): Promise<ModelOption[] | null>;
   startTurn(options: EngineTurnOptions): Promise<Turn>;
   /** True when a resume failed because the engine no longer has the session. */
   lostSession(stderr: string): boolean;

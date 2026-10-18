@@ -134,7 +134,7 @@ test("a model and effort level are set only when chosen, before any resume", () 
   assert.ok(model < chosen.indexOf("resume") && effort < chosen.indexOf("resume"));
 });
 
-test("the model list is Codex's own picker, in its order, and the default takes what they all take", () => {
+test("the model list is Codex's own picker, in its order", () => {
   const level = (effort: string) => ({ effort, description: `${effort} reasoning` });
   // `codex debug models` as 0.157.0 printed it, trimmed to the fields that matter.
   const catalog = JSON.stringify({
@@ -144,15 +144,16 @@ test("the model list is Codex's own picker, in its order, and the default takes 
       { slug: "gpt-5.6-terra", display_name: "GPT-5.6-Terra", visibility: "list", priority: 8, supported_reasoning_levels: ["medium", "high", "ultra"].map(level) },
     ],
   });
-  assert.deepEqual(parseCodexModels(catalog), {
-    default: { efforts: ["medium", "high"] },
-    models: [
-      { id: "gpt-5.6-terra", name: "GPT-5.6-Terra", efforts: ["medium", "high", "ultra"] },
-      { id: "gpt-5.6-luna", name: "GPT-5.6-Luna", efforts: ["low", "medium", "high"] },
-    ],
-  });
+  assert.deepEqual(parseCodexModels(catalog), [
+    { id: "gpt-5.6-terra", name: "GPT-5.6-Terra", efforts: ["medium", "high", "ultra"] },
+    { id: "gpt-5.6-luna", name: "GPT-5.6-Luna", efforts: ["low", "medium", "high"] },
+  ]);
   assert.equal(parseCodexModels("Error: not logged in"), null);
-  assert.deepEqual(parseCodexModels('{"models":[]}'), { default: { efforts: [] }, models: [] });
+  assert.deepEqual(parseCodexModels('{"models":[]}'), []);
+});
+
+test("a chat on Codex starts on GPT-6-Sol when offered, else GPT-6-Luna, at extra high effort", () => {
+  assert.deepEqual(codexEngine.start, { models: ["gpt-6-sol", "gpt-6-luna"], effort: "xhigh" });
 });
 
 test("the engine writes its instructions as AGENTS.md in its own folder and runs there", async () => {

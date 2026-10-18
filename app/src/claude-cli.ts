@@ -29,7 +29,7 @@ import {
   type AgentStatus,
   type AssistantBlock,
   type Engine,
-  type ModelCatalog,
+  type ModelOption,
   type SpawnImpl,
   type Turn,
 } from "./agent-cli.js";
@@ -168,11 +168,11 @@ export function modelsArgs(): string[] {
 }
 
 /**
- * The catalog in the answer to MODELS_REQUEST (2.1.302): `default` is what
- * runs with no `--model`, and the model it resolves to names it. Effort
- * levels are listed only for models that take one.
+ * The models in the answer to MODELS_REQUEST (2.1.302), less `default`, which
+ * only stands for one of the others. Effort levels are listed only for models
+ * that take one.
  */
-export function parseClaudeModels(stdout: string): ModelCatalog | null {
+export function parseClaudeModels(stdout: string): ModelOption[] | null {
   for (const line of stdout.split("\n")) {
     let raw: Json;
     try {
@@ -183,22 +183,19 @@ export function parseClaudeModels(stdout: string): ModelCatalog | null {
     if (raw?.type !== "control_response") continue;
     const listed = ((raw.response as Json | undefined)?.response as Json | undefined)?.models;
     if (!Array.isArray(listed)) continue;
-    const entries = listed.filter((m): m is Json => {
-      const value = m && typeof m === "object" ? (m as Json).value : undefined;
-      return typeof value === "string" && isModelName(value);
-    });
-    const efforts = (m: Json) =>
-      m.supportsEffort === true && Array.isArray(m.supportedEffortLevels)
-        ? m.supportedEffortLevels.filter((e): e is string => typeof e === "string" && isEffortName(e))
-        : [];
-    const name = (m: Json) => (typeof m.displayName === "string" && m.displayName ? m.displayName : String(m.value));
-    const fallback = entries.find((m) => m.value === "default");
-    const others = entries.filter((m) => m !== fallback);
-    const resolved = fallback && others.find((m) => m.resolvedModel === fallback.resolvedModel);
-    return {
-      default: { ...(resolved && { name: name(resolved) }), efforts: fallback ? efforts(fallback) : [] },
-      models: others.map((m) => ({ id: m.value as string, name: name(m), efforts: efforts(m) })),
-    };
+    return listed
+      .filter((m): m is Json => {
+        const value = m && typeof m === "object" ? (m as Json).value : undefined;
+        return typeof value === "string" && value !== "default" && isModelName(value);
+      })
+      .map((m) => ({
+        id: m.value as string,
+        name: typeof m.displayName === "string" && m.displayName ? m.displayName : (m.value as string),
+        efforts:
+          m.supportsEffort === true && Array.isArray(m.supportedEffortLevels)
+            ? m.supportedEffortLevels.filter((e): e is string => typeof e === "string" && isEffortName(e))
+            : [],
+      }));
   }
   return null;
 }
@@ -321,6 +318,8 @@ export const claudeEngine: Engine = {
   id: "claude",
   name: "Claude Code",
   check: checkClaude,
+  // `opus` is Claude Code's name for its latest Opus (Opus 5.5 in 2.1.302).
+  start: { models: ["opus"], effort: "xhigh" },
   async models(claudePath, dir) {
     // The turns' own folder, so the same (absent) project settings apply.
     const cwd = path.join(dir, "claude");

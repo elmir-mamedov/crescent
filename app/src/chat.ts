@@ -22,7 +22,7 @@ import {
   type Engine,
   type EngineId,
   type McpServerSpec,
-  type ModelCatalog,
+  type ModelOption,
 } from "./agent-cli.js";
 import {
   isThreadId,
@@ -84,13 +84,25 @@ export type RunEvent =
 
 /**
  * An engine as the drawer sees it: which one, what it is called, whether it
- * is ready, and (once it is, if it would say) the models it offers.
+ * is ready, and (once it is, if it would say) the models it offers and the
+ * one to start on.
  */
 export interface EngineState {
   id: EngineId;
   name: string;
   status: AgentStatus;
-  models?: ModelCatalog;
+  models?: ModelOption[];
+  start?: { model: string; effort?: string };
+}
+
+/**
+ * What the drawer starts on before the person picks: the first of the
+ * engine's preferred models it offers, else the first it lists, at the
+ * preferred effort when that model takes it.
+ */
+export function startChoice(models: ModelOption[], start: Engine["start"]): { model: string; effort?: string } {
+  const model = start.models.map((id) => models.find((m) => m.id === id)).find((m) => m !== undefined) ?? models[0];
+  return { model: model.id, ...(model.efforts.includes(start.effort) && { effort: start.effort }) };
 }
 
 /** How long an engine's list of models is trusted while the program stays the same. */
@@ -193,7 +205,7 @@ export function makeChat(deps: ChatDeps): Chat {
   // Listing the models runs the program, so the list is kept while it is the
   // same program at the same version, for up to MODELS_TTL_MS; one that came
   // back empty is asked for again on the next fresh check.
-  type Listing = { key: string; at: number; models: Promise<ModelCatalog | null>; failed: boolean };
+  type Listing = { key: string; at: number; models: Promise<ModelOption[] | null>; failed: boolean };
   const listings = new Map<EngineId, Listing>();
   function engineModels(engine: Engine, ready: { path: string; version: string }, fresh: boolean) {
     const key = `${ready.path}@${ready.version}`;
@@ -207,7 +219,7 @@ export function makeChat(deps: ChatDeps): Chat {
       models: engine.models(ready.path, deps.workDir).catch(() => null),
       failed: false,
     };
-    void listing.models.then((models) => (listing.failed = !models));
+    void listing.models.then((models) => (listing.failed = !models?.length));
     listings.set(engine.id, listing);
     return listing.models;
   }
@@ -217,7 +229,12 @@ export function makeChat(deps: ChatDeps): Chat {
       deps.engines.map(async (engine) => {
         const state = await engineStatus(engine, fresh);
         const models = state.state === "ok" ? await engineModels(engine, state, fresh) : null;
-        return { id: engine.id, name: engine.name, status: state, ...(models && { models }) };
+        return {
+          id: engine.id,
+          name: engine.name,
+          status: state,
+          ...(models?.length ? { models, start: startChoice(models, engine.start) } : {}),
+        };
       })
     );
   }

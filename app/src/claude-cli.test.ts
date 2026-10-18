@@ -180,17 +180,18 @@ const MODELS_RESPONSE = JSON.stringify({
   },
 });
 
-test("the model list names the default by the model it runs, and only lists efforts a model takes", () => {
-  assert.deepEqual(parseClaudeModels(`not json\n${MODELS_RESPONSE}\n`), {
-    default: { name: "Opus 5.5", efforts: ALL_EFFORTS },
-    models: [
-      { id: "opus", name: "Opus 5.5", efforts: ALL_EFFORTS },
-      { id: "fable", name: "Fable 5.1", efforts: ALL_EFFORTS },
-      { id: "claude-haiku-4-5-20251001", name: "Haiku 4.5", efforts: [] },
-    ],
-  });
+test("the model list leaves out `default`, and lists efforts only for models that take one", () => {
+  assert.deepEqual(parseClaudeModels(`not json\n${MODELS_RESPONSE}\n`), [
+    { id: "opus", name: "Opus 5.5", efforts: ALL_EFFORTS },
+    { id: "fable", name: "Fable 5.1", efforts: ALL_EFFORTS },
+    { id: "claude-haiku-4-5-20251001", name: "Haiku 4.5", efforts: [] },
+  ]);
   assert.equal(parseClaudeModels(RESULT), null);
   assert.equal(parseClaudeModels(""), null);
+});
+
+test("a chat on Claude Code starts on its latest Opus at extra high effort", () => {
+  assert.deepEqual(claudeEngine.start, { models: ["opus"], effort: "xhigh" });
 });
 
 test("the models are asked for with a turn's isolation and no turn", () => {

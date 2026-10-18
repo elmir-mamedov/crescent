@@ -1984,13 +1984,15 @@ test("views: the chat picks a model and effort from what the engine listed, per 
     /<div class="chat-form-row chat-run" data-chat-run hidden>\s*<select class="chat-select" data-chat-model aria-label="Model"[^>]*><\/select>\s*<select class="chat-select" data-chat-effort aria-label="Effort"[^>]*><\/select>\s*<\/div>/
   );
   const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
-  assert.match(script, /runRow\.hidden = !catalog/);
-  // The engine's own list, the default first, each engine's last pick remembered.
-  assert.match(script, /const catalog = \(engines\.find\(\(e\) => e\.id === engine\) \|\| \{\}\)\.models/);
-  assert.match(script, /option\("", catalog\.default\.name \? "Default \(" \+ catalog\.default\.name \+ "\)" : "Default model"\)/);
+  assert.match(script, /runRow\.hidden = !models/);
+  // Only the engine's own models, no Default: the last pick, else what it starts on.
+  assert.match(script, /modelPicker\.replaceChildren\(\.\.\.models\.map\(\(m\) => option\(m\.id, m\.name\)\)\)/);
+  assert.match(script, /models\.find\(\(m\) => m\.id === saved\.get\("model\." \+ engine\.id\)\) \|\|\s*models\.find\(\(m\) => m\.id === engine\.start\.model\)/);
   assert.match(script, /saved\.set\("model\." \+ \(threadEngine \|\| chosenEngine\(\)\), modelPicker\.value \|\| null\)/);
   assert.match(script, /saved\.set\("effort\." \+ \(threadEngine \|\| chosenEngine\(\)\), effortPicker\.value \|\| null\)/);
-  // Only efforts the model takes; Default sends nothing.
-  assert.match(script, /const efforts = model \? model\.efforts : catalog\.default\.efforts/);
+  // Only efforts the model takes, the last pick first; none shown for a model that takes none.
+  assert.match(script, /const wanted = \[saved\.get\("effort\." \+ engine\.id\), engine\.start\.effort, "high"\]/);
+  assert.match(script, /effortPicker\.hidden = !efforts\.length/);
+  assert.doesNotMatch(script, /Default (model|effort)/);
   assert.match(script, /model: modelPicker\.value \|\| undefined,\s*effort: effortPicker\.value \|\| undefined,/);
 });

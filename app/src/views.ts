@@ -1948,37 +1948,34 @@ const CHAT_SCRIPT = `
   const EFFORTS = { minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
 
   // The model and effort the next message runs with, from what its engine
-  // listed. Each engine remembers its last pick; one it no longer lists, or
-  // an effort the model does not take, shows as Default, which leaves the
-  // choice to the engine and sends nothing.
+  // listed: each engine's last pick, else what it starts on (start). An
+  // effort the model does not take gives way to the start's, then high, then
+  // the model's lowest; a model that takes none shows no effort at all.
   function renderRun() {
-    const engine = threadEngine || chosenEngine();
-    const catalog = (engines.find((e) => e.id === engine) || {}).models;
+    const engine = engines.find((e) => e.id === (threadEngine || chosenEngine())) || {};
+    const models = engine.models;
     const option = (value, text) => {
       const node = el("option", "", text);
       node.value = value;
       return node;
     };
-    if (catalog) {
-      const model = catalog.models.find((m) => m.id === saved.get("model." + engine));
-      modelPicker.replaceChildren(
-        option("", catalog.default.name ? "Default (" + catalog.default.name + ")" : "Default model"),
-        ...catalog.models.map((m) => option(m.id, m.name))
-      );
-      modelPicker.value = model ? model.id : "";
-      const efforts = model ? model.efforts : catalog.default.efforts;
-      const effort = saved.get("effort." + engine);
-      effortPicker.replaceChildren(
-        option("", "Default effort"),
-        ...efforts.map((e) => option(e, (EFFORTS[e] || e) + " effort"))
-      );
-      effortPicker.value = efforts.includes(effort) ? effort : "";
-      effortPicker.disabled = !efforts.length;
+    if (models) {
+      const model =
+        models.find((m) => m.id === saved.get("model." + engine.id)) ||
+        models.find((m) => m.id === engine.start.model) ||
+        models[0];
+      modelPicker.replaceChildren(...models.map((m) => option(m.id, m.name)));
+      modelPicker.value = model.id;
+      const efforts = model.efforts;
+      effortPicker.replaceChildren(...efforts.map((e) => option(e, (EFFORTS[e] || e) + " effort")));
+      const wanted = [saved.get("effort." + engine.id), engine.start.effort, "high"];
+      effortPicker.value = wanted.find((e) => efforts.includes(e)) || efforts[0] || "";
+      effortPicker.hidden = !efforts.length;
     } else {
       modelPicker.replaceChildren();
       effortPicker.replaceChildren();
     }
-    runRow.hidden = !catalog;
+    runRow.hidden = !models;
   }
 
   const HELP = {

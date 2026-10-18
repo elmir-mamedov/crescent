@@ -32,7 +32,6 @@ import {
   type AgentStatus,
   type Engine,
   type McpServerSpec,
-  type ModelCatalog,
   type ModelOption,
 } from "./agent-cli.js";
 
@@ -131,11 +130,11 @@ export function codexArgs(options: {
 type Json = Record<string, unknown>;
 
 /**
- * The catalog `codex debug models` prints (0.157.0): the models Codex lists in
- * its own picker, in its order. The catalog does not say which one runs when
- * none is named, so the default offers only the effort levels every model takes.
+ * The models in the catalog `codex debug models` prints (0.157.0): those Codex
+ * lists in its own picker, in its order. The catalog is refreshed for the
+ * signed-in account, which may not be offered every model Codex knows.
  */
-export function parseCodexModels(stdout: string): ModelCatalog | null {
+export function parseCodexModels(stdout: string): ModelOption[] | null {
   let raw: Json;
   try {
     raw = JSON.parse(stdout) as Json;
@@ -143,7 +142,7 @@ export function parseCodexModels(stdout: string): ModelCatalog | null {
     return null;
   }
   if (!raw || !Array.isArray(raw.models)) return null;
-  const models: ModelOption[] = (raw.models as unknown[])
+  return (raw.models as unknown[])
     .filter((m): m is Json => {
       const slug = m && typeof m === "object" ? (m as Json).slug : undefined;
       return (m as Json)?.visibility === "list" && typeof slug === "string" && isModelName(slug);
@@ -158,8 +157,6 @@ export function parseCodexModels(stdout: string): ModelCatalog | null {
             .filter((effort): effort is string => typeof effort === "string" && isEffortName(effort))
         : [],
     }));
-  const shared = (models[0]?.efforts ?? []).filter((effort) => models.every((m) => m.efforts.includes(effort)));
-  return { default: { efforts: shared }, models };
 }
 
 /**
@@ -255,6 +252,9 @@ export const codexEngine: Engine = {
   id: "codex",
   name: "Codex",
   check: checkCodex,
+  // GPT-6-Sol when Codex offers it to the account (0.157.0 does not to a
+  // ChatGPT sign-in), else GPT-6-Luna.
+  start: { models: ["gpt-6-sol", "gpt-6-luna"], effort: "xhigh" },
   async models(codexPath, dir) {
     // The turns' own folder, so no project's .codex config applies.
     const cwd = path.join(dir, "codex");
