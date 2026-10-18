@@ -123,6 +123,17 @@ test("a later turn resumes the session Codex named, after the exec options", () 
   assert.ok(args.indexOf("--json") < args.indexOf("resume"));
 });
 
+test("a model and effort level are set only when chosen, before any resume", () => {
+  const plain = codexArgs({ sessionId: "01a14980-ac0d", resume: true, mcp: MCP });
+  assert.equal(plain.some((a) => a.startsWith("model")), false);
+  const chosen = codexArgs({ sessionId: "01a14980-ac0d", resume: true, mcp: MCP, model: "gpt-5.6-terra", effort: "high" });
+  const model = chosen.indexOf("model='gpt-5.6-terra'");
+  const effort = chosen.indexOf("model_reasoning_effort='high'");
+  assert.equal(chosen[model - 1], "-c");
+  assert.equal(chosen[effort - 1], "-c");
+  assert.ok(model < chosen.indexOf("resume") && effort < chosen.indexOf("resume"));
+});
+
 test("the engine writes its instructions as AGENTS.md in its own folder and runs there", async () => {
   const kb = await makeTempKb();
   try {

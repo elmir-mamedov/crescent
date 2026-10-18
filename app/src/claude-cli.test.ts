@@ -138,6 +138,15 @@ test("a turn gets kb25 alone, web tools only, and no prompts or person's setting
   assert.equal(args.includes("--bare"), false);
 });
 
+test("a model and effort level are passed only when chosen", () => {
+  const plain = turnArgs({ sessionId: "abc", resume: true, files: FILES });
+  assert.equal(plain.includes("--model"), false);
+  assert.equal(plain.includes("--effort"), false);
+  const chosen = turnArgs({ sessionId: "abc", resume: true, files: FILES, model: "sonnet[1m]", effort: "xhigh" });
+  assert.equal(chosen[chosen.indexOf("--model") + 1], "sonnet[1m]");
+  assert.equal(chosen[chosen.indexOf("--effort") + 1], "xhigh");
+});
+
 test("the MCP config attaches one stdio server named kb25", () => {
   const parsed = JSON.parse(mcpConfig("/usr/bin/node", ["mcp.mjs"], { KB_DIR: "/kb", KB25_COMMIT_VIA: "chat" }));
   assert.deepEqual(parsed, {

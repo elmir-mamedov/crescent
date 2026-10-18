@@ -75,6 +75,9 @@ export interface EngineTurnOptions {
    * reports the id it chose in the `init` event.
    */
   session: { id: string; resume: boolean };
+  /** The model and effort level to run with; the program's own default when absent. */
+  model?: string;
+  effort?: string;
   text: string;
   onEvent: (event: AgentEvent) => void;
   spawnImpl?: SpawnImpl;
@@ -88,6 +91,20 @@ export interface Engine {
   startTurn(options: EngineTurnOptions): Promise<Turn>;
   /** True when a resume failed because the engine no longer has the session. */
   lostSession(stderr: string): boolean;
+}
+
+/**
+ * A model as a program takes it: an alias (`opus`), a full name
+ * (`claude-opus-5-5`, `gpt-5.6-terra`), or one with a variant (`sonnet[1m]`).
+ * Anything else is refused before it can reach a command line.
+ */
+export function isModelName(value: string): boolean {
+  return /^[A-Za-z0-9][\w.:[\]-]{0,99}$/.test(value);
+}
+
+/** An effort level as a program takes it: `low`, `xhigh`, `max`. */
+export function isEffortName(value: string): boolean {
+  return /^[a-z]{1,20}$/.test(value);
 }
 
 /**

@@ -4,6 +4,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  isEffortName,
+  isModelName,
   lineSplitter,
   parseVersion,
   programCandidates,
@@ -23,6 +25,17 @@ test("versions parse out of either program's --version and compare numerically",
   assert.equal(versionAtLeast("2.1.259", "2.1.259"), true);
   assert.equal(versionAtLeast("2.1.99", "2.1.259"), false);
   assert.equal(versionAtLeast("3.0.0", "2.1.259"), true);
+});
+
+test("model and effort names are the programs' own, and nothing that reads as a flag", () => {
+  for (const name of ["opus", "claude-haiku-4-5-20251001", "gpt-5.6-terra", "sonnet[1m]"]) {
+    assert.equal(isModelName(name), true, name);
+  }
+  for (const name of ["", "-p", "--model", "opus high", "a'b", "x".repeat(101)]) {
+    assert.equal(isModelName(name), false, name);
+  }
+  assert.equal(isEffortName("xhigh"), true);
+  for (const name of ["", "High", "-x", "max\n"]) assert.equal(isEffortName(name), false, name);
 });
 
 test("lines split across chunks come out whole", () => {

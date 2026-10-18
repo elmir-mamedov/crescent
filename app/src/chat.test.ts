@@ -460,6 +460,33 @@ test("bad ids and empty messages are refused before anything runs", async () => 
   });
 });
 
+test("each turn runs with the model and effort it was sent with, or the engine's own", async () => {
+  await withChat([{ events: [INIT, result("")] }, { events: [INIT, result("")] }], async ({ chat, fake }) => {
+    await chat.send(ID, { text: "one", forcePages: false, model: "opus", effort: "high" });
+    await finished(chat, ID);
+    await chat.send(ID, { text: "two", forcePages: false });
+    await finished(chat, ID);
+    assert.deepEqual(
+      fake.calls.map((c) => [c.session.resume, c.model, c.effort]),
+      [
+        [false, "opus", "high"],
+        [true, undefined, undefined],
+      ]
+    );
+  });
+});
+
+test("a model or effort that is not a plain name is refused before anything runs", async () => {
+  await withChat([], async ({ chat, fake }) => {
+    const flag = await chat.send(ID, { text: "hi", forcePages: false, model: "--dangerously-skip-permissions" });
+    const spaced = await chat.send(ID, { text: "hi", forcePages: false, effort: "high --model x" });
+    assert.equal(flag.ok ? 0 : flag.status, 400);
+    assert.equal(spaced.ok ? 0 : spaced.status, 400);
+    assert.equal(fake.calls.length, 0);
+    assert.equal(await chat.thread(ID), null);
+  });
+});
+
 test("stopping a turn keeps what it wrote and says it was stopped", async () => {
   await withChat(
     [

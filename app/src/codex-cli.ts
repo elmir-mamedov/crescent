@@ -83,8 +83,18 @@ export function tomlString(value: string): string {
   return /['\r\n]/.test(value) ? JSON.stringify(value) : `'${value}'`;
 }
 
-/** The arguments for one turn. The prompt itself goes on stdin. */
-export function codexArgs(options: { sessionId: string; resume: boolean; mcp: McpServerSpec }): string[] {
+/**
+ * The arguments for one turn. The prompt itself goes on stdin. A model or
+ * effort level applies to this turn alone; resuming a session with another
+ * model works, though Codex says it may not do as well.
+ */
+export function codexArgs(options: {
+  sessionId: string;
+  resume: boolean;
+  mcp: McpServerSpec;
+  model?: string;
+  effort?: string;
+}): string[] {
   const { mcp } = options;
   const env = Object.entries(mcp.env)
     .map(([key, value]) => `${key}=${tomlString(value)}`)
@@ -106,6 +116,8 @@ export function codexArgs(options: { sessionId: string; resume: boolean; mcp: Mc
     "-c",
     `mcp_servers.kb25.default_tools_approval_mode=${tomlString("approve")}`
   );
+  if (options.model) args.push("-c", `model=${tomlString(options.model)}`);
+  if (options.effort) args.push("-c", `model_reasoning_effort=${tomlString(options.effort)}`);
   if (options.resume) args.push("resume", options.sessionId);
   args.push("-");
   return args;
@@ -214,7 +226,13 @@ export const codexEngine: Engine = {
     await fs.writeFile(path.join(cwd, "AGENTS.md"), options.prompt);
     return startProcessTurn({
       command: options.path,
-      args: codexArgs({ sessionId: options.session.id, resume: options.session.resume, mcp: options.mcp }),
+      args: codexArgs({
+        sessionId: options.session.id,
+        resume: options.session.resume,
+        mcp: options.mcp,
+        model: options.model,
+        effort: options.effort,
+      }),
       cwd,
       input: options.text,
       readLine: codexReader(),

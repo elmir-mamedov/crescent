@@ -80,8 +80,18 @@ export interface TurnFiles {
   systemPrompt: string;
 }
 
-/** The arguments for one turn. The prompt itself goes on stdin (`turnInput`). */
-export function turnArgs(options: { sessionId: string; resume: boolean; files: TurnFiles }): string[] {
+/**
+ * The arguments for one turn. The prompt itself goes on stdin (`turnInput`).
+ * A model or effort level applies to this turn alone, so a resumed session
+ * can change either.
+ */
+export function turnArgs(options: {
+  sessionId: string;
+  resume: boolean;
+  files: TurnFiles;
+  model?: string;
+  effort?: string;
+}): string[] {
   return [
     "-p",
     "--input-format",
@@ -108,6 +118,8 @@ export function turnArgs(options: { sessionId: string; resume: boolean; files: T
     "--disable-slash-commands",
     "--append-system-prompt-file",
     options.files.systemPrompt,
+    ...(options.model ? ["--model", options.model] : []),
+    ...(options.effort ? ["--effort", options.effort] : []),
   ];
 }
 
@@ -215,6 +227,8 @@ export interface TurnOptions {
   sessionId: string;
   resume: boolean;
   files: TurnFiles;
+  model?: string;
+  effort?: string;
   /** The working folder: empty, so no project settings or CLAUDE.md come along. */
   cwd: string;
   text: string;
@@ -252,6 +266,8 @@ export const claudeEngine: Engine = {
       sessionId: options.session.id,
       resume: options.session.resume,
       files,
+      model: options.model,
+      effort: options.effort,
       cwd,
       text: options.text,
       onEvent: options.onEvent,

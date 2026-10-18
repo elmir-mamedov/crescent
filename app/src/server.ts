@@ -2340,12 +2340,21 @@ app.get("/_chat/threads/:id", async (req, reply) => {
 });
 
 app.post("/_chat/threads/:id/messages", async (req, reply) => {
-  const body = (req.body ?? {}) as { text?: unknown; forcePages?: unknown; slug?: unknown; engine?: unknown };
+  const body = (req.body ?? {}) as {
+    text?: unknown;
+    forcePages?: unknown;
+    slug?: unknown;
+    engine?: unknown;
+    model?: unknown;
+    effort?: unknown;
+  };
   const sent = await chat.send(chatThreadId(req), {
     text: typeof body.text === "string" ? body.text : "",
     forcePages: body.forcePages === true,
     slug: typeof body.slug === "string" && body.slug ? body.slug : undefined,
     engine: body.engine === "claude" || body.engine === "codex" ? body.engine : undefined,
+    model: typeof body.model === "string" && body.model ? body.model : undefined,
+    effort: typeof body.effort === "string" && body.effort ? body.effort : undefined,
   });
   if (!sent.ok) return reply.code(sent.status).send({ error: sent.error, engine: sent.engine });
   return reply.code(202).send({ ok: true, title: sent.thread.title });

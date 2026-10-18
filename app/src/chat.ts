@@ -14,7 +14,15 @@
  * so its own text after a write is only ever a caveat.
  */
 import type { PageNode } from "./content.js";
-import type { AgentEvent, AgentStatus, Engine, EngineId, McpServerSpec } from "./agent-cli.js";
+import {
+  isEffortName,
+  isModelName,
+  type AgentEvent,
+  type AgentStatus,
+  type Engine,
+  type EngineId,
+  type McpServerSpec,
+} from "./agent-cli.js";
 import {
   isThreadId,
   threadTitle,
@@ -112,7 +120,7 @@ export interface Chat {
   /**
    * Start a turn; the thread is created by its first message, on `engine`
    * (else the first one ready). A thread keeps its engine: `engine` is
-   * ignored once it exists.
+   * ignored once it exists. `model` and `effort` apply to this turn alone.
    */
   send(id: string, input: SendInput): Promise<SendOutcome>;
   running(id: string): boolean;
@@ -137,6 +145,9 @@ export interface SendInput {
   forcePages: boolean;
   slug?: string;
   engine?: EngineId;
+  /** The model and effort level to run with; the engine's own default when absent. */
+  model?: string;
+  effort?: string;
 }
 
 /** Long enough for a pasted article, short of a runaway paste. */
@@ -198,6 +209,12 @@ export function makeChat(deps: ChatDeps): Chat {
     const text = input.text.trim();
     if (!text) return { ok: false, status: 400, error: "The message is empty." };
     if (text.length > MAX_MESSAGE_LENGTH) return { ok: false, status: 400, error: "The message is too long." };
+    if (input.model !== undefined && !isModelName(input.model)) {
+      return { ok: false, status: 400, error: "Not a model name." };
+    }
+    if (input.effort !== undefined && !isEffortName(input.effort)) {
+      return { ok: false, status: 400, error: "Not an effort level." };
+    }
     if (runs.has(id)) return { ok: false, status: 409, error: "This chat is still answering." };
     const existing = await deps.store.get(id);
     const engine = await pickEngine(existing, input.engine);
@@ -255,7 +272,7 @@ export function makeChat(deps: ChatDeps): Chat {
       try {
         const pages = await deps.pages();
         const prompt = `${contextBlock(input.slug, input.forcePages, pages)}\n\n${text}`;
-        const outcome = await runTurn(engine, thread, run, ready.path, prompt, (sessionId) => {
+        const outcome = await runTurn(engine, thread, run, ready.path, prompt, input, (sessionId) => {
           if (sessionId && thread.sessionId !== sessionId) {
             thread.sessionId = sessionId;
             save();
@@ -294,6 +311,7 @@ export function makeChat(deps: ChatDeps): Chat {
     run: Run,
     programPath: string,
     prompt: string,
+    choice: { model?: string; effort?: string },
     onStarted: (sessionId: string) => void
   ): Promise<TurnOutcome> {
     const attempt = async (sessionId: string | undefined): Promise<TurnOutcome> => {
@@ -307,6 +325,8 @@ export function makeChat(deps: ChatDeps): Chat {
         prompt: CHAT_PROMPT,
         // An engine that names its own sessions ignores the id of a new one.
         session: sessionId ? { id: sessionId, resume: true } : { id: thread.id, resume: false },
+        model: choice.model,
+        effort: choice.effort,
         text: prompt,
         onEvent: (event: AgentEvent) => {
           switch (event.type) {
