@@ -1416,6 +1416,13 @@ test("the scroll spy's probe line clears the scroll margin by a pixel", () => {
   assert.match(html, /const line = 28 \+ 1;/);
 });
 
+test("issue #9: the Add note button waits for a drag-selection to end", () => {
+  const html = layout(pageView({ notes: [] }));
+  // Shown mid-drag, the pointer crossing it selected to the end of the page.
+  assert.match(html, /document\.addEventListener\("selectionchange", \(\) => \{\n\s*if \(!dragging\) offerSelection\(\);/);
+  assert.match(html, /document\.addEventListener\("mouseup", \(\) => \{\n\s*if \(!dragging\) return;\n\s*dragging = false;\n\s*offerSelection\(\);/);
+});
+
 test("headings get a scroll margin, and smooth scrolling stays off", () => {
   const html = layout(pageView());
   assert.match(html, /\.prose :is\(h1,h2,h3,h4,h5,h6\)\{scroll-margin-top:28px\}/);

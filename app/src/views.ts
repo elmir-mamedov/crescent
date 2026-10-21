@@ -4607,11 +4607,38 @@ const NOTES_SCRIPT = `
   focusFromHash();
   window.addEventListener("hashchange", focusFromHash);
 
-  document.addEventListener("selectionchange", () => {
+  function offerSelection() {
     if (composer) return; // the composer owns the selection it was opened with
     pending = selectionAnchor();
     if (pending) showAddButton(pending);
     else hideAddButton();
+  }
+
+  // The button waits for the mouse to come up. Shown mid-drag, it sat right in
+  // the path of a downward drag, and the pointer crossing it moved the
+  // selection's end to where the button is in the document — the end of
+  // <body> — so the selection flooded to the bottom of the page and back on
+  // every move. A keyboard selection has no drag and still shows it at once.
+  let dragging = false;
+
+  document.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+    if (event.target instanceof Element && event.target.closest(".note-add")) return;
+    dragging = true;
+    hideAddButton();
+  });
+  document.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    offerSelection();
+  });
+  // Dragging selected text away ends in dragend, with no mouseup.
+  document.addEventListener("dragend", () => {
+    dragging = false;
+  });
+
+  document.addEventListener("selectionchange", () => {
+    if (!dragging) offerSelection();
   });
 
   document.addEventListener("click", (event) => {
