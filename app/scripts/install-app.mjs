@@ -1,8 +1,8 @@
 // Installs ~/Applications/KB25.app, a launcher for the web viewer that
 // Spotlight and Launchpad pick up. Opening it starts the server when it is not
-// already running, then opens the viewer as a tab in the default browser. The
-// server runs in desktop mode (KB25_DESKTOP): it quits from its Quit button,
-// or by itself 30 seconds after its last tab closes.
+// already running, then opens KB25's own window (installer/window.mjs), which
+// stops the server it started when the window closes. A server already running
+// from a terminal (npm run dev) is not in desktop mode and keeps running.
 //
 // This is the developer launcher: it runs this checkout's src/ through tsx.
 // Everyone else installs a packaged copy with the one-line installer in the
@@ -31,6 +31,9 @@ if (!fs.existsSync(tsxCli)) {
 
 const bundle = path.join(os.homedir(), "Applications", "KB25.app");
 const logPath = path.join(os.homedir(), "Library", "Logs", "kb25-viewer.log");
+// The window's own browser profile; the installed KB25 keeps its own.
+const statePath = path.join(os.homedir(), "Library", "Application Support", "KB25 (dev)");
+const windowScript = path.join(appDir, "installer", "window.mjs");
 const port = process.env.PORT ?? "4000";
 
 const script = `#!/bin/sh
@@ -38,7 +41,7 @@ URL="http://localhost:${port}"
 LOG=${sh(logPath)}
 # The server shells out to git, and Finder hands apps a bare PATH.
 export PATH=${sh(path.dirname(process.execPath))}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
-# Started without a terminal, so the page offers Quit and the last tab closing stops it.
+# Started without a terminal, so closing KB25's window stops it.
 export KB25_DESKTOP=1
 
 up() { curl -s -o /dev/null --max-time 1 "$URL/"; }
@@ -57,7 +60,7 @@ if ! up; then
   done
 fi
 
-exec open "$URL"
+exec ${sh(process.execPath)} ${sh(windowScript)} open "$URL" ${sh(statePath)} "$LOG"
 `;
 
 fs.mkdirSync(path.dirname(logPath), { recursive: true });
