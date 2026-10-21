@@ -1722,18 +1722,30 @@ const HELP_SCRIPT = `
 `;
 
 /**
- * Links in KB25's own window, the app-mode browser window the launcher opens
- * (display-mode: standalone there, browser in a tab). A link that leaves KB25,
- * or one asked for in a new window (Cmd/Ctrl/Shift-click, a middle click,
- * target=_blank), opens in the default browser through POST /_open. Left to
- * the window, the first would replace KB25 in a window with no address bar or
- * Back button to return with, and the second would open a bare browser window
- * on KB25's own profile, without the person's sign-ins. A handler that already
- * took the click (the sidebar's Shift/Cmd-click selection) keeps it.
+ * Links in KB25's own window, the app-mode browser window the launcher opens.
+ * A link that leaves KB25, or one asked for in a new window (Cmd/Ctrl/Shift-
+ * click, a middle click, target=_blank), opens in the default browser through
+ * POST /_open. Left to the window, the first would replace KB25 in a window
+ * with no address bar or Back button to return with, and the second would open
+ * a bare browser window on KB25's own profile, without the person's sign-ins.
+ * A handler that already took the click (the sidebar's Shift/Cmd-click
+ * selection) keeps it.
+ *
+ * The window opens on #kb25-window (installer/window.mjs) and keeps that in
+ * sessionStorage, which lasts as long as the window. display-mode cannot tell:
+ * the window reports standalone, but fullscreen once it is made full screen.
  */
 const APP_WINDOW_SCRIPT = `
 (() => {
-  if (!window.matchMedia || !matchMedia("(display-mode: standalone)").matches) return;
+  let inWindow = false;
+  try {
+    if (location.hash === "#kb25-window") {
+      sessionStorage.setItem("kb25-window", "1");
+      history.replaceState(history.state, "", location.pathname + location.search);
+    }
+    inWindow = sessionStorage.getItem("kb25-window") === "1";
+  } catch {}
+  if (!inWindow) return;
 
   function route(event) {
     if (event.defaultPrevented) return;
@@ -5399,8 +5411,6 @@ body.dragging-page .space-current{
 }
 .theme-toggle:hover,.chat-button:hover,.dash-button:hover,.instructions-button:hover,.feedback-button:hover,.quit-button:hover{background:var(--surface-hover-2); color:var(--fg)}
 .chat-button svg,.dash-button svg,.instructions-button svg,.feedback-button svg,.quit-button svg{display:block}
-/* KB25's own window quits by being closed. */
-@media (display-mode: standalone){.quit-button{display:none}}
 .chat-button[aria-expanded="true"]{background:var(--active-bg); border-color:var(--accent); color:var(--accent)}
 .theme-toggle .theme-icon{display:block}
 .theme-toggle .icon-moon{display:none}

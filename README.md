@@ -66,9 +66,9 @@ Windows.
 KB25 runs a small server on your computer and opens in a window of its own,
 which Chrome or Edge draws without tabs or an address bar. The server accepts
 connections from this computer only. Closing the window quits KB25, as quitting
-any app does; links to other sites open in your default browser. Without Chrome
-or Edge, KB25 opens in your default browser instead and quits with the power
-button in the top-right corner.
+any app does, and so does the power button in the top-right corner; links to
+other sites open in your default browser. Without Chrome or Edge, KB25 opens in
+your default browser instead and quits with the power button.
 
 **Writing pages.** Create a space from the spaces page, then add pages and
 folders from the sidebar. **Edit** opens a page's Markdown. Saved changes are

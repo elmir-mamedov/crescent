@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { browserArgs, browserCandidates, findBrowser, windowTracker } from "../installer/window.mjs";
+import { browserArgs, browserCandidates, findBrowser, windowPage, windowTracker } from "../installer/window.mjs";
 
 const created = (targetId: string, type = "page") => ({
   method: "Target.targetCreated",
@@ -94,4 +94,9 @@ test("the window opens as an app on KB25's own profile", () => {
     "--no-default-browser-check",
     "--remote-debugging-pipe",
   ]);
+});
+
+test("a window opens on the page that marks it as KB25's window", () => {
+  assert.equal(windowPage("http://localhost:25250"), "http://localhost:25250/#kb25-window");
+  assert.equal(windowPage("http://localhost:4000/"), "http://localhost:4000/#kb25-window");
 });

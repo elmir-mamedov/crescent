@@ -357,6 +357,8 @@ app.addHook("onRequest", async (req, reply) => {
   const reqPath = requestPath(req);
   if (reqPath === "/_login") return;
   if (PUBLIC_PATHS.has(reqPath)) return; // site icons load before sign-in
+  // Carries no KB data; KB25's window watcher has no session to send.
+  if (DESKTOP && reqPath === "/_window") return;
   if (currentUser(req)) return;
 
   const next = encodeURIComponent(req.url || "/");
@@ -2396,9 +2398,11 @@ app.post("/_chat/threads/:id/delete", async (req, reply) => {
 // Quitting, for a server a launcher started (DESKTOP). KB25's window
 // (installer/window.mjs) posts ?when=idle here once its last window has
 // closed: a chat turn still writing holds that quit until it ends, unless a
-// page is opened again by then. Without it, this is the Quit button a page in
-// an ordinary browser tab shows, and quits at once.
+// page is opened again by then. Without it, this is the Quit button, which
+// quits at once and tells the window's watcher, listening on GET /_window, to
+// close the window too.
 let quitWhenChatEnds = false;
+const windowWatchers = new Set<NodeJS.WritableStream & { end(): unknown }>();
 chat.onIdle(() => {
   if (quitWhenChatEnds) void shutdown("KB25 window closed");
 });
@@ -2414,10 +2418,21 @@ if (DESKTOP) {
       quitWhenChatEnds = true;
       console.log("KB25 window closed; quitting once the chat reply ends");
     } else {
-      const reason = windowClosed ? "KB25 window closed" : "quit from the page";
-      reply.raw.once("finish", () => void shutdown(reason));
+      reply.raw.once("finish", () =>
+        void (windowClosed ? shutdown("KB25 window closed") : shutdown("quit from the page", true))
+      );
     }
     return reply.code(202).send({ ok: true });
+  });
+  // The watcher of KB25's window listens here for "quit". A restart (an
+  // update's SIGTERM) ends the stream without it, and the watcher listens
+  // again once the new server answers.
+  app.get("/_window", async (_req, reply) => {
+    reply.hijack();
+    reply.raw.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+    reply.raw.write(": KB25\n\n");
+    windowWatchers.add(reply.raw);
+    reply.raw.on("close", () => windowWatchers.delete(reply.raw));
   });
   // A link KB25's window hands on (APP_WINDOW_SCRIPT in views.ts): it opens in
   // the default browser, with the person's own sign-ins and tabs.
@@ -2430,11 +2445,22 @@ if (DESKTOP) {
 }
 
 let shuttingDown = false;
-/** Stop serving and exit. */
-async function shutdown(reason: string): Promise<void> {
+/**
+ * Stop serving and exit. `closeWindow` tells KB25's window to close as well
+ * (the Quit button); a signal (logout, or an update stopping this server to
+ * restart it) leaves the window open for the server that comes next.
+ */
+async function shutdown(reason: string, closeWindow = false): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`KB viewer stopping: ${reason}`);
+  for (const watcher of windowWatchers) {
+    try {
+      if (closeWindow) watcher.write("event: quit\ndata: \n\n");
+      watcher.end();
+    } catch {}
+  }
+  windowWatchers.clear();
   // End chat turns cleanly, so their threads are saved and can be resumed.
   await Promise.race([chat.stopAll(), new Promise((resolve) => setTimeout(resolve, 5000))]);
   // Let a save already under way finish, but never wait on it for long.

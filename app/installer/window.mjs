@@ -2,9 +2,11 @@
 // profile of KB25's own, so KB25 opens and closes like an app instead of a
 // browser tab. A watcher holds that browser over its DevTools pipe and sees
 // each window open and close. Once the last window closes, or the browser
-// quits (Cmd+Q), the watcher closes the browser and stops the server. The pipe
-// ties the two together the other way too: if the watcher dies, the browser
-// exits, so no KB25 window is ever left without one.
+// quits (Cmd+Q), the watcher closes the browser and stops the server; when the
+// page's Quit button stops the server, the server tells the watcher (GET
+// /_window) and it closes the window. The pipe ties the two together the other
+// way too: if the watcher dies, the browser exits, so no KB25 window is ever
+// left without one.
 //
 //   node window.mjs open <serverUrl> <stateDir> <logFile>
 //       What the launchers run. Opens a window and returns at once: a running
@@ -61,6 +63,16 @@ export function findBrowser({ platform = process.platform, env = process.env, ho
   return candidates.find((file) => exists(file)) ?? null;
 }
 
+/**
+ * The page a KB25 window opens on. The fragment marks the window: the page
+ * keeps it in sessionStorage for every page the window opens after
+ * (APP_WINDOW_SCRIPT in views.ts), since nothing else tells a page it is in
+ * KB25's window rather than a browser tab.
+ */
+export function windowPage(serverUrl) {
+  return `${serverUrl.replace(/\/+$/, "")}/#kb25-window`;
+}
+
 /** The switches that open `url` as an app window on KB25's own profile. */
 export function browserArgs(url, profile, extra = []) {
   return [`--app=${url}`, `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", ...extra];
@@ -112,7 +124,10 @@ export function openWindow({ node = process.execPath, url, stateDir, logFile }) 
   if (running && isAlive(running.pid) && fs.existsSync(running.browser)) {
     // The running browser takes this over and opens one more window, which its
     // watcher sees like the first.
-    spawn(running.browser, browserArgs(url, profileDir(stateDir)), { detached: true, stdio: "ignore" }).unref();
+    spawn(running.browser, browserArgs(windowPage(url), profileDir(stateDir)), {
+      detached: true,
+      stdio: "ignore",
+    }).unref();
     return;
   }
   if (!findBrowser()) {
@@ -178,8 +193,32 @@ async function stopKb25(serverUrl, stateDir) {
   await stopServer(paths(stateDir));
 }
 
+/**
+ * Wait for the server to say it quit from its Quit button. The stream ends
+ * without that when the server restarts (an update), and this listens again
+ * once the new server answers.
+ */
+async function listenForQuit(serverUrl, onQuit) {
+  for (;;) {
+    try {
+      const response = await fetch(`${serverUrl}/_window`, { headers: { accept: "text/event-stream" } });
+      if (response.ok && response.body) {
+        const decoder = new TextDecoder();
+        let pending = "";
+        for await (const chunk of response.body) {
+          pending += decoder.decode(chunk, { stream: true });
+          if (/^event: quit$/m.test(pending)) return onQuit();
+          // Keep only an unfinished last line, which the next chunk completes.
+          pending = pending.slice(pending.lastIndexOf("\n") + 1);
+        }
+      }
+    } catch {}
+    await sleep(2000);
+  }
+}
+
 /** Run the watcher; see the top of this file. */
-export async function watch(serverUrl, stateDir, windowUrl = serverUrl) {
+export async function watch(serverUrl, stateDir, windowUrl = windowPage(serverUrl)) {
   const browser = findBrowser();
   if (!browser) {
     openUrl(windowUrl);
@@ -199,7 +238,7 @@ export async function watch(serverUrl, stateDir, windowUrl = serverUrl) {
     if (readState(stateDir)?.pid === process.pid) fs.rmSync(stateFile(stateDir), { force: true });
   };
 
-  async function finish(reason) {
+  async function finish(reason, alsoStopServer = true) {
     if (finished) return;
     finished = true;
     console.log(`KB25 window: ${reason} after ${seconds()}`);
@@ -207,7 +246,7 @@ export async function watch(serverUrl, stateDir, windowUrl = serverUrl) {
     // else to do.
     if (child.exitCode === null) await Promise.race([send("Browser.close"), sleep(3000)]);
     if (child.exitCode === null) child.kill();
-    await stopKb25(serverUrl, stateDir);
+    if (alsoStopServer) await stopKb25(serverUrl, stateDir);
     clearState();
     process.exit(0);
   }
@@ -250,6 +289,7 @@ export async function watch(serverUrl, stateDir, windowUrl = serverUrl) {
   });
 
   await send("Target.setDiscoverTargets", { discover: true });
+  void listenForQuit(serverUrl, () => finish("KB25 quit from its Quit button", false));
 }
 
 // Real paths: Node resolves symlinks in this module's own path, not in argv.

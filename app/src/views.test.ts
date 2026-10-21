@@ -1523,11 +1523,13 @@ test("views: a launcher-started server's corner offers Quit, behind a confirmati
   }
 });
 
-test("views: KB25's own window hides Quit and hands leaving links to the default browser", () => {
+test("views: KB25's own window hands leaving links to the default browser", () => {
   const html = asDesktop(() => layout(pageView()));
-  assert.match(html, /@media \(display-mode: standalone\)\{\.quit-button\{display:none\}\}/);
-  // Only in the app window: a tab of the default browser is where links go.
-  assert.match(html, /if \(!window\.matchMedia \|\| !matchMedia\("\(display-mode: standalone\)"\)\.matches\) return;/);
+  // The window is known by the mark it opened on, kept for the window's life;
+  // display-mode says fullscreen once the window is made full screen.
+  assert.match(html, /if \(location\.hash === "#kb25-window"\) \{\n\s*sessionStorage\.setItem\("kb25-window", "1"\);/);
+  assert.match(html, /inWindow = sessionStorage\.getItem\("kb25-window"\) === "1";/);
+  assert.doesNotMatch(html, /display-mode/);
   assert.match(html, /if \(url\.origin === location\.origin && !newWindow\) return;/);
   assert.match(html, /fetch\("\/_open", \{/);
   // A server started from a terminal has no window to route for.
