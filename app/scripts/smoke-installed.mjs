@@ -1,8 +1,8 @@
 // Release CI only: checks a KB25 that install.sh / install.ps1 has just
 // installed with KB25_YES=1 KB25_NO_BROWSER=1. The viewer must answer without
 // a login, the chat must report its engines, the MCP server must list its
-// tools, the launcher must exist, and removal must clean up while leaving the
-// pages alone.
+// tools, the launcher must exist, KB25's window must stop the server when it
+// closes, and removal must clean up while leaving the pages alone.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -78,7 +78,38 @@ const launcher = isWindows
 assert.ok(fs.existsSync(launcher), `missing launcher ${launcher}`);
 console.log(`launcher: ${launcher}`);
 
-// 5. Removal takes everything but the pages.
+// 5. KB25's window opens over the watcher's pipe, and its last window closing
+// stops the server. A page that closes itself stands in for the person closing
+// the window; headless, because a runner has nobody to show it to.
+const watcher = spawn(
+  node,
+  [
+    path.join(home, "app", "installer", "window.mjs"),
+    "watch",
+    `http://localhost:${env.PORT}`,
+    home,
+    "data:text/html,<title>KB25</title><script>setTimeout(() => close(), 1000)</script>",
+  ],
+  { env: { ...process.env, KB25_BROWSER_ARGS: "--headless=new" }, stdio: ["ignore", "pipe", "inherit"] }
+);
+let windowLog = "";
+watcher.stdout.on("data", (chunk) => (windowLog += chunk));
+const watched = await Promise.race([
+  new Promise((resolve) => watcher.on("exit", () => resolve(true))),
+  sleep(60_000).then(() => false),
+]);
+if (!watched) watcher.kill();
+assert.match(windowLog, /KB25 window: open in /, `the window never opened:\n${windowLog}`);
+assert.match(windowLog, /KB25 window: last window closed/, `the window never closed:\n${windowLog}`);
+let stopped = false;
+for (let i = 0; i < 40 && !stopped; i++) {
+  stopped = !(await fetch(`http://localhost:${env.PORT}/`).then(() => true, () => false));
+  if (!stopped) await sleep(250);
+}
+assert.ok(stopped, "closing KB25's window should stop the server");
+console.log(`window: ${windowLog.trim().split("\n").join("; ")}`);
+
+// 6. Removal takes everything but the pages.
 execFileSync(node, [path.join(home, "app", "installer", "setup.mjs")], {
   env: { ...process.env, KB25_UNINSTALL: "1" },
   stdio: "inherit",
