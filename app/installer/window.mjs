@@ -161,7 +161,9 @@ function devtools(child, onEvent) {
 /**
  * Stop the server once the window has closed. The server holds the quit while
  * a chat reply is still being written; one that will not take the request
- * (sign-in on, say) is stopped through its pid file instead.
+ * (sign-in on, say) is stopped through its pid file instead. A server that no
+ * longer answers is left alone: its pid file may be stale by then, and the
+ * pid someone else's.
  */
 async function stopKb25(serverUrl, stateDir) {
   try {
@@ -170,7 +172,9 @@ async function stopKb25(serverUrl, stateDir) {
       signal: AbortSignal.timeout(5000),
     });
     if (response.status === 202) return;
-  } catch {}
+  } catch {
+    return;
+  }
   await stopServer(paths(stateDir));
 }
 
