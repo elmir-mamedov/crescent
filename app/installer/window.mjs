@@ -252,7 +252,16 @@ export async function watch(serverUrl, stateDir, windowUrl = serverUrl) {
   await send("Target.setDiscoverTargets", { discover: true });
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === thisFile) {
+// Real paths: Node resolves symlinks in this module's own path, not in argv.
+function runAsScript() {
+  try {
+    return fs.realpathSync(process.argv[1]) === thisFile;
+  } catch {
+    return false;
+  }
+}
+
+if (runAsScript()) {
   const [mode, url, stateDir, extra] = process.argv.slice(2);
   if (mode === "open" && url && stateDir && extra) openWindow({ url, stateDir, logFile: extra });
   else if (mode === "watch" && url && stateDir) await watch(url, stateDir, extra);
