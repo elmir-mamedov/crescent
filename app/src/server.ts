@@ -30,7 +30,6 @@ import { envFlag, envNumber, syncFromEnv } from "./sync.js";
 import { parseWordDiff } from "./diff.js";
 import { DEFAULT_FEEDBACK_RELAY, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedback } from "./feedback.js";
 import { createRenderer, noteSegments, sourceBlocks, type Section } from "./markdown.js";
-import { makePresence } from "./presence.js";
 import { claudeEngine } from "./claude-cli.js";
 import { codexEngine } from "./codex-cli.js";
 import { makeChat, messageView, type ChatMessageView, type RunEvent } from "./chat.js";
@@ -154,11 +153,10 @@ const AUTH_SESSION_SECRET = AUTH_DISABLED
   ? crypto.randomBytes(32).toString("base64url")
   : requireEnv("AUTH_SESSION_SECRET");
 // A server a launcher started (KB25.app, the Start-menu shortcut) has no
-// terminal to stop it, so the page gets a Quit button and the server quits by
-// itself a while after its last tab closes (presence.ts). Loopback only: on a
-// wider bind it would let any visitor stop the server.
+// terminal to stop it. KB25's window stops it when it closes (POST /_quit),
+// and a page in an ordinary browser tab gets a Quit button. Loopback only: on
+// a wider bind it would let any visitor stop the server.
 const DESKTOP = envFlag("KB25_DESKTOP") && isLoopbackHost(HOST);
-const QUIT_GRACE_MS = 30_000;
 configureViews({ desktop: DESKTOP });
 const SESSION_COOKIE = "kb_session";
 const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
@@ -358,8 +356,6 @@ app.addHook("onRequest", async (req, reply) => {
   const reqPath = requestPath(req);
   if (reqPath === "/_login") return;
   if (PUBLIC_PATHS.has(reqPath)) return; // site icons load before sign-in
-  // Carries no KB data, and a tab left on the sign-in page is still open.
-  if (DESKTOP && reqPath === "/_presence") return;
   if (currentUser(req)) return;
 
   const next = encodeURIComponent(req.url || "/");
@@ -2396,50 +2392,40 @@ app.post("/_chat/threads/:id/delete", async (req, reply) => {
   return reply.send({ ok: await chat.remove(id) });
 });
 
-// Quitting, for a server a launcher started (DESKTOP). Each browser keeps one
-// event stream here while it has a KB25 tab open, and the server quits once
-// the last one has been gone a while; POST /_quit is the page's Quit button.
-// A chat turn still writing holds the quit until it ends, unless a tab has
-// come back by then.
+// Quitting, for a server a launcher started (DESKTOP). KB25's window
+// (installer/window.mjs) posts ?when=idle here once its last window has
+// closed: a chat turn still writing holds that quit until it ends, unless a
+// page is opened again by then. Without it, this is the Quit button a page in
+// an ordinary browser tab shows, and quits at once.
 let quitWhenChatEnds = false;
-const presence = DESKTOP
-  ? makePresence({
-      graceMs: QUIT_GRACE_MS,
-      onIdle: () => {
-        if (chat.activeCount() > 0) quitWhenChatEnds = true;
-        else void shutdown("no KB25 tabs open", false);
-      },
-    })
-  : null;
 chat.onIdle(() => {
-  if (quitWhenChatEnds && presence?.size() === 0) void shutdown("no KB25 tabs open", false);
-  quitWhenChatEnds = false;
+  if (quitWhenChatEnds) void shutdown("KB25 window closed");
 });
-if (presence) {
-  app.get("/_presence", async (_req, reply) => {
-    reply.hijack();
-    reply.raw.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
-    // A dropped stream retries soon, so a restart (an update) picks it back up.
-    reply.raw.write("retry: 2000\n\n");
-    reply.raw.on("close", presence.connect(reply.raw));
+if (DESKTOP) {
+  app.addHook("onRequest", async (req) => {
+    if (quitWhenChatEnds && req.method === "GET" && req.headers["sec-fetch-dest"] === "document") {
+      quitWhenChatEnds = false;
+    }
   });
-  app.post("/_quit", async (_req, reply) => {
-    reply.raw.once("finish", () => void shutdown("quit from the page", true));
+  app.post("/_quit", async (req, reply) => {
+    const windowClosed = (req.query as { when?: string }).when === "idle";
+    if (windowClosed && chat.activeCount() > 0) {
+      quitWhenChatEnds = true;
+      console.log("KB25 window closed; quitting once the chat reply ends");
+    } else {
+      const reason = windowClosed ? "KB25 window closed" : "quit from the page";
+      reply.raw.once("finish", () => void shutdown(reason));
+    }
     return reply.code(202).send({ ok: true });
   });
 }
 
 let shuttingDown = false;
-/**
- * Stop serving and exit. `quitting` tells the open tabs KB25 has quit; a
- * signal (logout, or an update stopping this server to restart it) leaves
- * them to reconnect instead.
- */
-async function shutdown(reason: string, quitting: boolean): Promise<void> {
+/** Stop serving and exit. */
+async function shutdown(reason: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`KB viewer stopping: ${reason}`);
-  presence?.endAll(quitting);
   // End chat turns cleanly, so their threads are saved and can be resumed.
   await Promise.race([chat.stopAll(), new Promise((resolve) => setTimeout(resolve, 5000))]);
   // Let a save already under way finish, but never wait on it for long.
@@ -2461,7 +2447,7 @@ async function shutdown(reason: string, quitting: boolean): Promise<void> {
 }
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => void shutdown(signal, false));
+  process.once(signal, () => void shutdown(signal));
 }
 
 // Any page by slug (supports nested paths).

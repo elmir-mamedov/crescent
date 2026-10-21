@@ -16,8 +16,8 @@ import type { RenderedNote, Section } from "./markdown.js";
 let desktop = false;
 
 /**
- * `desktop`: a launcher started this server (KB25_DESKTOP), so every page
- * reports itself open to it (PRESENCE_SCRIPT) and the corner offers Quit.
+ * `desktop`: a launcher started this server (KB25_DESKTOP), so the corner
+ * offers Quit (QUIT_SCRIPT) to a page in an ordinary browser tab.
  */
 export function configureViews(options: { desktop: boolean }): void {
   desktop = options.desktop;
@@ -723,7 +723,7 @@ function renderHead(title: string, extra = ""): string {
 ${FAVICON_TAGS}
 <title>${title}</title>
 <style>${STYLES}</style>${extra}
-<script>${THEME_SCRIPT}</script>${desktop ? `\n<script>${PRESENCE_SCRIPT}</script>` : ""}
+<script>${THEME_SCRIPT}</script>${desktop ? `\n<script>${QUIT_SCRIPT}</script>` : ""}
 </head>`;
 }
 
@@ -2497,30 +2497,21 @@ const UPDATE_SCRIPT = `
 `;
 
 /**
- * Keeps a launcher-started server (KB25_DESKTOP) told that this browser still
- * has a KB25 tab open, and handles Quit. Runs in <head> on every page, the
- * sign-in page included, so no open tab goes uncounted.
- *
- * A browser allows only six connections to one origin across all its tabs, so
- * the tabs keep one stream between them: whichever holds the "kb25-presence"
- * Web Lock opens GET /_presence and holds both until it closes, and the browser
- * then hands the lock to the next tab (presence.ts on the server). The holder
- * passes the server's quit event on to the other tabs over a BroadcastChannel.
- * Without Web Locks each tab keeps its own stream.
+ * The Quit button of a launcher-started server (KB25_DESKTOP), for a page in an
+ * ordinary browser tab; KB25's own window quits by being closed, and hides it.
+ * The tab that quits tells the others over a BroadcastChannel, so each shows
+ * that KB25 has quit instead of failing on its next click. Runs in <head> on
+ * every page, the sign-in page included, to hear that.
  */
-const PRESENCE_SCRIPT = `
+const QUIT_SCRIPT = `
 (() => {
-  if (!window.EventSource) return;
   const channel = window.BroadcastChannel ? new BroadcastChannel("kb25") : null;
-  let source = null;
-  let holder = false;
   let quit = false;
 
   // The page stays as it is, so an editor still shows what was typed.
   function showQuit() {
     if (quit) return;
     quit = true;
-    if (source) source.close();
     const el = (className, text) => {
       const node = document.createElement("p");
       node.className = className;
@@ -2534,33 +2525,7 @@ const PRESENCE_SCRIPT = `
     card.hidden = false;
   }
 
-  function open() {
-    if (quit) return;
-    source = new EventSource("/_presence");
-    source.addEventListener("quit", () => {
-      if (channel) channel.postMessage("quit");
-      showQuit();
-    });
-    // The browser retries a dropped stream by itself, but not a refused one.
-    source.addEventListener("error", () => {
-      if (source.readyState === EventSource.CLOSED && !quit) setTimeout(open, 5000);
-    });
-  }
-
-  // Held for as long as this tab is open.
-  function hold() {
-    holder = true;
-    open();
-    return new Promise(() => {});
-  }
-
   if (channel) channel.addEventListener("message", (event) => { if (event.data === "quit") showQuit(); });
-  if (navigator.locks) navigator.locks.request("kb25-presence", hold);
-  else hold();
-  // Back from the back/forward cache, whose entry closed the stream.
-  addEventListener("pageshow", (event) => {
-    if (event.persisted && holder && !quit && source && source.readyState === EventSource.CLOSED) open();
-  });
 
   document.addEventListener("click", (event) => {
     const target = event.target;

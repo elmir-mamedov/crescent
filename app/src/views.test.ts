@@ -1499,7 +1499,7 @@ function asDesktop<T>(render: () => T): T {
   }
 }
 
-test("views: a server started from a terminal offers no Quit and reports no tabs", () => {
+test("views: a server started from a terminal offers no Quit", () => {
   for (const html of [
     spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),
     layout(pageView()),
@@ -1507,7 +1507,7 @@ test("views: a server started from a terminal offers no Quit and reports no tabs
   ]) {
     assert.doesNotMatch(html, /data-quit-open/);
     assert.doesNotMatch(html, /data-quit-dialog/);
-    assert.doesNotMatch(html, /\/_presence/);
+    assert.doesNotMatch(html, /\/_quit/);
   }
 });
 
@@ -1523,15 +1523,16 @@ test("views: a launcher-started server's corner offers Quit, behind a confirmati
   }
 });
 
-test("views: every page of a launcher-started server reports the tab open, sign-in included", () => {
+test("views: every page of a launcher-started server hears that KB25 quit, sign-in included", () => {
   for (const html of asDesktop(() => [
     spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),
     layout(pageView()),
     loginLayout({ siteTitle: "KB", next: "/" } as LoginView),
   ])) {
     const head = html.slice(0, html.indexOf("</head>"));
-    assert.match(head, /new EventSource\("\/_presence"\)/);
-    assert.match(head, /navigator\.locks\.request\("kb25-presence"/);
+    assert.match(head, /channel\.addEventListener\("message", \(event\) => \{ if \(event\.data === "quit"\) showQuit\(\); \}\)/);
+    // Nothing reports tabs open any more: KB25's window decides when it quits.
+    assert.doesNotMatch(head, /_presence|navigator\.locks/);
   }
   // Signing in is still needed to quit.
   const login = asDesktop(() => loginLayout({ siteTitle: "KB", next: "/" } as LoginView));
