@@ -26,6 +26,7 @@ import { makeGit } from "./git.js";
 import { makeSeenPages } from "./seen.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
 import { crossSiteRefusal, isLoopbackHost } from "./loopback.js";
+import { openInBrowser, webAddress } from "./open-url.js";
 import { envFlag, envNumber, syncFromEnv } from "./sync.js";
 import { parseWordDiff } from "./diff.js";
 import { DEFAULT_FEEDBACK_RELAY, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedback } from "./feedback.js";
@@ -2417,6 +2418,14 @@ if (DESKTOP) {
       reply.raw.once("finish", () => void shutdown(reason));
     }
     return reply.code(202).send({ ok: true });
+  });
+  // A link KB25's window hands on (APP_WINDOW_SCRIPT in views.ts): it opens in
+  // the default browser, with the person's own sign-ins and tabs.
+  app.post("/_open", async (req, reply) => {
+    const href = webAddress(formString(req.body, "url"));
+    if (!href) return reply.code(400).send({ error: "Only web addresses can be opened." });
+    openInBrowser(href);
+    return reply.code(204).send();
   });
 }
 

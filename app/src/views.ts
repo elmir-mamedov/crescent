@@ -723,7 +723,7 @@ function renderHead(title: string, extra = ""): string {
 ${FAVICON_TAGS}
 <title>${title}</title>
 <style>${STYLES}</style>${extra}
-<script>${THEME_SCRIPT}</script>${desktop ? `\n<script>${QUIT_SCRIPT}</script>` : ""}
+<script>${THEME_SCRIPT}</script>${desktop ? `\n<script>${QUIT_SCRIPT}</script>\n<script>${APP_WINDOW_SCRIPT}</script>` : ""}
 </head>`;
 }
 
@@ -1718,6 +1718,43 @@ const HELP_SCRIPT = `
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
   });
+})();
+`;
+
+/**
+ * Links in KB25's own window, the app-mode browser window the launcher opens
+ * (display-mode: standalone there, browser in a tab). A link that leaves KB25,
+ * or one asked for in a new window (Cmd/Ctrl/Shift-click, a middle click,
+ * target=_blank), opens in the default browser through POST /_open. Left to
+ * the window, the first would replace KB25 in a window with no address bar or
+ * Back button to return with, and the second would open a bare browser window
+ * on KB25's own profile, without the person's sign-ins. A handler that already
+ * took the click (the sidebar's Shift/Cmd-click selection) keeps it.
+ */
+const APP_WINDOW_SCRIPT = `
+(() => {
+  if (!window.matchMedia || !matchMedia("(display-mode: standalone)").matches) return;
+
+  function route(event) {
+    if (event.defaultPrevented) return;
+    const link = event.target && event.target.closest ? event.target.closest("a[href]") : null;
+    if (!link || link.hasAttribute("download")) return;
+    const url = new URL(link.href, location.href);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return;
+    const newWindow =
+      event.metaKey || event.ctrlKey || event.shiftKey || event.button === 1 || link.target === "_blank";
+    if (url.origin === location.origin && !newWindow) return;
+    event.preventDefault();
+    fetch("/_open", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ url: url.href }).toString(),
+    }).catch(() => {});
+  }
+
+  document.addEventListener("click", route);
+  // A middle click fires auxclick, not click.
+  document.addEventListener("auxclick", (event) => { if (event.button === 1) route(event); });
 })();
 `;
 
@@ -5362,6 +5399,8 @@ body.dragging-page .space-current{
 }
 .theme-toggle:hover,.chat-button:hover,.dash-button:hover,.instructions-button:hover,.feedback-button:hover,.quit-button:hover{background:var(--surface-hover-2); color:var(--fg)}
 .chat-button svg,.dash-button svg,.instructions-button svg,.feedback-button svg,.quit-button svg{display:block}
+/* KB25's own window quits by being closed. */
+@media (display-mode: standalone){.quit-button{display:none}}
 .chat-button[aria-expanded="true"]{background:var(--active-bg); border-color:var(--accent); color:var(--accent)}
 .theme-toggle .theme-icon{display:block}
 .theme-toggle .icon-moon{display:none}
