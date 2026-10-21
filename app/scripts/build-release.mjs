@@ -73,7 +73,7 @@ copy(
   path.join(appDir, "node_modules", "@elmir-mamedov", "feedback", "dist"),
   path.join("node_modules", "@elmir-mamedov", "feedback", "dist")
 );
-for (const file of ["common.mjs", "launcher.mjs", "mac-app.mjs", "setup.mjs"]) {
+for (const file of ["common.mjs", "launcher.mjs", "mac-app.mjs", "setup.mjs", "window.mjs"]) {
   copy(path.join(appDir, "installer", file), path.join("installer", file));
 }
 copy(path.join(appDir, "..", "kb25-plugin", "skills"), "skills");

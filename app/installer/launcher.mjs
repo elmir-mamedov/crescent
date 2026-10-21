@@ -1,14 +1,17 @@
-// Opens KB25: starts the server when nothing answers on its port, then shows
-// it in the default browser. The macOS KB25.app and the Windows Start-menu
-// shortcut both run this with KB25's private Node. The server outlives this
-// script and runs in desktop mode (KB25_DESKTOP): it quits from its Quit
-// button, or by itself 30 seconds after its last tab closes.
+// Opens KB25: starts the server when nothing answers on its port, then opens
+// KB25's own window (window.mjs), which stops the server again when it is
+// closed. The macOS KB25.app and the Windows Start-menu shortcut both run this
+// with KB25's private Node. The server outlives this script and runs in desktop
+// mode (KB25_DESKTOP), which gives a page opened in an ordinary browser tab a
+// Quit button.
 //
-// KB25_NO_BROWSER=1 starts the server without opening a browser (CI smoke tests).
+// KB25_NO_BROWSER=1 starts the server without opening a window (CI smoke tests,
+// and the restart after an update, whose window is still open).
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { alertUser, isMac, isUp, openUrl, paths, serverUrl, sleep } from "./common.mjs";
+import { alertUser, isMac, isUp, paths, serverUrl, sleep } from "./common.mjs";
+import { openWindow } from "./window.mjs";
 
 const p = paths();
 const url = serverUrl(p);
@@ -41,4 +44,4 @@ if (!(await isUp(url))) {
   }
 }
 
-if (!process.env.KB25_NO_BROWSER) openUrl(url);
+if (!process.env.KB25_NO_BROWSER) openWindow({ node: p.node, url, stateDir: p.home, logFile: p.logFile });
