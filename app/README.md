@@ -16,11 +16,12 @@ npm run mcp      # stdio MCP server for local agent/client integrations
 
 On macOS, `npm run app:install` adds `~/Applications/KB25.app`, so the viewer
 opens like any other app (Cmd+Space, "KB25"). It starts the server if it is not
-already running and opens the viewer as a tab in your default browser. The
-server runs in the background and logs to `~/Library/Logs/kb25-viewer.log`;
-the power button in the top-right corner quits it, and it also quits by itself
-30 seconds after its last tab closes. Re-run `npm run app:install` after moving
-the checkout or switching Node versions.
+already running and opens KB25's own window: Chrome or Edge in app mode, on a
+profile kept in `~/Library/Application Support/KB25 (dev)`. The server runs in
+the background and logs to `~/Library/Logs/kb25-viewer.log`; closing the window
+quits it (`installer/window.mjs`). A server you started yourself with `npm run
+dev` keeps running. Re-run `npm run app:install` after moving the checkout or
+switching Node versions.
 
 It binds to `localhost` only, so nothing outside this machine can reach it.
 Keep it that way. Sign-in is one static username/password: repeated wrong
@@ -137,8 +138,9 @@ drawer says what is missing.
 - `src/chat-store.ts` keeps each thread as JSON in `<KB_DIR>/.kb25/chat/threads`,
   beside the spaces rather than in one, so no space commits a conversation.
 - The chat's MCP server commits as `... via chat` (`KB25_COMMIT_VIA=chat`).
-- A launcher-started server does not quit after its last tab closes while a
-  turn is still running; it waits for the turn to end.
+- A launcher-started server does not quit when KB25's window closes while a
+  turn is still running; it waits for the turn to end, and stays if a page is
+  opened again before then.
 
 ## MCP server
 
