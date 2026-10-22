@@ -1523,19 +1523,6 @@ test("views: a launcher-started server's corner offers Quit, behind a confirmati
   }
 });
 
-test("views: KB25's own window hands leaving links to the default browser", () => {
-  const html = asDesktop(() => layout(pageView()));
-  // The window is known by the mark it opened on, kept for the window's life;
-  // display-mode says fullscreen once the window is made full screen.
-  assert.match(html, /if \(location\.hash === "#kb25-window"\) \{\n\s*sessionStorage\.setItem\("kb25-window", "1"\);/);
-  assert.match(html, /inWindow = sessionStorage\.getItem\("kb25-window"\) === "1";/);
-  assert.doesNotMatch(html, /display-mode/);
-  assert.match(html, /if \(url\.origin === location\.origin && !newWindow\) return;/);
-  assert.match(html, /fetch\("\/_open", \{/);
-  // A server started from a terminal has no window to route for.
-  assert.doesNotMatch(layout(pageView()), /\/_open/);
-});
-
 test("views: every page of a launcher-started server hears that KB25 quit, sign-in included", () => {
   for (const html of asDesktop(() => [
     spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),

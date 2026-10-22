@@ -26,7 +26,6 @@ import { makeGit } from "./git.js";
 import { makeSeenPages } from "./seen.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
 import { crossSiteRefusal, isLoopbackHost } from "./loopback.js";
-import { openInBrowser, webAddress } from "./open-url.js";
 import { envFlag, envNumber, syncFromEnv } from "./sync.js";
 import { parseWordDiff } from "./diff.js";
 import { DEFAULT_FEEDBACK_RELAY, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedback } from "./feedback.js";
@@ -357,7 +356,7 @@ app.addHook("onRequest", async (req, reply) => {
   const reqPath = requestPath(req);
   if (reqPath === "/_login") return;
   if (PUBLIC_PATHS.has(reqPath)) return; // site icons load before sign-in
-  // Carries no KB data; KB25's window watcher has no session to send.
+  // Carries no KB data; KB25's window (shell/) has no session to send.
   if (DESKTOP && reqPath === "/_window") return;
   if (currentUser(req)) return;
 
@@ -2395,14 +2394,13 @@ app.post("/_chat/threads/:id/delete", async (req, reply) => {
   return reply.send({ ok: await chat.remove(id) });
 });
 
-// Quitting, for a server a launcher started (DESKTOP). KB25's window
-// (installer/window.mjs) posts ?when=idle here once its last window has
-// closed: a chat turn still writing holds that quit until it ends, unless a
-// page is opened again by then. Without it, this is the Quit button, which
-// quits at once and tells the window's watcher, listening on GET /_window, to
-// close the window too.
+// Quitting, for a server a launcher started (DESKTOP). KB25's window (the
+// native app in shell/) posts ?when=idle here once it has closed: a chat turn
+// still writing holds that quit until it ends, unless a page is opened again
+// by then. Without it, this is the power button, which quits at once and tells
+// the window, listening on GET /_window, to close too.
 let quitWhenChatEnds = false;
-const windowWatchers = new Set<NodeJS.WritableStream & { end(): unknown }>();
+const windows = new Set<NodeJS.WritableStream & { end(): unknown }>();
 chat.onIdle(() => {
   if (quitWhenChatEnds) void shutdown("KB25 window closed");
 });
@@ -2424,23 +2422,15 @@ if (DESKTOP) {
     }
     return reply.code(202).send({ ok: true });
   });
-  // The watcher of KB25's window listens here for "quit". A restart (an
-  // update's SIGTERM) ends the stream without it, and the watcher listens
-  // again once the new server answers.
+  // KB25's window listens here for "quit". A restart (an update's SIGTERM)
+  // ends the stream without it, and the window listens again once the new
+  // server answers.
   app.get("/_window", async (_req, reply) => {
     reply.hijack();
     reply.raw.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
     reply.raw.write(": KB25\n\n");
-    windowWatchers.add(reply.raw);
-    reply.raw.on("close", () => windowWatchers.delete(reply.raw));
-  });
-  // A link KB25's window hands on (APP_WINDOW_SCRIPT in views.ts): it opens in
-  // the default browser, with the person's own sign-ins and tabs.
-  app.post("/_open", async (req, reply) => {
-    const href = webAddress(formString(req.body, "url"));
-    if (!href) return reply.code(400).send({ error: "Only web addresses can be opened." });
-    openInBrowser(href);
-    return reply.code(204).send();
+    windows.add(reply.raw);
+    reply.raw.on("close", () => windows.delete(reply.raw));
   });
 }
 
@@ -2454,13 +2444,13 @@ async function shutdown(reason: string, closeWindow = false): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`KB viewer stopping: ${reason}`);
-  for (const watcher of windowWatchers) {
+  for (const window of windows) {
     try {
-      if (closeWindow) watcher.write("event: quit\ndata: \n\n");
-      watcher.end();
+      if (closeWindow) window.write("event: quit\ndata: \n\n");
+      window.end();
     } catch {}
   }
-  windowWatchers.clear();
+  windows.clear();
   // End chat turns cleanly, so their threads are saved and can be resumed.
   await Promise.race([chat.stopAll(), new Promise((resolve) => setTimeout(resolve, 5000))]);
   // Let a save already under way finish, but never wait on it for long.
