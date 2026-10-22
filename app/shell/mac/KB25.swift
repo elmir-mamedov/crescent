@@ -46,9 +46,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     var request = URLRequest(url: URL(string: "/_quit?when=idle", relativeTo: server)!.absoluteURL, timeoutInterval: 3)
     request.httpMethod = "POST"
     URLSession.shared.dataTask(with: request) { _, _, _ in
-      DispatchQueue.main.async { NSApp.reply(toApplicationShouldTerminate: true) }
+      Self.onMainRunLoop { NSApp.reply(toApplicationShouldTerminate: true) }
     }.resume()
     return .terminateLater
+  }
+
+  /// Quit from code. Waiting for the server's answer (terminateLater) spins a
+  /// nested run loop, which cannot run a main-queue block while another one is
+  /// running: quitting from inside one, then answering through another, would
+  /// wait forever. Run loop blocks have no such limit.
+  private func quit() {
+    Self.onMainRunLoop { NSApp.terminate(nil) }
+  }
+
+  private static func onMainRunLoop(_ block: @escaping () -> Void) {
+    CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue, block)
+    CFRunLoopWakeUp(CFRunLoopGetMain())
   }
 
   // MARK: Starting
@@ -80,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
               url.scheme == "http" || url.scheme == "https"
         else {
           // The launcher has already said why, in a dialog of its own.
-          NSApp.terminate(nil)
+          self.quit()
           return
         }
         self.server = url
@@ -111,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             for try await line in bytes.lines where line == "event: quit" {
               await MainActor.run {
                 self.serverQuit = true
-                NSApp.terminate(nil)
+                self.quit()
               }
               return
             }
@@ -126,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private func quitOnSIGTERM() {
     signal(SIGTERM, SIG_IGN)
     let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-    source.setEventHandler { NSApp.terminate(nil) }
+    source.setEventHandler { [weak self] in self?.quit() }
     source.resume()
     signalSource = source
   }
@@ -136,7 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     alert.messageText = "KB25"
     alert.informativeText = message
     alert.runModal()
-    NSApp.terminate(nil)
+    quit()
   }
 
   // MARK: The window
