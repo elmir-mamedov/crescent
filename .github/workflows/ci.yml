@@ -28,6 +28,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # KB25's window, on the system it is for: swiftc on macOS, .NET on Windows.
+      - name: Build KB25's window
+        if: runner.os == 'macOS'
+        run: npm run build:shell -- --require mac
+      - name: Build KB25's window
+        if: runner.os == 'Windows'
+        run: npm run build:shell -- --require windows
 
   relay:
     runs-on: ubuntu-latest
