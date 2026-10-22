@@ -16,11 +16,11 @@ npm run mcp      # stdio MCP server for local agent/client integrations
 
 On macOS, `npm run app:install` adds `~/Applications/KB25.app`, so the viewer
 opens like any other app (Cmd+Space, "KB25"). It starts the server if it is not
-already running and opens KB25's own window: Chrome or Edge in app mode, on a
-profile kept in `~/Library/Application Support/KB25 (dev)`. The server runs in
-the background and logs to `~/Library/Logs/kb25-viewer.log`; closing the window
-quits it (`installer/window.mjs`). A server you started yourself with `npm run
-dev` keeps running. Re-run `npm run app:install` after moving the checkout or
+already running and opens the viewer in KB25's own window, the native app in
+`shell/mac/`, which it builds with `swiftc` (Xcode or its Command Line Tools).
+The server runs in the background and logs to `~/Library/Logs/kb25-viewer.log`;
+closing the window quits it. A server you started yourself with `npm run dev`
+keeps running. Re-run `npm run app:install` after moving the checkout or
 switching Node versions.
 
 It binds to `localhost` only, so nothing outside this machine can reach it.

@@ -63,12 +63,14 @@ Windows.
 
 ## Using KB25
 
-KB25 runs a small server on your computer and opens in a window of its own,
-which Chrome or Edge draws without tabs or an address bar. The server accepts
-connections from this computer only. Closing the window quits KB25, as quitting
-any app does, and so does the power button in the top-right corner; links to
-other sites open in your default browser. Without Chrome or Edge, KB25 opens in
-your default browser instead and quits with the power button.
+KB25 is an app with a window of its own and its own icon in the Dock or the
+taskbar. It runs a small server on your computer, which accepts connections
+from this computer only. Closing the window quits KB25, as quitting any app
+does, and so does the power button in the top-right corner; links to other
+sites open in your default browser. It needs macOS 13 or later, or Windows 10
+or 11 with the Microsoft Edge WebView2 Runtime, which comes with Edge; without
+WebView2, KB25 opens in your default browser instead and quits with the power
+button.
 
 **Writing pages.** Create a space from the spaces page, then add pages and
 folders from the sidebar. **Edit** opens a page's Markdown. Saved changes are
