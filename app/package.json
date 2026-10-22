@@ -13,6 +13,7 @@
     "migrate:ids": "tsx src/migrate-ids.ts",
     "start": "tsx src/server.ts",
     "app:install": "node scripts/install-app.mjs",
+    "build:shell": "node scripts/build-shell.mjs",
     "build:release": "node scripts/build-release.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\""

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- KB25's window on Windows (Program.cs). .NET Framework 4.8 ships with
+       Windows 10 and 11, and the WebView2 runtime with Edge, so the build is
+       KB25.exe plus the WebView2 SDK's few small libraries. Built, on any
+       system, by scripts/build-shell.mjs. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>KB25</AssemblyName>
+    <RootNamespace>KB25</RootNamespace>
+    <Product>KB25</Product>
+    <ApplicationIcon>../../public/favicon.ico</ApplicationIcon>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+    <!-- Lets the build run where .NET Framework is not installed (macOS, Linux). -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

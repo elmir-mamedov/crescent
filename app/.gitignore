@@ -3,3 +3,6 @@ dist/
 var/
 *.log
 .DS_Store
+shell/build/
+shell/windows/obj/
+shell/windows/bin/
