@@ -2810,8 +2810,8 @@ const TOC_SCRIPT = `
 /**
  * Applies the color theme and keeps it in sync. Runs in <head> before first
  * paint so there is no flash of the wrong theme: it reads the saved preference
- * (`kb:theme`), falling back to the OS `prefers-color-scheme`, and sets
- * `data-theme` on <html>. A single delegated click handler flips + persists the
+ * (`kb:theme`), falling back to dark, KB25's default whatever the OS uses, and
+ * sets `data-theme` on <html>. A single delegated click handler flips + persists the
  * theme for any `[data-theme-toggle]` button on the page, and re-renders Mermaid
  * diagrams (if present) so they re-color live.
  */
@@ -2820,10 +2820,9 @@ const THEME_SCRIPT = `
   const KEY = "kb:theme";
   const root = document.documentElement;
   const read = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
-  const systemDark = () => !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const effective = () => {
     const s = read();
-    return s === "light" || s === "dark" ? s : (systemDark() ? "dark" : "light");
+    return s === "light" || s === "dark" ? s : "dark";
   };
   const apply = (theme) => {
     root.dataset.theme = theme;

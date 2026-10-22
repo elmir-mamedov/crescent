@@ -1423,6 +1423,13 @@ test("issue #9: the Add note button waits for a drag-selection to end", () => {
   assert.match(html, /document\.addEventListener\("mouseup", \(\) => \{\n\s*if \(!dragging\) return;\n\s*dragging = false;\n\s*offerSelection\(\);/);
 });
 
+test("pages are dark until the reader picks a theme", () => {
+  const html = layout(pageView());
+  assert.match(html, /return s === "light" \|\| s === "dark" \? s : "dark";/);
+  // The OS setting no longer decides it; only the saved choice does.
+  assert.doesNotMatch(html.slice(0, html.indexOf("</head>")), /systemDark/);
+});
+
 test("headings get a scroll margin, and smooth scrolling stays off", () => {
   const html = layout(pageView());
   assert.match(html, /\.prose :is\(h1,h2,h3,h4,h5,h6\)\{scroll-margin-top:28px\}/);
