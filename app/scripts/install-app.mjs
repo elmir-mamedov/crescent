@@ -1,6 +1,6 @@
-// Installs ~/Applications/KB25.app, a launcher for the web viewer that
-// Spotlight and Launchpad pick up. Opening it starts the server when it is not
-// already running, then opens KB25's own window (installer/window.mjs), which
+// Installs ~/Applications/KB25.app, KB25's window (shell/mac/KB25.swift, built
+// here with swiftc) that Spotlight, Launchpad and the Dock pick up. Opening it
+// starts the server when it is not already running and opens the viewer; it
 // stops the server it started when the window closes. A server already running
 // from a terminal (npm run dev) is not in desktop mode and keeps running.
 //
@@ -16,6 +16,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh, writeMacApp } from "../installer/mac-app.mjs";
+import { buildMacShell } from "./build-shell.mjs";
 
 if (process.platform !== "darwin") {
   console.error("KB25.app is a macOS launcher; on other systems run `npm start`.");
@@ -29,13 +30,17 @@ if (!fs.existsSync(tsxCli)) {
   process.exit(1);
 }
 
+const executable = buildMacShell();
+if (!executable) {
+  console.error("Building KB25's window needs swiftc; run `xcode-select --install` first.");
+  process.exit(1);
+}
+
 const bundle = path.join(os.homedir(), "Applications", "KB25.app");
 const logPath = path.join(os.homedir(), "Library", "Logs", "kb25-viewer.log");
-// The window's own browser profile; the installed KB25 keeps its own.
-const statePath = path.join(os.homedir(), "Library", "Application Support", "KB25 (dev)");
-const windowScript = path.join(appDir, "installer", "window.mjs");
 const port = process.env.PORT ?? "4000";
 
+// KB25StartCommand: start the server unless it answers, then print its address.
 const script = `#!/bin/sh
 URL="http://localhost:${port}"
 LOG=${sh(logPath)}
@@ -60,9 +65,15 @@ if ! up; then
   done
 fi
 
-exec ${sh(process.execPath)} ${sh(windowScript)} open "$URL" ${sh(statePath)} "$LOG"
+echo "$URL"
 `;
 
 fs.mkdirSync(path.dirname(logPath), { recursive: true });
-writeMacApp({ bundle, script, iconPng: path.join(appDir, "public", "favicon-512x512.png") });
+writeMacApp({
+  bundle,
+  executable,
+  start: ["/bin/sh", path.join(bundle, "Contents", "Resources", "start.sh")],
+  resources: { "start.sh": script },
+  iconPng: path.join(appDir, "public", "favicon-512x512.png"),
+});
 console.log(`Installed ${bundle}. Open it from Spotlight: Cmd+Space, "KB25".`);

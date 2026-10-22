@@ -4,7 +4,8 @@
 // Every question is a [Y/n] with a sensible default, so Enter always works.
 //
 // Non-interactive switches, for CI: KB25_YES=1 takes every default,
-// KB25_UNINSTALL=1 removes KB25, KB25_NO_BROWSER=1 is passed on to the launcher.
+// KB25_UNINSTALL=1 removes KB25, KB25_NO_BROWSER=1 starts the server without
+// opening KB25's window.
 // KB25_UPDATE=1 is the viewer's Update button: it answers no to every question,
 // because an update changes the app and never the choices made at install, and
 // it restarts the server in the background instead of opening a browser.
@@ -20,13 +21,12 @@ import {
   isWindows,
   paths,
   powershell,
-  psEncode,
   psQuote,
   readEnvFile,
   stopServer,
   tildify,
 } from "./common.mjs";
-import { removeMacApp, sh, writeMacApp } from "./mac-app.mjs";
+import { removeMacApp, writeMacApp } from "./mac-app.mjs";
 
 /** The release this wizard came with: KB25_HOME/app.new, or app/ when run from an install. */
 const staged = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -93,7 +93,7 @@ async function main() {
   const movedFrom = await moveOffDevPort();
   // The server answers the old port for a while, for the page still on it.
   const moved = movedFrom ? { KB25_MOVED_FROM: String(movedFrom) } : {};
-  createLauncher();
+  const window = createLauncher();
   await connectClaudeDesktop();
   await connectClaudeCode();
 
@@ -107,12 +107,45 @@ async function main() {
   }
   const where = isMac ? 'Spotlight (Cmd+Space, type "KB25")' : 'the Start menu (type "KB25")';
   console.log(`\nAll set! Open KB25 any time from ${where}.`);
-  if (await ask("Open KB25 now?")) launch({ ...process.env, ...moved });
+  if (await ask("Open KB25 now?")) openKb25(window, { ...process.env, ...moved });
 }
 
 /** Run the launcher, which starts the server unless it answers already. */
 function launch(env) {
   spawn(p.node, [p.launcher], { detached: true, stdio: "ignore", windowsHide: true, env }).unref();
+}
+
+/**
+ * Start the server, then open KB25's window, which finds it answering. Started
+ * here rather than by the window so the server gets this wizard's environment
+ * (KB25_MOVED_FROM), which an app opened through Finder would not pass on.
+ */
+function openKb25(window, env) {
+  try {
+    execFileSync(p.node, [p.launcher], {
+      env: { ...env, KB25_NO_BROWSER: "1" },
+      stdio: "ignore",
+      windowsHide: true,
+    });
+  } catch {
+    return; // the launcher has already said why, in a dialog
+  }
+  if (env.KB25_NO_BROWSER || !window) return;
+  const [command, args] = isMac ? ["open", [window]] : [window, []];
+  spawn(command, args, { detached: true, stdio: "ignore" }).unref();
+}
+
+/** Close KB25's window, if it is open, before its files go. */
+function closeWindow() {
+  try {
+    if (isMac) {
+      execFileSync("pkill", ["-TERM", "-f", path.join(MAC_APP, "Contents", "MacOS", "KB25")], { stdio: "ignore" });
+    } else if (isWindows) {
+      powershell(
+        `Get-Process KB25 -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ${psQuote(`${p.shells}\\*`)} } | Stop-Process -Force`
+      );
+    }
+  } catch {} // none open
 }
 
 async function ask(question, defaultYes = true) {
@@ -290,39 +323,67 @@ function canListen(port, host) {
   });
 }
 
-/** KB25 in Spotlight (macOS) or the Start menu (Windows), with the KB25 icon. */
+/**
+ * KB25's window in Spotlight (macOS) or the Start menu (Windows), with the
+ * KB25 icon. Returns what opens it: the app bundle, or KB25.exe.
+ */
 function createLauncher() {
   if (isMac) {
     writeMacApp({
       bundle: MAC_APP,
-      script: `#!/bin/sh\nexec ${sh(p.node)} ${sh(p.launcher)}\n`,
+      executable: p.macShell,
+      start: [p.node, p.launcher],
+      version: readVersion(p.app),
       iconPng: path.join(p.app, "public", "favicon-512x512.png"),
     });
-  } else if (isWindows) {
-    // A hidden PowerShell runs the launcher, so no console window stays open.
-    const target = path.join(
-      process.env.SystemRoot ?? "C:\\Windows",
-      "System32",
-      "WindowsPowerShell",
-      "v1.0",
-      "powershell.exe"
-    );
-    const args = `-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand ${psEncode(
-      `& ${psQuote(p.node)} ${psQuote(p.launcher)}`
-    )}`;
+    return MAC_APP;
+  }
+  if (isWindows) {
+    const exe = installWindowsShell();
     fs.mkdirSync(path.dirname(START_MENU_LINK), { recursive: true });
     powershell(
       [
         `$s = (New-Object -ComObject WScript.Shell).CreateShortcut(${psQuote(START_MENU_LINK)})`,
-        `$s.TargetPath = ${psQuote(target)}`,
-        `$s.Arguments = ${psQuote(args)}`,
+        `$s.TargetPath = ${psQuote(exe)}`,
+        `$s.Arguments = ''`,
         `$s.WorkingDirectory = ${psQuote(p.home)}`,
-        `$s.IconLocation = ${psQuote(path.join(p.app, "public", "favicon.ico"))}`,
-        "$s.WindowStyle = 7",
+        `$s.IconLocation = ${psQuote(`${exe},0`)}`,
+        "$s.WindowStyle = 1",
         "$s.Save()",
       ].join("; ")
     );
+    return exe;
   }
+  return null;
+}
+
+/**
+ * Copy KB25.exe out of app/ into shell/<version>/ and return its path. Windows
+ * locks a running program's files, and an update replaces app/ while the
+ * window is open; the older version's folder goes once its window has closed.
+ * A folder is renamed away before it is removed, so one still in use is left
+ * whole rather than half deleted.
+ */
+function installWindowsShell() {
+  const version = readVersion(p.app);
+  const target = path.join(p.shells, version);
+  const discard = (dir) => {
+    const gone = `${dir}.old-${process.pid}`;
+    try {
+      fs.renameSync(dir, gone);
+    } catch {
+      return false; // its window is open
+    }
+    fs.rmSync(gone, { recursive: true, force: true });
+    return true;
+  };
+  fs.mkdirSync(p.shells, { recursive: true });
+  // The same version already running stays as it is: its files are the same.
+  if (!fs.existsSync(target) || discard(target)) fs.cpSync(p.windowsShell, target, { recursive: true });
+  for (const entry of fs.readdirSync(p.shells)) {
+    if (entry !== version) discard(path.join(p.shells, entry));
+  }
+  return path.join(target, "KB25.exe");
 }
 
 function claudeDesktopInstalled() {
@@ -418,6 +479,7 @@ function disconnectClaudeCode() {
 /** Remove everything KB25 installed. The pages stay where they are. */
 async function uninstall() {
   const kbDir = readEnvFile(p.envFile).KB_DIR;
+  closeWindow();
   await stopServer(p);
   if (isMac) removeMacApp(MAC_APP);
   if (isWindows) fs.rmSync(START_MENU_LINK, { force: true });

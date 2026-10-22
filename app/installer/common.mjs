@@ -6,11 +6,18 @@
 //   Windows  %LOCALAPPDATA%\KB25
 //
 //   node/          private Node.js, fetched by install.sh / install.ps1
-//   app/           the release (server/, public/, installer/, …), replaced on update
+//   app/           the release (server/, public/, installer/, shell/, …), replaced
+//                  on update
+//   shell/<ver>/   KB25.exe, KB25's window on Windows, copied out of app/: Windows
+//                  locks a running program's files, and an update replaces app/
+//                  while the window is open
+//   webview/       the Windows window's browser data (cookies, localStorage)
 //   .env           settings, kept across updates; server.mjs and mcp.mjs read it
 //                  as their ../../.env
 //   kb25.log       server output
 //   server.pid     the running server, so updates and removal can stop it
+//
+// On macOS the window is ~/Applications/KB25.app itself (mac-app.mjs).
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -34,6 +41,9 @@ export function paths(home = kb25Home()) {
     server: path.join(app, "server", "server.mjs"),
     mcp: path.join(app, "server", "mcp.mjs"),
     launcher: path.join(app, "installer", "launcher.mjs"),
+    macShell: path.join(app, "shell", "mac", "KB25"),
+    windowsShell: path.join(app, "shell", "windows"),
+    shells: path.join(home, "shell"),
     envFile: path.join(home, ".env"),
     logFile: path.join(home, "kb25.log"),
     pidFile: path.join(home, "server.pid"),
