@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var serverQuit = false
   private var downloads: [ObjectIdentifier: URL] = [:]
   private var signalSource: DispatchSourceSignal?
+  /// KB25's dark background (--bg in views.ts), its default theme.
+  private static let background = NSColor(srgbRed: 13 / 255, green: 17 / 255, blue: 23 / 255, alpha: 1)
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.mainMenu = makeMainMenu()
@@ -171,24 +173,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     )
     window.title = "KB25"
     window.contentView = webView
+    window.backgroundColor = Self.background
     window.isReleasedWhenClosed = false
     window.tabbingMode = .disallowed
     if !window.setFrameUsingName("KB25") { window.center() }
     window.setFrameAutosaveName("KB25")
-    window.makeKeyAndOrderFront(nil)
     titleObservation = webView.observe(\.title) { [weak self] webView, _ in
       let title = webView.title ?? ""
       self?.window.title = title.isEmpty ? "KB25" : title
     }
+    // Shown once the dark "Starting" page has painted: an empty web view is
+    // white. The timer covers that page never finishing.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.showWindow() }
+  }
+
+  private func showWindow() {
+    guard !window.isVisible else { return }
+    window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
   }
 
-  /// A message page in the window's own colours, for before and between pages.
+  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    showWindow()
+  }
+
+  /// A message page in KB25's dark colours, for before and between pages.
   private static func page(_ message: String, retry: URL? = nil) -> String {
     let script = retry.map { "<script>setTimeout(() => location.href = \(String(reflecting: $0.absoluteString)), 2000)</script>" } ?? ""
     return """
-      <!doctype html><meta name="color-scheme" content="light dark">
-      <style>html{height:100%;display:grid;place-items:center;font:15px -apple-system,sans-serif;color:GrayText}</style>
+      <!doctype html><meta name="color-scheme" content="dark">
+      <style>html{height:100%;display:grid;place-items:center;background:#0d1117;color:#8b949e;font:15px -apple-system,sans-serif}</style>
       <p>\(message)</p>\(script)
       """
   }

@@ -57,7 +57,10 @@ namespace KB25
     sealed class KB25Window : Form
     {
         readonly string home;
-        readonly WebView2 web = new WebView2 { Dock = DockStyle.Fill };
+        // KB25's dark background (--bg in views.ts), its default theme, so the
+        // window is never white before the first page paints.
+        static readonly Color Background = Color.FromArgb(0x0d, 0x11, 0x17);
+        readonly WebView2 web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Background };
         readonly HttpClient http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         Uri server;
         Uri requested;
@@ -70,6 +73,7 @@ namespace KB25
         {
             this.home = home;
             Text = "KB25";
+            BackColor = Background;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Size = new Size(1280, 860);
             StartPosition = FormStartPosition.CenterScreen;
@@ -254,14 +258,14 @@ namespace KB25
             Activate();
         }
 
-        /// <summary>A message page in the window's own colours, for before and between pages.</summary>
+        /// <summary>A message page in KB25's dark colours, for before and between pages.</summary>
         static string Page(string message, Uri retry = null)
         {
             var script = retry == null
                 ? ""
                 : "<script>setTimeout(() => location.href = " + JsonString(retry.AbsoluteUri) + ", 2000)</script>";
-            return "<!doctype html><meta charset=\"utf-8\"><meta name=\"color-scheme\" content=\"light dark\">"
-                + "<style>html{height:100%;display:grid;place-items:center;font:15px 'Segoe UI',sans-serif;color:GrayText}</style>"
+            return "<!doctype html><meta charset=\"utf-8\"><meta name=\"color-scheme\" content=\"dark\">"
+                + "<style>html{height:100%;display:grid;place-items:center;background:#0d1117;color:#8b949e;font:15px 'Segoe UI',sans-serif}</style>"
                 + "<p>" + message + "</p>" + script;
         }
 
