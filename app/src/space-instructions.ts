@@ -1,9 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
-import matter from "gray-matter";
 import { Content, newPageId } from "./content.js";
-import { parsePage } from "./frontmatter.js";
+import { parsePage, stringifyPage } from "./frontmatter.js";
 
 /**
  * Per-space standing orders for an LLM working inside a space.
@@ -154,7 +153,7 @@ export async function ensureSpaceInstructions(
   }
 
   const fsPath = path.join(path.dirname(spaceIndex), `${INSTRUCTIONS_LEAF}.md`);
-  const raw = matter.stringify("", { title: INSTRUCTIONS_TITLE, id: newPageId() });
+  const raw = stringifyPage("", { title: INSTRUCTIONS_TITLE, id: newPageId() });
   parsePage(raw, fsPath);
   await fs.writeFile(fsPath, raw, { encoding: "utf8", flag: "wx" });
 

@@ -1,11 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import matter from "gray-matter";
 import {
   cleanLabelNames,
   normalizeLabelName,
+  parseFrontmatter,
   parsePage,
+  stringifyPage,
   type Frontmatter,
 } from "./frontmatter.js";
 import { resolveWikiTarget, splitFragment } from "./markdown.js";
@@ -452,9 +453,9 @@ export class Content {
     const onDiskId = current?.data.id;
     let idPreserved = false;
     if (onDiskId && incoming.data.id !== onDiskId) {
-      const file = matter(next);
-      const incomingData = file.data as Record<string, unknown>;
-      const template = matter(existing).data as Record<string, unknown>;
+      const file = parseFrontmatter(next, fsPath);
+      const incomingData = file.data;
+      const template = parseFrontmatter(existing, fsPath).data;
 
       const merged: Record<string, unknown> = {};
       for (const key of Object.keys(template)) {
@@ -466,7 +467,7 @@ export class Content {
         if (!(key in merged)) merged[key] = value;
       }
 
-      next = normalizeEol(matter.stringify(file.content, merged));
+      next = normalizeEol(stringifyPage(file.body, merged));
       idPreserved = true;
     }
 
@@ -507,7 +508,7 @@ export class Content {
     const fsPath = path.join(parentDir, `${name}.md`);
     const id = newPageId();
     const order = await this.openingOrder(parentDir);
-    const raw = matter.stringify(`# ${title}\n\n`, { title, id, order });
+    const raw = stringifyPage(`# ${title}\n\n`, { title, id, order });
 
     parsePage(raw, fsPath);
     if (promotion) await this.applyPromotion(promotion);
@@ -564,7 +565,7 @@ export class Content {
     if (opts.tags && opts.tags.length > 0) data.tags = opts.tags;
     if (opts.summary) data.summary = opts.summary;
     const content = body.trim() ? `${body.trim()}\n` : `# ${trimmedTitle}\n\n`;
-    const raw = matter.stringify(content, data);
+    const raw = stringifyPage(content, data);
 
     parsePage(raw, fsPath);
     if (promotion) await this.applyPromotion(promotion);
@@ -616,7 +617,7 @@ export class Content {
     // and its position, with no body to edit.
     const id = newPageId();
     const order = await this.openingOrder(parentDir);
-    const raw = matter.stringify("", { title: folderTitle, id, type: "folder", order });
+    const raw = stringifyPage("", { title: folderTitle, id, type: "folder", order });
     parsePage(raw, indexPath);
 
     if (promotion) await this.applyPromotion(promotion);
@@ -658,9 +659,9 @@ export class Content {
       return { slug: clean, fsPath, changedFsPaths: [] };
     }
 
-    const parsed = matter(raw);
-    const nextData = { ...parsed.data, title: trimmed } as Record<string, unknown>;
-    const nextRaw = matter.stringify(parsed.content, nextData);
+    const parsed = parseFrontmatter(raw, fsPath);
+    const nextData = { ...parsed.data, title: trimmed };
+    const nextRaw = stringifyPage(parsed.body, nextData);
     parsePage(nextRaw, fsPath);
 
     await fs.writeFile(fsPath, nextRaw, "utf8");
@@ -701,12 +702,10 @@ export class Content {
       return { slug: clean, fsPath, changedFsPaths: [] };
     }
 
-    // gray-matter hands back the object it caches for this exact text, so build
-    // a fresh one rather than editing it in place.
-    const parsed = matter(raw);
-    const { labels: _previous, ...rest } = parsed.data as Record<string, unknown>;
+    const parsed = parseFrontmatter(raw, fsPath);
+    const { labels: _previous, ...rest } = parsed.data;
     const nextData = next.length ? { ...parsed.data, labels: next } : rest;
-    const nextRaw = matter.stringify(parsed.content, nextData);
+    const nextRaw = stringifyPage(parsed.body, nextData);
     parsePage(nextRaw, fsPath);
 
     await fs.writeFile(fsPath, nextRaw, "utf8");
@@ -748,7 +747,7 @@ export class Content {
     }
 
     const id = newPageId();
-    const raw = matter.stringify(`# ${trimmed}\n\n`, { title: trimmed, id });
+    const raw = stringifyPage(`# ${trimmed}\n\n`, { title: trimmed, id });
     parsePage(raw, fsPath);
 
     // Scaffold the space as a self-contained, ready-to-version folder: its home
@@ -796,9 +795,9 @@ export class Content {
       return { key: clean, fsPath, changedFsPaths: [] };
     }
 
-    const parsed = matter(raw);
-    const nextData = { ...parsed.data, title: trimmed } as Record<string, unknown>;
-    const nextRaw = matter.stringify(parsed.content, nextData);
+    const parsed = parseFrontmatter(raw, fsPath);
+    const nextData = { ...parsed.data, title: trimmed };
+    const nextRaw = stringifyPage(parsed.body, nextData);
     parsePage(nextRaw, fsPath);
 
     await fs.writeFile(fsPath, nextRaw, "utf8");
@@ -1514,10 +1513,10 @@ export class Content {
       return false;
     }
 
-    const parsed = matter(raw);
+    const parsed = parseFrontmatter(raw, fsPath);
     if (!Object.prototype.hasOwnProperty.call(parsed.data, "order")) return false;
     const { order: _placed, ...data } = parsed.data;
-    const nextRaw = matter.stringify(parsed.content, data);
+    const nextRaw = stringifyPage(parsed.body, data);
     if (nextRaw === raw) return false;
 
     await fs.writeFile(fsPath, nextRaw, "utf8");
@@ -1529,9 +1528,9 @@ export class Content {
     const raw = await fs.readFile(fsPath, "utf8");
     parsePage(raw, fsPath);
 
-    const parsed = matter(raw);
-    const data = { ...parsed.data, order } as Record<string, unknown>;
-    const nextRaw = matter.stringify(parsed.content, data);
+    const parsed = parseFrontmatter(raw, fsPath);
+    const data = { ...parsed.data, order };
+    const nextRaw = stringifyPage(parsed.body, data);
     parsePage(nextRaw, fsPath);
     if (nextRaw === raw) return false;
 
@@ -1547,8 +1546,8 @@ export class Content {
     const raw = await fs.readFile(fsPath, "utf8");
     parsePage(raw, fsPath);
 
-    const parsed = matter(raw);
-    const data = { ...parsed.data } as Record<string, unknown>;
+    const parsed = parseFrontmatter(raw, fsPath);
+    const data = { ...parsed.data };
     const isArchived = data.archived === true;
     const hasArchived = Object.prototype.hasOwnProperty.call(data, "archived");
     const hasArchivedAt = Object.prototype.hasOwnProperty.call(data, "archivedAt");
@@ -1565,7 +1564,7 @@ export class Content {
       delete data.archivedAt;
     }
 
-    const nextRaw = matter.stringify(parsed.content, data);
+    const nextRaw = stringifyPage(parsed.body, data);
     parsePage(nextRaw, fsPath);
     if (nextRaw === raw) return false;
 

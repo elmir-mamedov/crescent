@@ -43,13 +43,12 @@ import {
   noteStamp,
   parseNotes,
   removeNote,
-  splitFrontmatter,
   updateNote,
   type NoteKind,
 } from "./notes.js";
 import { mapWithConcurrency, searchPages, searchTokens, type SearchHit } from "./search.js";
 import { DEFAULT_RELEASES_URL, findInstall, makeUpdater } from "./update.js";
-import { cleanLabelNames, labelKey } from "./frontmatter.js";
+import { cleanLabelNames, labelKey, splitFrontmatter } from "./frontmatter.js";
 import {
   applyPageLabels,
   colorOf,

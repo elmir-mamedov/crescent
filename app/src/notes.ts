@@ -355,26 +355,3 @@ export function stripNotes(body: string): string {
   }
   return lines.join("\n");
 }
-
-/**
- * Split a raw `.md` file into its frontmatter header and its body, preserving
- * the header's bytes exactly.
- *
- * `content.ts` re-serialises frontmatter through `matter.stringify` because it
- * is editing the YAML; a note write is not, and reformatting someone's header
- * as a side effect of leaving a comment would be a surprise in the diff.
- */
-export function splitFrontmatter(raw: string): { header: string; body: string } {
-  const lines = raw.split("\n");
-  if (lines[0]?.trimEnd() !== "---") return { header: "", body: raw };
-
-  for (let i = 1; i < lines.length; i += 1) {
-    if (lines[i].trimEnd() === "---") {
-      return {
-        header: lines.slice(0, i + 1).join("\n") + "\n",
-        body: lines.slice(i + 1).join("\n"),
-      };
-    }
-  }
-  return { header: "", body: raw };
-}

@@ -9,11 +9,11 @@ import {
   noteStamp,
   parseNotes,
   removeNote,
-  splitFrontmatter,
   stripNotes,
   updateNote,
   type Note,
 } from "./notes.js";
+import { splitFrontmatter } from "./frontmatter.js";
 
 /** A note with the fixed fields filled in, so tests only state what they vary. */
 const note = (overrides: Partial<Omit<Note, "line">> = {}): Omit<Note, "line"> => ({
@@ -347,24 +347,6 @@ test("text rewritten into a note is escaped, not left to end the comment early",
   assert.ok(next !== null);
   assert.equal(next.split("\n").filter((l) => l.trim() === "-->").length, 1);
   assert.equal(parseNotes(next)[0].text, "Point --> there");
-});
-
-test("splitFrontmatter preserves the header bytes exactly", () => {
-  const raw = "---\ntitle: Deploy\nid: abc\n---\n\nBody text.\n";
-  const { header, body } = splitFrontmatter(raw);
-  assert.equal(header, "---\ntitle: Deploy\nid: abc\n---\n");
-  assert.equal(body, "\nBody text.\n");
-  assert.equal(header + body, raw);
-});
-
-test("splitFrontmatter treats a file without frontmatter as all body", () => {
-  const raw = "Just a body.\n";
-  assert.deepEqual(splitFrontmatter(raw), { header: "", body: raw });
-  // An opening delimiter that is never closed is not frontmatter either.
-  assert.deepEqual(splitFrontmatter("---\ntitle: x\n"), {
-    header: "",
-    body: "---\ntitle: x\n",
-  });
 });
 
 test("note line numbers are relative to the body, so they splice back correctly", () => {

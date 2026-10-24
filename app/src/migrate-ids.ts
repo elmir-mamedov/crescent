@@ -19,8 +19,8 @@ import fs from "node:fs";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import matter from "gray-matter";
 import { Content, newPageId, type PageNode } from "./content.js";
+import { parseFrontmatter, stringifyPage } from "./frontmatter.js";
 import { makeGit } from "./git.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
 
   for (const page of pages) {
     const raw = await fsp.readFile(page.fsPath, "utf8");
-    const parsed = matter(raw);
+    const parsed = parseFrontmatter(raw, page.fsPath);
     if (parsed.data.id) {
       seenIds.add(String(parsed.data.id));
       skipped += 1;
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
 
     const id = uniqueId(seenIds);
     seenIds.add(id);
-    const nextRaw = matter.stringify(parsed.content, { ...parsed.data, id });
+    const nextRaw = stringifyPage(parsed.body, { ...parsed.data, id });
     if (!opts.dryRun) {
       await fsp.writeFile(page.fsPath, nextRaw, "utf8");
     }

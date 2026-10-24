@@ -1067,3 +1067,44 @@ test("spaceDir: names a top-level folder and refuses anything else", async () =>
     await kb.cleanup();
   }
 });
+
+test("a page whose header asks to run JavaScript is never evaluated, read or saved", async () => {
+  const kb: TempKb = await makeTempKb();
+  const sentinel = "__kb25ContentEvaluated";
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Demo");
+    const plain = await content.createPage("demo", "Plain", "# Plain\n");
+    const hostile = `---js\n{ title: (globalThis.${sentinel} = "ran") }\n---\nBody\n`;
+    await fs.writeFile(path.join(kb.dir, "demo", "arrived.md"), hostile);
+
+    // Showing any page walks the whole space; the page falls back to its filename.
+    const tree = await content.spaceTree("demo");
+    assert.equal(tree.find((n) => n.slug === "demo/arrived")?.title, "arrived");
+    await assert.rejects(() => content.load("demo/arrived"), /must open with a line of just "---"/);
+    // Saving such a header over a good page is refused before anything is written.
+    await assert.rejects(() => content.updateRaw(plain.slug, hostile), /must open with a line/);
+    assert.match(await fs.readFile(plain.fsPath, "utf8"), /^---\ntitle: Plain\n/);
+    await assert.rejects(() => content.movePage("demo/arrived", "demo/plain"), /must open with a line/);
+
+    assert.equal((globalThis as Record<string, unknown>)[sentinel], undefined);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("createPage keeps a body that starts like a header, which cannot add keys to the page", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Docs");
+    const created = await content.createPage("docs", "Rules", "---\ntype: folder\n---\nUnder two rules.");
+
+    const page = await content.load(created.slug);
+    assert.ok(page);
+    assert.equal(page.data.type, undefined);
+    assert.equal(page.body, "---\ntype: folder\n---\nUnder two rules.\n");
+  } finally {
+    await kb.cleanup();
+  }
+});

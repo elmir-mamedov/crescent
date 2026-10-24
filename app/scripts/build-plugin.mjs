@@ -19,7 +19,7 @@ await build({
   // which is the web viewer's job. markdown.ts checks getLanguage() before it
   // highlights, so the core build (no languages) is safe and saves ~1.6 MB.
   alias: { "highlight.js": "highlight.js/lib/core" },
-  // CommonJS dependencies (gray-matter, highlight.js) call require(), which an
+  // CommonJS dependencies (js-yaml, highlight.js) call require(), which an
   // ES module does not have.
   banner: {
     js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
