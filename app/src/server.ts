@@ -22,6 +22,7 @@ import {
   type SpaceInfo,
   type TreeFilter,
 } from "./content.js";
+import { assetHeaders } from "./assets.js";
 import { makeGit } from "./git.js";
 import { makeSeenPages } from "./seen.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
@@ -385,6 +386,13 @@ await app.register(fastifyStatic, {
   root: KB_DIR,
   serve: false,
   decorateReply: true,
+  dotfiles: "deny",
+  // Only a file actually being sent gets these, so a 404 page still shows.
+  // Everything sent from inside the KB is an asset (assets.ts).
+  setHeaders: (res, filePath) => {
+    if (!isInsideDir(KB_DIR, filePath)) return;
+    for (const [name, value] of Object.entries(assetHeaders(filePath))) res.setHeader(name, value);
+  },
 });
 
 // Per-space attachments: kb/<space>/_assets/* served at /<space>/_assets/*.
@@ -398,7 +406,9 @@ app.get("/:space/_assets/*", async (req, reply) => {
     !space ||
     space.startsWith(".") ||
     space.startsWith("_") ||
-    !isInsideDir(KB_DIR, assetsRoot)
+    !isInsideDir(KB_DIR, assetsRoot) ||
+    // A dotfile (`.gitkeep`, a stray `.env`) is never an attachment.
+    params["*"].split(/[\\/]/).some((segment) => segment.startsWith("."))
   ) {
     return reply.callNotFound();
   }
