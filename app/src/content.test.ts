@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Content, downloadFilename } from "./content.js";
 import { makeGit } from "./git.js";
-import { makeTempKb, pathExists, type TempKb } from "./test-helpers.js";
+import { makeTempKb, pathExists, trySymlink, type TempKb } from "./test-helpers.js";
 
 test("issue #3: downloadFilename uses the slug leaf plus .md", () => {
   assert.equal(downloadFilename("kb25/backlog/issues"), "issues.md");
@@ -1107,4 +1107,113 @@ test("createPage keeps a body that starts like a header, which cannot add keys t
   } finally {
     await kb.cleanup();
   }
+});
+
+/**
+ * A space holding one ordinary page, and a folder outside the KB holding a
+ * decoy page and asset that links inside the space will point at.
+ */
+async function withLinkedSpace(
+  run: (ctx: { kb: TempKb; content: Content; space: string; outside: string; decoy: string }) => Promise<void>
+): Promise<void> {
+  const kb = await makeTempKb();
+  const elsewhere = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Demo");
+    await content.createPage("demo", "Plain", "# Plain\n");
+    const decoy = path.join(elsewhere.dir, "decoy.md");
+    await fs.writeFile(decoy, "---\ntitle: Decoy\n---\nOutside the KB.\n");
+    await fs.writeFile(path.join(elsewhere.dir, "secret.png"), "not for the browser");
+    await run({ kb, content, space: path.join(kb.dir, "demo"), outside: elsewhere.dir, decoy });
+  } finally {
+    await kb.cleanup();
+    await elsewhere.cleanup();
+  }
+}
+
+test("a page that is a symbolic link is neither read nor written through", async (t) => {
+  await withLinkedSpace(async ({ content, space, decoy }) => {
+    if (!(await trySymlink(decoy, path.join(space, "linked.md"), "file"))) return t.skip("no file links here");
+
+    assert.equal(await content.resolve("demo/linked"), null);
+    assert.equal(await content.load("demo/linked"), null);
+    assert.equal(await content.loadRaw("demo/linked"), null);
+    assert.equal(await content.updateRaw("demo/linked", "---\ntitle: Decoy\n---\nOverwritten.\n"), null);
+    assert.equal(await fs.readFile(decoy, "utf8"), "---\ntitle: Decoy\n---\nOutside the KB.\n");
+    assert.equal((await content.spaceTree("demo")).some((n) => n.slug === "demo/linked"), false);
+  });
+});
+
+test("a folder that is a symbolic link is not followed, so nothing is created through it", async () => {
+  await withLinkedSpace(async ({ content, space, outside }) => {
+    assert.ok(await trySymlink(outside, path.join(space, "linkdir"), "dir"));
+
+    assert.equal(await content.resolve("demo/linkdir/decoy"), null);
+    await assert.rejects(() => content.createDraft("demo/linkdir"), /does not exist/);
+    await assert.rejects(() => content.createPage("demo/linkdir", "Planted"), /does not exist/);
+    await assert.rejects(() => content.createFolder("demo/linkdir", "Planted"), /does not exist/);
+    assert.deepEqual((await fs.readdir(outside)).sort(), ["decoy.md", "secret.png"]);
+  });
+});
+
+test("an index.md that is a symbolic link gives its folder no page", async (t) => {
+  await withLinkedSpace(async ({ content, space, decoy }) => {
+    await fs.mkdir(path.join(space, "section"));
+    if (!(await trySymlink(decoy, path.join(space, "section", "index.md"), "file"))) {
+      return t.skip("no file links here");
+    }
+
+    assert.equal(await content.resolve("demo/section"), null);
+    const node = (await content.spaceTree("demo")).find((n) => n.slug === "demo/section");
+    assert.ok(node, "the real folder still shows");
+    assert.equal(node.title, "section", "the decoy's title must not leak into the sidebar");
+    assert.equal(node.fsPath.endsWith(".md"), false, "nothing may write through the link");
+  });
+});
+
+test("a path through a dot-folder or with dot segments never resolves", async () => {
+  await withLinkedSpace(async ({ content, space }) => {
+    await fs.mkdir(path.join(space, ".git"), { recursive: true });
+    await fs.writeFile(path.join(space, ".git", "notes.md"), "---\ntitle: Hidden\n---\n");
+
+    assert.equal(await content.resolve("demo/.git/notes"), null);
+    assert.equal(await content.resolve("demo/../demo/plain"), null);
+    assert.equal(await content.resolve("demo/./plain"), null);
+    assert.ok(await content.resolve("demo/plain"));
+  });
+});
+
+test("resolveAsset finds real attachments and refuses dotfiles, traversal and links", async (t) => {
+  await withLinkedSpace(async ({ content, space, outside }) => {
+    const assets = path.join(space, "_assets");
+    await fs.mkdir(path.join(assets, "shots"), { recursive: true });
+    await fs.writeFile(path.join(assets, "shots", "a.png"), "png");
+    await fs.writeFile(path.join(assets, ".env"), "SECRET=1");
+
+    assert.equal(await content.resolveAsset("demo", "shots/a.png"), path.join(assets, "shots", "a.png"));
+    assert.equal(await content.resolveAsset("demo", "shots"), null, "a folder is no asset");
+    assert.equal(await content.resolveAsset("demo", ".env"), null);
+    assert.equal(await content.resolveAsset("demo", ".gitkeep"), null);
+    assert.equal(await content.resolveAsset("demo", "../index.md"), null);
+    assert.equal(await content.resolveAsset("demo", "missing.png"), null);
+    assert.equal(await content.resolveAsset("../demo", "shots/a.png"), null);
+    assert.equal(await content.resolveAsset("_assets", "shots/a.png"), null);
+
+    assert.ok(await trySymlink(outside, path.join(assets, "linkdir"), "dir"));
+    assert.equal(await content.resolveAsset("demo", "linkdir/secret.png"), null);
+    if (await trySymlink(path.join(outside, "secret.png"), path.join(assets, "linked.png"), "file")) {
+      assert.equal(await content.resolveAsset("demo", "linked.png"), null);
+    } else {
+      t.diagnostic("no file links here; checked the folder link only");
+    }
+  });
+});
+
+test("an _assets folder that is a symbolic link serves nothing", async () => {
+  await withLinkedSpace(async ({ content, space, outside }) => {
+    await fs.rm(path.join(space, "_assets"), { recursive: true, force: true });
+    assert.ok(await trySymlink(outside, path.join(space, "_assets"), "dir"));
+    assert.equal(await content.resolveAsset("demo", "secret.png"), null);
+  });
 });

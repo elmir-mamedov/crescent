@@ -223,12 +223,14 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
    * Initialize a fresh git repo on branch `main` for a newly created space; a
    * no-op without git. A fresh laptop often has no git identity either, and
    * commit refuses without one, so give this repo (never the global config) one.
+   * Symbolic links it later pulls arrive as plain files, as in sync.ts.
    */
   async function initSpaceRepo(spaceKey: string): Promise<void> {
     if (!(await hasGit())) return;
     const repoRoot = path.join(kbDir, spaceKey);
     await execFileAsync("git", ["init"], { cwd: repoRoot });
     await execFileAsync("git", ["branch", "-m", "main"], { cwd: repoRoot });
+    await execFileAsync("git", ["config", "core.symlinks", "false"], { cwd: repoRoot });
     if (!(await succeeds("git", ["config", "user.email"], repoRoot))) {
       await execFileAsync("git", ["config", "user.name", "KB25"], { cwd: repoRoot });
       await execFileAsync("git", ["config", "user.email", "kb25@localhost"], { cwd: repoRoot });

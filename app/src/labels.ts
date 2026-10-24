@@ -109,6 +109,8 @@ export async function loadLabelSet(content: Content, space: string): Promise<Lab
 
   let mtimeMs: number;
   try {
+    // A symbolic link is never followed (Content.fileState): no palette.
+    if ((await content.fileState(file)) !== "file") throw new Error("no palette");
     mtimeMs = (await fs.stat(file)).mtimeMs;
   } catch {
     paletteCache.delete(file);
@@ -127,8 +129,19 @@ export async function loadLabelSet(content: Content, space: string): Promise<Lab
   return labels;
 }
 
-/** The palette a mutation starts from: empty when absent, an error when unreadable. */
-async function readPaletteStrict(file: string, space: string): Promise<LabelDef[]> {
+/**
+ * The palette a mutation starts from: empty when absent, an error when
+ * unreadable. Every save reads through here first, so refusing a palette that
+ * is a symbolic link also keeps the save from writing wherever it points.
+ */
+async function readPaletteStrict(content: Content, file: string, space: string): Promise<LabelDef[]> {
+  const state = await content.fileState(file);
+  if (state === "missing") return [];
+  if (state === "other") {
+    throw new Error(
+      `The label palette ${space}/${LABELS_FILE} is not a plain file; KB25 does not follow symbolic links. Remove it, then try again.`
+    );
+  }
   let raw: string;
   try {
     raw = await fs.readFile(file, "utf8");
@@ -272,7 +285,7 @@ export function createLabel(
 ): Promise<LabelMutation> {
   return serialized(async () => {
     const file = requirePaletteFile(content, space);
-    const set = await readPaletteStrict(file, space);
+    const set = await readPaletteStrict(content, file, space);
     const name = normalizeLabelName(rawName);
     if (!isLabelColor(color)) throw new Error(`"${color}" is not one of the label colours.`);
     if (findLabel(set, name)) throw new Error(`A label named "${name}" already exists.`);
@@ -315,7 +328,7 @@ export function updateLabel(
 ): Promise<LabelMutation> {
   return serialized(async () => {
     const file = requirePaletteFile(content, space);
-    const set = await readPaletteStrict(file, space);
+    const set = await readPaletteStrict(content, file, space);
     const existing = findLabel(set, currentName);
     const current: LabelDef = existing ?? { name: currentName.trim(), color: FALLBACK_COLOR };
     if (!labelKey(current.name)) throw new Error("Choose a label to change.");
@@ -356,7 +369,7 @@ export function deleteLabel(
 ): Promise<LabelMutation> {
   return serialized(async () => {
     const file = requirePaletteFile(content, space);
-    const set = await readPaletteStrict(file, space);
+    const set = await readPaletteStrict(content, file, space);
     const existing = findLabel(set, rawName);
     const name = existing?.name ?? rawName.trim();
     const key = labelKey(name);
@@ -401,7 +414,7 @@ export function applyPageLabels(
     const page = await content.load(slug);
     if (!page) return null;
 
-    let set = await readPaletteStrict(file, space);
+    let set = await readPaletteStrict(content, file, space);
     let paletteGrew = false;
     const wanted = [...names];
     if (create && create.name.trim()) {

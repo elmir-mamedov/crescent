@@ -174,6 +174,40 @@ test("a conflicting pull aborts cleanly instead of leaving a half-rebase", async
   }
 });
 
+test("a symbolic link pulled from the remote arrives as a plain file", async () => {
+  const kb = await makeTempKb();
+  const elsewhere = await makeTempKb();
+  try {
+    const { repo, bare } = await seedSpaceWithRemote(kb, elsewhere, "Engineering");
+    // A space KB25 creates is set up for this; one made before, or cloned by
+    // hand, is not, so the pull has to see to it.
+    assert.equal(await git(repo, "config", "core.symlinks"), "false");
+    await git(repo, "config", "--unset", "core.symlinks");
+
+    // Machine B commits a link without making one on disk, which works on any system.
+    const other = await cloneElsewhere(elsewhere, bare, "machine-b");
+    const linkText = path.join(elsewhere.dir, "link-target.txt");
+    await fs.writeFile(linkText, "../../outside.md");
+    const blob = await git(other, "hash-object", "-w", linkText);
+    await git(other, "update-index", "--add", "--cacheinfo", `120000,${blob},leak.md`);
+    await git(other, "commit", "-m", "Add a link on machine B");
+    await git(other, "push");
+
+    const sync = quietSync(kb.dir);
+    await sync.pullAll();
+    sync.stop();
+
+    const leak = path.join(repo, "leak.md");
+    assert.equal((await fs.lstat(leak)).isSymbolicLink(), false);
+    assert.equal(await fs.readFile(leak, "utf8"), "../../outside.md");
+    assert.equal(await git(repo, "config", "core.symlinks"), "false");
+    assert.equal(await git(repo, "status", "--porcelain"), "", "the plain file reads as unchanged");
+  } finally {
+    await kb.cleanup();
+    await elsewhere.cleanup();
+  }
+});
+
 test("a space with no remote is skipped rather than failing", async () => {
   const kb = await makeTempKb();
   try {

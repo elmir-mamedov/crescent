@@ -54,3 +54,19 @@ export async function pathExists(p: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Make a symbolic link at `linkPath` pointing at `target`, or return false
+ * where the system refuses: Windows without Developer Mode allows no file
+ * links. A folder link is a junction there, which needs no privilege.
+ */
+export async function trySymlink(target: string, linkPath: string, kind: "file" | "dir"): Promise<boolean> {
+  const type = kind === "dir" && process.platform === "win32" ? "junction" : kind;
+  try {
+    await fs.symlink(target, linkPath, type);
+    return true;
+  } catch (err) {
+    if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") return false;
+    throw err;
+  }
+}

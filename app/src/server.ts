@@ -400,19 +400,11 @@ await app.register(fastifyStatic, {
 // catch-all, so page routing is unaffected. Sits behind the auth hook.
 app.get("/:space/_assets/*", async (req, reply) => {
   const params = req.params as { space: string; "*": string };
-  const space = content.spaceKeyOf(params.space);
-  const assetsRoot = path.join(KB_DIR, space, "_assets");
-  if (
-    !space ||
-    space.startsWith(".") ||
-    space.startsWith("_") ||
-    !isInsideDir(KB_DIR, assetsRoot) ||
-    // A dotfile (`.gitkeep`, a stray `.env`) is never an attachment.
-    params["*"].split(/[\\/]/).some((segment) => segment.startsWith("."))
-  ) {
-    return reply.callNotFound();
-  }
-  return reply.sendFile(params["*"], assetsRoot);
+  // Refuses dotfiles (`.gitkeep`, a stray `.env`) and anything reached through
+  // a symbolic link, which could point anywhere on the machine.
+  const fsPath = await content.resolveAsset(params.space, params["*"]);
+  if (!fsPath) return reply.callNotFound();
+  return reply.sendFile(path.basename(fsPath), path.dirname(fsPath));
 });
 
 // Bundled site icons (favicons, app icons) served from app/public at the root.

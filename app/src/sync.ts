@@ -135,6 +135,12 @@ export function makeSync(kbDir: string, options: SyncOptions = {}): Sync {
    */
   async function pullRepo(repoRoot: string): Promise<boolean> {
     try {
+      // A pulled symbolic link could point anywhere on the machine, so have git
+      // check it out as a small plain file holding its target. It goes in the
+      // repo's config rather than on this one command, so the status and
+      // commits that follow read the tree the same way. KB25 follows no link
+      // either way (Content.fileState); this protects anything else run there.
+      await runGit(repoRoot, ["config", "core.symlinks", "false"]);
       await runGit(repoRoot, ["pull", "--rebase", "--autostash"]);
       return true;
     } catch (error) {

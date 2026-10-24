@@ -16,7 +16,7 @@ import {
   spaceNodes,
   updateLabel,
 } from "./labels.js";
-import { git, makeTempKb, type TempKb } from "./test-helpers.js";
+import { git, makeTempKb, trySymlink, type TempKb } from "./test-helpers.js";
 
 async function withSpace(
   run: (ctx: { kb: TempKb; content: Content; palette: string }) => Promise<void>
@@ -304,5 +304,23 @@ test("knownLabels: palette first with counts, then orphans in grey", async () =>
       { name: "Legacy", color: "gray", defined: false, count: 1 },
       { name: "zeta", color: "gray", defined: false, count: 1 },
     ]);
+  });
+});
+
+test("labels palette: a palette that is a symbolic link is neither read nor written through", async (t) => {
+  await withSpace(async ({ content, palette }) => {
+    const elsewhere = await makeTempKb();
+    try {
+      const target = path.join(elsewhere.dir, "outside.json");
+      const original = `{ "labels": [{ "name": "Outside", "color": "red" }] }\n`;
+      await fs.writeFile(target, original);
+      if (!(await trySymlink(target, palette, "file"))) return t.skip("no file links here");
+
+      assert.deepEqual(await loadLabelSet(content, "docs"), []);
+      await assert.rejects(() => createLabel(content, "docs", "Draft", "yellow"), /does not follow symbolic links/);
+      assert.equal(await fs.readFile(target, "utf8"), original);
+    } finally {
+      await elsewhere.cleanup();
+    }
   });
 });

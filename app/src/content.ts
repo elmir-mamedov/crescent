@@ -208,12 +208,13 @@ export class Content {
       let icon: string | undefined;
       let archived = false;
       try {
-        const raw = await fs.readFile(path.join(this.root, name, "index.md"), "utf8");
-        const data = parsePage(raw, name).data;
-        title = data.title;
-        summary = data.summary;
-        icon = data.icon;
-        archived = data.archived === true;
+        const parsed = await this.readParsed(path.join(this.root, name, "index.md"));
+        if (parsed) {
+          title = parsed.data.title;
+          summary = parsed.data.summary;
+          icon = parsed.data.icon;
+          archived = parsed.data.archived === true;
+        }
       } catch {
         /* folder without a valid index.md — still a navigable space */
       }
@@ -343,14 +344,21 @@ export class Content {
     return archived || childCount > 0;
   }
 
-  /** Resolve a URL slug to a file path (folder+index.md aware), or null. */
+  /**
+   * Resolve a URL slug to a file path (folder+index.md aware), or null. Only a
+   * plain file reached through real folders counts (see {@link fileState}), so
+   * a symbolic link never stands in for a page or a folder of pages.
+   */
   async resolve(slug: string): Promise<string | null> {
     const clean = cleanSlug(slug);
 
     if (clean === "") {
       const rootIndex = path.join(this.root, "index.md");
-      return (await exists(rootIndex)) ? rootIndex : null;
+      return (await this.fileState(rootIndex)) === "file" ? rootIndex : null;
     }
+
+    // ".." would climb out of the KB, and a dot-folder such as .git holds no pages.
+    if (clean.split(/[\\/]/).some((segment) => segment.startsWith("."))) return null;
 
     // Guard against path traversal (e.g. "../secrets").
     const candidateDir = path.resolve(this.root, clean);
@@ -359,26 +367,81 @@ export class Content {
     }
 
     const asFile = path.join(this.root, `${clean}.md`);
-    if (await exists(asFile)) return asFile;
+    if ((await this.fileState(asFile)) === "file") return asFile;
 
     const asIndex = path.join(this.root, clean, "index.md");
-    if (await exists(asIndex)) return asIndex;
+    if ((await this.fileState(asIndex)) === "file") return asIndex;
 
     return null;
   }
 
   /**
+   * Resolve one of a space's attachments (`<space>/_assets/<rel>`) to its file,
+   * or null. Held to the same rule as a page: a plain file reached through real
+   * folders, with no part of its path starting with a dot.
+   */
+  async resolveAsset(spaceKey: string, rel: string): Promise<string | null> {
+    const dir = this.spaceDir(spaceKey);
+    const segments = rel.split(/[\\/]/).filter(Boolean);
+    if (!dir || !segments.length || segments.some((segment) => segment.startsWith("."))) {
+      return null;
+    }
+    const fsPath = path.join(dir, "_assets", ...segments);
+    return (await this.fileState(fsPath)) === "file" ? fsPath : null;
+  }
+
+  /**
+   * What is at `fsPath` (a path inside the KB), found without following a
+   * symbolic link: "file" for a regular file reached through real folders,
+   * "missing" when real folders lead to nothing there, and "other" for
+   * anything else — a link anywhere below the KB root, a folder, a path outside
+   * the KB.
+   *
+   * Spaces arrive by git pull or by copying a folder in, and git checks a
+   * symlink out as a real link on macOS and Linux. Followed, one could point a
+   * page, a folder or an asset at any file on the machine: reading it would
+   * show that file, and saving would overwrite it. So KB25 follows no link
+   * inside the KB; the KB root itself may still be reached through one.
+   */
+  async fileState(fsPath: string): Promise<"file" | "missing" | "other"> {
+    const rel = path.relative(this.root, fsPath);
+    if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+      return "other";
+    }
+    const segments = rel.split(path.sep);
+    let current = this.root;
+    for (const [i, segment] of segments.entries()) {
+      current = path.join(current, segment);
+      let stat: import("node:fs").Stats;
+      try {
+        stat = await fs.lstat(current);
+      } catch (err) {
+        return (err as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "other";
+      }
+      // lstat reports a link as neither a file nor a folder.
+      const last = i === segments.length - 1;
+      if (last ? !stat.isFile() : !stat.isDirectory()) return "other";
+    }
+    return "file";
+  }
+
+  /**
    * Read + parse a markdown file, memoized by mtime. Returns null when the
-   * file can't be stat'd or read; propagates parsePage errors (invalid
-   * frontmatter) so callers can surface them — the navigation walk wraps this
-   * in try/catch to fall back to the filename instead.
+   * file can't be stat'd or read, or is not a regular file — a symbolic link is
+   * never followed (see {@link fileState}); the navigation walk only descends
+   * into real folders, so this is what keeps a linked page or index.md out of
+   * it. Propagates parsePage errors (invalid frontmatter) so callers can
+   * surface them — the walk wraps this in try/catch to fall back to the
+   * filename instead.
    */
   private async readParsed(
     fsPath: string
   ): Promise<{ data: Frontmatter; body: string; mtimeMs: number } | null> {
     let mtimeMs: number;
     try {
-      mtimeMs = (await fs.stat(fsPath)).mtimeMs;
+      const stat = await fs.lstat(fsPath);
+      if (!stat.isFile()) return null;
+      mtimeMs = stat.mtimeMs;
     } catch {
       return null;
     }
@@ -833,8 +896,7 @@ export class Content {
     // Capture the display name before removing, for the caller's messaging.
     let title = clean;
     try {
-      const raw = await fs.readFile(path.join(dir, "index.md"), "utf8");
-      title = parsePage(raw, dir).data.title;
+      title = (await this.readParsed(path.join(dir, "index.md")))?.data.title ?? clean;
     } catch {
       /* no/invalid index.md — fall back to the key */
     }
