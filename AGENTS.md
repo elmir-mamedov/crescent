@@ -17,12 +17,10 @@ Run commands from `app/`:
 - `npm start` runs the server once without watch mode.
 - `npm run app:install` installs `~/Applications/KB25.app` (macOS), a Spotlight-launchable app that starts the server if needed and opens KB25's own window (see Installer & Releases).
 - `npm run typecheck` runs `tsc --noEmit`; use this as the primary verification step.
-- `npm run build:plugin` bundles the MCP server into the kb25 plugin.
-- `npm run package:plugin` rebuilds that bundle and zips the plugin into `dist/kb25-<version>.zip`.
 - `npm run build:shell` builds KB25's native windows into `shell/build/`, each where its tools are: the macOS one with `swiftc`, the Windows one with the .NET SDK (on any system). `--require mac,windows` fails instead of skipping.
 - `npm run build:release` builds `dist/kb25.zip`, what the one-line installer downloads; it builds both windows, so it runs on macOS with the .NET SDK (`DOTNET` names a `dotnet` not on `PATH`).
 
-There is no build step for development; TypeScript runs directly through `tsx`. The one exception is the kb25 plugin: an installed plugin runs `kb25-plugin/server/mcp.mjs`, a single-file bundle of `src/mcp.ts`, because it is copied into the client's plugin cache without this checkout or its `node_modules`. The bundle is a build output and is git-ignored — never commit it. Run `npm run build:plugin` before reinstalling the plugin from this checkout, and `npm run package:plugin` to produce the zip you hand to people; bump the version in `kb25-plugin/.claude-plugin/plugin.json` when you ship a new one.
+There is no build step for development; TypeScript runs directly through `tsx`. Only a release bundles: `build:release` turns `src/server.ts` and `src/mcp.ts` into single files under `server/` in `kb25.zip`. An installed copy registers that `mcp.mjs` with Claude Code and the Claude app, and its chat runs it too, so a release is how a fix to the MCP server reaches people. The page-writing skill lives in `app/skills/`; the release ships it and setup copies it into `~/.claude/skills/`.
 
 ## Installer & Releases
 

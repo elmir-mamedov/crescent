@@ -88,7 +88,7 @@ if (!macShell || !windowsShell) {
 }
 copy(macShell, path.join("shell", "mac", "KB25"));
 copy(windowsShell, path.join("shell", "windows"));
-copy(path.join(appDir, "..", "kb25-plugin", "skills"), "skills");
+copy(path.join(appDir, "skills"), "skills");
 fs.writeFileSync(path.join(out, "VERSION"), `${version}\n`);
 
 execFileSync("zip", ["-r", "-q", "-X", path.join(distDir, "kb25.zip"), ".", "-x", "*.DS_Store"], {

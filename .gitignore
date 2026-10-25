@@ -11,9 +11,6 @@ node_modules/
 dist/
 *.log
 
-# The kb25 plugin's bundled MCP server — built by `npm run build:plugin`, never commit
-/kb25-plugin/server/
-
 # Python — local virtualenv for tooling; never commit
 .venv/
 __pycache__/

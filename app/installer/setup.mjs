@@ -46,8 +46,8 @@ const CLAUDE_DESKTOP_DIR = isMac
   ? path.join(os.homedir(), "Library", "Application Support", "Claude")
   : path.join(process.env.APPDATA ?? "", "Claude");
 const CLAUDE_DESKTOP_CONFIG = path.join(CLAUDE_DESKTOP_DIR, "claude_desktop_config.json");
-/** Where the kb25 plugin's MCP server reads KB_DIR from, the same path src/mcp.ts uses. */
-const PLUGIN_ENV_FILE = path.join(
+/** The per-user file src/mcp.ts reads KB_DIR from; the retired kb25 plugin kept it there. */
+const USER_ENV_FILE = path.join(
   process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
   "kb25",
   ".env"
@@ -259,13 +259,13 @@ async function adoptExistingKb(current) {
 }
 
 /**
- * Knowledge bases named by the kb25 plugin's settings, or by a hand-written
+ * Knowledge bases named in the per-user settings file, or by a hand-written
  * Claude app entry (which connectClaudeDesktop is about to replace), that hold
  * at least one space and are not `current`.
  */
 function existingKbs(current) {
   const named = [
-    readEnvFile(PLUGIN_ENV_FILE).KB_DIR,
+    readEnvFile(USER_ENV_FILE).KB_DIR,
     readClaudeDesktopConfig()?.mcpServers?.kb25?.env?.KB_DIR,
   ];
   const found = new Set();

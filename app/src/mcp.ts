@@ -34,9 +34,9 @@ const USER_ENV_FILE = path.join(
   ".env"
 );
 
-// A checkout's own .env files win, then the per-user one. The per-user file is
-// what the bundled plugin relies on: installed, it runs from the client's
-// plugin cache, where paths relative to this file lead nowhere.
+// The .env files beside this server win (a checkout's, or an install's for its
+// bundle), then the per-user one, for a copy of the server that runs away from
+// both.
 loadEnvFile(path.join(__dirname, "..", "..", ".env"));
 loadEnvFile(path.join(__dirname, "..", ".env"));
 loadEnvFile(USER_ENV_FILE);

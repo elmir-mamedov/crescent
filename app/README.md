@@ -1,8 +1,7 @@
 # KB Viewer
 
 A lean web viewer/editor for the markdown knowledge base in `../kb`. Node +
-TypeScript + Fastify. No build step — TypeScript runs directly via `tsx` (the
-kb25 plugin's bundled MCP server aside; see below).
+TypeScript + Fastify. No build step — TypeScript runs directly via `tsx`.
 
 ## Run
 
@@ -221,40 +220,22 @@ args = ["/Users/elmir.mamedov/dev/flux/app/src/mcp.ts"]
 KB_DIR = "/Users/elmir.mamedov/dev/flux/kb"
 ```
 
-### As the kb25 plugin
+### Where it finds the knowledge base
 
-`kb25-plugin/` is a Claude plugin: the page-authoring skill plus this MCP server,
-bundled into one file (`kb25-plugin/server/mcp.mjs`) so that it runs on plain
-`node` once installed, without this checkout or its `node_modules`. The bundle is
-a build output, git-ignored and never committed, so build it before installing
-or reinstalling the plugin from this checkout:
-
-```bash
-cd app
-npm run build:plugin
-```
-
-To give the plugin to someone else (for example to install in Cowork), package
-it. This rebuilds the bundle and writes `dist/kb25-<version>.zip`, taking the
-version from `kb25-plugin/.claude-plugin/plugin.json` — bump it for each release:
-
-```bash
-cd app
-npm run package:plugin
-```
-
-An installed plugin runs from the client's plugin cache, so it cannot find `kb/`
-relative to itself. Tell it once per machine where the knowledge base lives:
+`KB_DIR` comes from the environment first, then from the `.env` files beside
+the server (a checkout's, or an install's), and last from a per-user file that
+works wherever the server runs from:
 
 ```bash
 mkdir -p ~/.config/kb25
 echo 'KB_DIR=/absolute/path/to/kb' > ~/.config/kb25/.env
 ```
 
-The server reads that file after the checkout's own `.env` files, and a real
-environment variable still wins over all of them. When `KB_DIR` does not exist
-it refuses to start, rather than serve an empty knowledge base. The KB25
-installer reads that file too, and offers to use the knowledge base it names.
+When `KB_DIR` does not exist the server refuses to start, rather than serve an
+empty knowledge base. The KB25 installer reads the per-user file too, and offers
+to use the knowledge base it names. An installed KB25 registers its own bundled
+copy of this server with Claude Code and the Claude app, so neither needs a
+hand-written entry.
 
 ## Scripts
 
@@ -262,5 +243,3 @@ installer reads that file too, and offers to use the knowledge base it names.
 - `npm start` — run once.
 - `npm run app:install` — install the `KB25.app` launcher (macOS).
 - `npm run typecheck` — type-check with `tsc --noEmit`.
-- `npm run build:plugin` — bundle the MCP server into `kb25-plugin/server/`.
-- `npm run package:plugin` — rebuild the bundle and zip the plugin into `dist/`.
