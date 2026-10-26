@@ -1,10 +1,10 @@
-# KB25
+# Crescent
 
-KB25 is a personal knowledge base that runs on your computer. Pages are
-Markdown files in a folder you own, organised into spaces, and you browse and
-edit them in your web browser. A built-in chat, driven by Claude Code or
-Codex, answers questions and writes pages, and the Claude app and Claude Code
-can work with the same pages through an MCP connection.
+Crescent, formerly KB25, is a personal knowledge base that runs on your
+computer. Pages are Markdown files in a folder you own, organised into spaces,
+and you browse and edit them in your web browser. A built-in chat, driven by
+Claude Code or Codex, answers questions and writes pages, and the Claude app
+and Claude Code can work with the same pages through an MCP connection.
 
 ## Features
 
@@ -53,24 +53,25 @@ irm https://github.com/elmir-mamedov/kb/releases/latest/download/install.ps1 | i
 ```
 
 The installer asks a few yes/no questions; pressing Enter accepts each default.
-It installs KB25 into `~/Library/Application Support/KB25` on macOS or
-`%LOCALAPPDATA%\KB25` on Windows, and keeps pages in a `KB25` folder in your
-home folder. If it finds an existing knowledge base, it offers to use that
-instead. It can also connect KB25 to the Claude app and to Claude Code.
+It installs Crescent into `~/Library/Application Support/KB25` on macOS or
+`%LOCALAPPDATA%\KB25` on Windows, and keeps pages in a `Crescent` folder in
+your home folder. If it finds an existing knowledge base, it offers to use
+that instead. It can also connect Crescent to the Claude app and to Claude
+Code.
 
-After installation, KB25 opens from Spotlight on macOS or the Start menu on
+After installation, Crescent opens from Spotlight on macOS or the Start menu on
 Windows.
 
-## Using KB25
+## Using Crescent
 
-KB25 is an app with a window of its own and its own icon in the Dock or the
-taskbar. It runs a small server on your computer, which accepts connections
-from this computer only. Closing the window quits KB25, as quitting any app
-does, and so does the power button in the top-right corner; links to other
-sites open in your default browser. It needs macOS 13 or later, or Windows 10
-or 11 with the Microsoft Edge WebView2 Runtime, which comes with Edge; without
-WebView2, KB25 opens in your default browser instead and quits with the power
-button.
+Crescent is an app with a window of its own and its own icon in the Dock or
+the taskbar. It runs a small server on your computer, which accepts
+connections from this computer only. Closing the window quits Crescent, as
+quitting any app does, and so does the power button in the top-right corner;
+links to other sites open in your default browser. It needs macOS 13 or
+later, or Windows 10 or 11 with the Microsoft Edge WebView2 Runtime, which
+comes with Edge; without WebView2, Crescent opens in your default browser
+instead and quits with the power button.
 
 **Writing pages.** Create a space from the spaces page, then add pages and
 folders from the sidebar. **Edit** opens a page's Markdown. Saved changes are
@@ -94,28 +95,28 @@ keeps your last choice for each program. The model settings in your own
 Claude Code or Codex configuration don't apply to the chat. Conversations are stored in the `.kb25/chat` folder of your
 knowledge base, separate from the spaces.
 
-**Using KB25 from Claude.** Once connected during installation, the Claude app
-and Claude Code can search, read and write your pages through the kb25 MCP
+**Using Crescent from Claude.** Once connected during installation, the Claude
+app and Claude Code can search, read and write your pages through the kb25 MCP
 server. Changes made this way are committed like any other edit, and the
 sidebar marks the new pages until you open them.
 
 ## Updating and removing
 
 When a new version is available, a notice appears in the bottom-right corner
-of KB25. **Update** installs it in the background and reloads the page. Pages
-and settings are kept.
+of Crescent. **Update** installs it in the background and reloads the page.
+Pages and settings are kept.
 
-Running the install command again also updates KB25 when a newer version
-exists. When KB25 is already up to date, the command offers to remove it.
-Removing KB25 leaves your pages in place.
+Running the install command again also updates Crescent when a newer version
+exists. When Crescent is already up to date, the command offers to remove it.
+Removing Crescent leaves your pages in place.
 
 ## Feedback
 
 The speech-bubble button in the top-right corner sends a bug report or
 suggestion to the developer, with optional screenshots and an optional email
-address for a reply. Each report includes KB25's version, the operating
+address for a reply. Each report includes Crescent's version, the operating
 system, the browser and its window size. The current page, recent errors and
-the end of KB25's log are added only if you tick them, and **What else is
+the end of Crescent's log are added only if you tick them, and **What else is
 sent** shows their contents before sending. Reports written while offline are
 sent once a connection is available.
 

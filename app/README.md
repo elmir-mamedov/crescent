@@ -13,10 +13,11 @@ npm run dev      # http://localhost:4000, auto-reloads on file changes
 npm run mcp      # stdio MCP server for local agent/client integrations
 ```
 
-On macOS, `npm run app:install` adds `~/Applications/KB25.app`, so the viewer
-opens like any other app (Cmd+Space, "KB25"). It starts the server if it is not
-already running and opens the viewer in KB25's own window, the native app in
-`shell/mac/`, which it builds with `swiftc` (Xcode or its Command Line Tools).
+On macOS, `npm run app:install` adds `~/Applications/Crescent.app`, so the
+viewer opens like any other app (Cmd+Space, "Crescent"). It starts the server
+if it is not already running and opens the viewer in its own window, the native
+app in `shell/mac/`, which it builds with `swiftc` (Xcode or its Command Line
+Tools).
 The server runs in the background and logs to `~/Library/Logs/kb25-viewer.log`;
 closing the window quits it. A server you started yourself with `npm run dev`
 keeps running. Re-run `npm run app:install` after moving the checkout or
@@ -232,14 +233,14 @@ echo 'KB_DIR=/absolute/path/to/kb' > ~/.config/kb25/.env
 ```
 
 When `KB_DIR` does not exist the server refuses to start, rather than serve an
-empty knowledge base. The KB25 installer reads the per-user file too, and offers
-to use the knowledge base it names. An installed KB25 registers its own bundled
-copy of this server with Claude Code and the Claude app, so neither needs a
-hand-written entry.
+empty knowledge base. The Crescent installer reads the per-user file too, and
+offers to use the knowledge base it names. An installed Crescent registers its
+own bundled copy of this server with Claude Code and the Claude app, so neither
+needs a hand-written entry.
 
 ## Scripts
 
 - `npm run dev` — watch + reload.
 - `npm start` — run once.
-- `npm run app:install` — install the `KB25.app` launcher (macOS).
+- `npm run app:install` — install the `Crescent.app` launcher (macOS).
 - `npm run typecheck` — type-check with `tsc --noEmit`.
