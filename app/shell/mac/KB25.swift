@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     guard let command = Bundle.main.object(forInfoDictionaryKey: "KB25StartCommand") as? [String],
           let executable = command.first
     else {
-      return fail("KB25.app does not say how to start KB25. Install KB25 again.")
+      return fail("Crescent.app does not say how to start Crescent. Install Crescent again.")
     }
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executable)
@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     do {
       try process.run()
     } catch {
-      fail("KB25 could not start: \(error.localizedDescription)")
+      fail("Crescent could not start: \(error.localizedDescription)")
     }
   }
 
@@ -148,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
   private func fail(_ message: String) {
     let alert = NSAlert()
-    alert.messageText = "KB25"
+    alert.messageText = "Crescent"
     alert.informativeText = message
     alert.runModal()
     quit()
@@ -163,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     webView.allowsBackForwardNavigationGestures = true
     webView.allowsMagnification = true
     if #available(macOS 13.3, *) { webView.isInspectable = true }
-    webView.loadHTMLString(Self.page("Starting KB25…"), baseURL: nil)
+    webView.loadHTMLString(Self.page("Starting Crescent…"), baseURL: nil)
 
     window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 1280, height: 860),
@@ -171,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       backing: .buffered,
       defer: false
     )
-    window.title = "KB25"
+    window.title = "Crescent"
     window.contentView = webView
     window.backgroundColor = Self.background
     window.isReleasedWhenClosed = false
@@ -180,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     window.setFrameAutosaveName("KB25")
     titleObservation = webView.observe(\.title) { [weak self] webView, _ in
       let title = webView.title ?? ""
-      self?.window.title = title.isEmpty ? "KB25" : title
+      self?.window.title = title.isEmpty ? "Crescent" : title
     }
     // Shown once the dark "Starting" page has painted: an empty web view is
     // white. The timer covers that page never finishing.
@@ -321,7 +321,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     if error.code == NSURLErrorCancelled || (error.domain == "WebKitErrorDomain" && error.code == 102) { return }
     guard let url = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL, isKB25(url) else { return }
     failedURL = url
-    webView.loadHTMLString(Self.page("KB25 isn’t answering. Trying again…", retry: url), baseURL: nil)
+    webView.loadHTMLString(Self.page("Crescent isn’t answering. Trying again…", retry: url), baseURL: nil)
   }
 
   // MARK: Menus
@@ -364,14 +364,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       return menu
     }
     let find = #selector(NSResponder.performTextFinderAction(_:))
-    submenu("KB25", [
-      item("About KB25", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+    submenu("Crescent", [
+      item("About Crescent", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
       .separator(),
-      item("Hide KB25", #selector(NSApplication.hide(_:)), "h"),
+      item("Hide Crescent", #selector(NSApplication.hide(_:)), "h"),
       item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
       item("Show All", #selector(NSApplication.unhideAllApplications(_:))),
       .separator(),
-      item("Quit KB25", #selector(NSApplication.terminate(_:)), "q"),
+      item("Quit Crescent", #selector(NSApplication.terminate(_:)), "q"),
     ])
     // No Cmd+E here: the page uses it to open the editor.
     submenu("Edit", [

@@ -72,7 +72,7 @@ namespace KB25
         public KB25Window(string home, EventWaitHandle show)
         {
             this.home = home;
-            Text = "KB25";
+            Text = "Crescent";
             BackColor = Background;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Size = new Size(1280, 860);
@@ -104,8 +104,8 @@ namespace KB25
             catch (WebView2RuntimeNotFoundException)
             {
                 MessageBox.Show(
-                    "KB25 needs the Microsoft Edge WebView2 Runtime for its window, so it opens in your browser instead.",
-                    "KB25");
+                    "Crescent needs the Microsoft Edge WebView2 Runtime for its window, so it opens in your browser instead.",
+                    "Crescent");
                 var address = await Task.Run(() => StartServer());
                 if (address != null) OpenElsewhere(new Uri(address));
                 // The server keeps running for the browser, until its power button.
@@ -116,7 +116,7 @@ namespace KB25
 
             var core = web.CoreWebView2;
             core.DocumentTitleChanged += (sender, e) =>
-                Text = string.IsNullOrEmpty(core.DocumentTitle) ? "KB25" : core.DocumentTitle;
+                Text = string.IsNullOrEmpty(core.DocumentTitle) ? "Crescent" : core.DocumentTitle;
             core.NavigationStarting += OnNavigationStarting;
             core.NavigationCompleted += OnNavigationCompleted;
             core.NewWindowRequested += (sender, e) =>
@@ -237,7 +237,7 @@ namespace KB25
         {
             if (e.IsSuccess || requested == null) return;
             if (e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled) return;
-            web.CoreWebView2.NavigateToString(Page("KB25 isn’t answering. Trying again…", requested));
+            web.CoreWebView2.NavigateToString(Page("Crescent isn’t answering. Trying again…", requested));
         }
 
         void OnClosing(object sender, FormClosingEventArgs e)

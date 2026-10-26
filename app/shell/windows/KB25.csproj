@@ -9,7 +9,8 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>KB25</AssemblyName>
     <RootNamespace>KB25</RootNamespace>
-    <Product>KB25</Product>
+    <AssemblyTitle>Crescent</AssemblyTitle>
+    <Product>Crescent</Product>
     <ApplicationIcon>../../public/favicon.ico</ApplicationIcon>
     <DebugType>none</DebugType>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
