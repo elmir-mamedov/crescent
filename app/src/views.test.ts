@@ -1491,7 +1491,7 @@ test("views: every page with the corner offers feedback, through /_feedback", ()
     assert.match(script, /app: "kb25"/);
     assert.match(script, /button: false/, "the corner's own button opens it");
     assert.match(script, /fetch\("\/_feedback"/);
-    assert.match(script, /The last lines of KB25's log/);
+    assert.match(script, /The last lines of Crescent's log/);
     assert.doesNotMatch(html, /<dialog class="feedback-dialog"/, "the package draws the dialog now");
   }
 });
@@ -1523,7 +1523,7 @@ test("views: a launcher-started server's corner offers Quit, behind a confirmati
     spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),
     layout(pageView()),
   ])) {
-    assert.match(html, /<button type="button" class="quit-button" data-quit-open aria-label="Quit KB25"/);
+    assert.match(html, /<button type="button" class="quit-button" data-quit-open aria-label="Quit Crescent"/);
     assert.match(html, /<dialog class="help-dialog" data-quit-dialog>/);
     assert.match(html, /data-quit-confirm/);
     assert.match(html, /fetch\("\/_quit", \{ method: "POST" \}\)/);

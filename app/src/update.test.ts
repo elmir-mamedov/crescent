@@ -177,7 +177,7 @@ test("start refuses when there is nothing to update to", async () => {
       fetch: fakeFetch("0.2.0").impl,
       spawn: spawn.impl,
     });
-    assert.deepEqual(await updater.start(), { ok: false, reason: "KB25 is already up to date." });
+    assert.deepEqual(await updater.start(), { ok: false, reason: "Crescent is already up to date." });
     assert.equal(spawn.calls.length, 0);
   } finally {
     await tmp.cleanup();

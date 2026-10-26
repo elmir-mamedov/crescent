@@ -232,7 +232,7 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
     await execFileAsync("git", ["branch", "-m", "main"], { cwd: repoRoot });
     await execFileAsync("git", ["config", "core.symlinks", "false"], { cwd: repoRoot });
     if (!(await succeeds("git", ["config", "user.email"], repoRoot))) {
-      await execFileAsync("git", ["config", "user.name", "KB25"], { cwd: repoRoot });
+      await execFileAsync("git", ["config", "user.name", "Crescent"], { cwd: repoRoot });
       await execFileAsync("git", ["config", "user.email", "kb25@localhost"], { cwd: repoRoot });
     }
   }

@@ -153,7 +153,7 @@ export function makeUpdater(options: UpdaterOptions): Updater {
 
   async function start(): Promise<StartResult> {
     if (state === "updating") return { ok: false, reason: "An update is already running." };
-    if (!(await status()).available) return { ok: false, reason: "KB25 is already up to date." };
+    if (!(await status()).available) return { ok: false, reason: "Crescent is already up to date." };
 
     const [command, args] = updateCommand(platform, `${releasesUrl}/latest/download`, install);
     const log = fs.openSync(install.logFile, "w");
