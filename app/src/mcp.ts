@@ -402,7 +402,7 @@ server.registerTool(
   {
     title: "Get Space Instructions",
     description:
-      "Read a space's standing instructions: the space owner's rules for what you write there, how you answer questions about it, and any standing domain context. Returns the text plus the `spaceInstructionsToken` value the write tools require for that space. Call this before writing into a space you have not yet read from in this session. A person edits these in the KB25 web UI; the tools cannot change them.",
+      "Read a space's standing instructions: the space owner's rules for what you write there, how you answer questions about it, and any standing domain context. Returns the text plus the `spaceInstructionsToken` value the write tools require for that space. Call this before writing into a space you have not yet read from in this session. A person edits these in the Crescent web UI; the tools cannot change them.",
     inputSchema: {
       space: z.string().min(1).describe("Space key — its top-level folder name, e.g. kb25."),
     },

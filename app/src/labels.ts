@@ -139,7 +139,7 @@ async function readPaletteStrict(content: Content, file: string, space: string):
   if (state === "missing") return [];
   if (state === "other") {
     throw new Error(
-      `The label palette ${space}/${LABELS_FILE} is not a plain file; KB25 does not follow symbolic links. Remove it, then try again.`
+      `The label palette ${space}/${LABELS_FILE} is not a plain file; Crescent does not follow symbolic links. Remove it, then try again.`
     );
   }
   let raw: string;

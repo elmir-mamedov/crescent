@@ -125,7 +125,7 @@ namespace KB25
                 e.Handled = true;
                 if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) OpenElsewhere(uri);
             };
-            core.NavigateToString(Page("Starting KB25…"));
+            core.NavigateToString(Page("Starting Crescent…"));
 
             var started = await Task.Run(() => StartServer());
             if (started == null)
