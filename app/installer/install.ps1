@@ -1,6 +1,6 @@
 # Crescent installer for Windows. In PowerShell:
 #
-#   irm https://github.com/elmir-mamedov/kb/releases/latest/download/install.ps1 | iex
+#   irm https://github.com/elmir-mamedov/crescent/releases/latest/download/install.ps1 | iex
 #
 # Fetches a private copy of Node.js and the latest Crescent release into
 # %LOCALAPPDATA%\KB25, then hands over to installer\setup.mjs for the
@@ -20,7 +20,7 @@
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
   $nodeVersion = '24.15.0'
-  $release = 'https://github.com/elmir-mamedov/kb/releases/latest/download/kb25.zip'
+  $release = 'https://github.com/elmir-mamedov/crescent/releases/latest/download/kb25.zip'
   $kbHome = if ($env:KB25_HOME) { $env:KB25_HOME } else { Join-Path $env:LOCALAPPDATA 'KB25' }
 
   function Ask($question) {

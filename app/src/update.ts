@@ -10,7 +10,7 @@ import path from "node:path";
  * needs them.
  */
 
-export const DEFAULT_RELEASES_URL = "https://github.com/elmir-mamedov/kb/releases";
+export const DEFAULT_RELEASES_URL = "https://github.com/elmir-mamedov/crescent/releases";
 
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
 const RETRY_FAILED_CHECK_MS = 60 * 60 * 1000;

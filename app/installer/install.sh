@@ -1,7 +1,7 @@
 #!/bin/bash
 # Crescent installer for macOS:
 #
-#   curl -fsSL https://github.com/elmir-mamedov/kb/releases/latest/download/install.sh | bash
+#   curl -fsSL https://github.com/elmir-mamedov/crescent/releases/latest/download/install.sh | bash
 #
 # Fetches a private copy of Node.js and the latest Crescent release into
 # ~/Library/Application Support/KB25, then hands over to installer/setup.mjs
@@ -18,7 +18,7 @@ set -euo pipefail
 # short can never run half a script.
 main() {
   local node_version="24.15.0"
-  local release="https://github.com/elmir-mamedov/kb/releases/latest/download/kb25.zip"
+  local release="https://github.com/elmir-mamedov/crescent/releases/latest/download/kb25.zip"
   local home="${KB25_HOME:-$HOME/Library/Application Support/KB25}"
 
   if [ "$(uname -s)" != "Darwin" ]; then

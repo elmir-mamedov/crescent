@@ -43,13 +43,13 @@ and Claude Code can work with the same pages through an MCP connection.
 **macOS**: in Terminal, run:
 
 ```bash
-curl -fsSL https://github.com/elmir-mamedov/kb/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/elmir-mamedov/crescent/releases/latest/download/install.sh | bash
 ```
 
 **Windows**: in PowerShell, run:
 
 ```powershell
-irm https://github.com/elmir-mamedov/kb/releases/latest/download/install.ps1 | iex
+irm https://github.com/elmir-mamedov/crescent/releases/latest/download/install.ps1 | iex
 ```
 
 The installer asks a few yes/no questions; pressing Enter accepts each default.
