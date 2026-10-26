@@ -72,11 +72,14 @@ mcp.kill();
 assert.ok(tools && tools.length >= 18, `expected the MCP tools, got ${tools?.length}`);
 console.log(`mcp: ${tools.length} tools`);
 
-// 4. The launcher is where Spotlight / the Start menu look for it.
+// 4. The launcher is where Spotlight / the Start menu look for it, and the
+// update replaced the one KB25 0.12.0 and earlier left (release.yml plants it).
 const launcher = isWindows
-  ? path.join(process.env.APPDATA, "Microsoft", "Windows", "Start Menu", "Programs", "KB25.lnk")
-  : path.join(os.homedir(), "Applications", "KB25.app");
+  ? path.join(process.env.APPDATA, "Microsoft", "Windows", "Start Menu", "Programs", "Crescent.lnk")
+  : path.join(os.homedir(), "Applications", "Crescent.app");
 assert.ok(fs.existsSync(launcher), `missing launcher ${launcher}`);
+const oldLauncher = path.join(path.dirname(launcher), isWindows ? "KB25.lnk" : "KB25.app");
+assert.ok(!fs.existsSync(oldLauncher), `the update left ${oldLauncher}`);
 console.log(`launcher: ${launcher}`);
 
 // 5. KB25's window: the native app (shell/) starts the server and opens it;

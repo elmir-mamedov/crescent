@@ -112,11 +112,11 @@ export function alertUser(message) {
     if (isMac) {
       execFileSync("osascript", [
         "-e",
-        `display alert "KB25" message ${JSON.stringify(message)}`,
+        `display alert "Crescent" message ${JSON.stringify(message)}`,
       ]);
     } else if (isWindows) {
       powershell(
-        `Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(${psQuote(message)}, 'KB25') | Out-Null`
+        `Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(${psQuote(message)}, 'Crescent') | Out-Null`
       );
     }
   } catch {}

@@ -33,15 +33,18 @@ const staged = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const p = paths();
 const UPDATING = Boolean(process.env.KB25_UPDATE);
 
-const MAC_APP = path.join(os.homedir(), "Applications", "KB25.app");
+const MAC_APP = path.join(os.homedir(), "Applications", "Crescent.app");
 const START_MENU_LINK = path.join(
   process.env.APPDATA ?? "",
   "Microsoft",
   "Windows",
   "Start Menu",
   "Programs",
-  "KB25.lnk"
+  "Crescent.lnk"
 );
+/** What KB25 0.12.0 and earlier named them; an update replaces them with the two above. */
+const OLD_MAC_APP = path.join(os.homedir(), "Applications", "KB25.app");
+const OLD_START_MENU_LINK = path.join(path.dirname(START_MENU_LINK), "KB25.lnk");
 const CLAUDE_DESKTOP_DIR = isMac
   ? path.join(os.homedir(), "Library", "Application Support", "Claude")
   : path.join(process.env.APPDATA ?? "", "Claude");
@@ -77,15 +80,15 @@ async function main() {
 
   const version = readVersion(staged);
   const installed = staged === p.app ? version : readVersion(p.app);
-  if (UPDATING && !installed) throw new Error("KB25 isn't installed here, so there is nothing to update.");
+  if (UPDATING && !installed) throw new Error("Crescent isn't installed here, so there is nothing to update.");
   if (installed === version) {
-    console.log(`KB25 ${version} is already up to date.`);
+    console.log(`Crescent ${version} is already up to date.`);
     if (staged !== p.app) fs.rmSync(staged, { recursive: true, force: true });
-    if (await ask("Remove KB25 from this computer?", false)) return uninstall();
+    if (await ask("Remove Crescent from this computer?", false)) return uninstall();
   } else {
     await stopServer(p); // an update must not keep serving the old version
     replaceApp();
-    console.log(installed ? `Updated KB25 ${installed} → ${version}.` : `Installed KB25 ${version}.`);
+    console.log(installed ? `Updated Crescent ${installed} → ${version}.` : `Installed Crescent ${version}.`);
   }
 
   const kbDir = await ensureSettings();
@@ -102,12 +105,12 @@ async function main() {
     // new version for the page that is waiting on it.
     const { KB25_UPDATE, ...env } = process.env;
     launch({ ...env, ...moved, KB25_NO_BROWSER: "1" });
-    console.log("Starting KB25 again in the background.");
+    console.log("Starting Crescent again in the background.");
     return;
   }
-  const where = isMac ? 'Spotlight (Cmd+Space, type "KB25")' : 'the Start menu (type "KB25")';
-  console.log(`\nAll set! Open KB25 any time from ${where}.`);
-  if (await ask("Open KB25 now?")) openKb25(window, { ...process.env, ...moved });
+  const where = isMac ? 'Spotlight (Cmd+Space, type "Crescent")' : 'the Start menu (type "Crescent")';
+  console.log(`\nAll set! Open Crescent any time from ${where}.`);
+  if (await ask("Open Crescent now?")) openKb25(window, { ...process.env, ...moved });
 }
 
 /** Run the launcher, which starts the server unless it answers already. */
@@ -137,10 +140,15 @@ function openKb25(window, env) {
 
 /** Close KB25's window, if it is open, before its files go. */
 function closeWindow() {
+  // KB25.app's as well: a window opened from it keeps running through the
+  // update that replaces it with Crescent.app.
+  for (const bundle of isMac ? [MAC_APP, OLD_MAC_APP] : []) {
+    try {
+      execFileSync("pkill", ["-TERM", "-f", path.join(bundle, "Contents", "MacOS", "KB25")], { stdio: "ignore" });
+    } catch {} // none open
+  }
   try {
-    if (isMac) {
-      execFileSync("pkill", ["-TERM", "-f", path.join(MAC_APP, "Contents", "MacOS", "KB25")], { stdio: "ignore" });
-    } else if (isWindows) {
+    if (isWindows) {
       powershell(
         `Get-Process KB25 -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ${psQuote(`${p.shells}\\*`)} } | Stop-Process -Force`
       );
@@ -207,13 +215,13 @@ async function ensureSettings() {
     return adopted;
   }
 
-  const kbDir = adopted ?? path.join(os.homedir(), "KB25");
+  const kbDir = adopted ?? path.join(os.homedir(), "Crescent");
   fs.mkdirSync(kbDir, { recursive: true });
   fs.writeFileSync(
     p.envFile,
     [
-      "# KB25 settings, written by the installer and kept across updates.",
-      "# Sign-in is off: KB25 only answers on this computer (localhost).",
+      "# Crescent settings, written by the installer and kept across updates.",
+      "# Sign-in is off: Crescent only answers on this computer (localhost).",
       `KB_DIR=${kbDir}`,
       `PORT=${await freePort(PORT_FROM)}`,
       "AUTH_DISABLED=1",
@@ -241,7 +249,7 @@ async function moveOffDevPort() {
   await stopServer(p); // an up-to-date copy is still running on the old port
   const next = await freePort(PORT_FROM);
   setEnvValue("PORT", next);
-  console.log(`KB25 moved from port ${port} to ${next}, out of the way of dev servers.`);
+  console.log(`Crescent moved from port ${port} to ${next}, out of the way of dev servers.`);
   return port;
 }
 
@@ -253,20 +261,22 @@ async function adoptExistingKb(current) {
       names.length > 4 ? `${names.slice(0, 4).join(", ")} and ${names.length - 4} more` : names.join(", ");
     const count = `${names.length} ${names.length === 1 ? "space" : "spaces"}`;
     console.log(`Found a knowledge base at ${tildify(dir)} (${count}: ${shown}).`);
-    if (await ask("Use it for KB25?")) return dir;
+    if (await ask("Use it for Crescent?")) return dir;
   }
   return null;
 }
 
 /**
  * Knowledge bases named in the per-user settings file, or by a hand-written
- * Claude app entry (which connectClaudeDesktop is about to replace), that hold
- * at least one space and are not `current`.
+ * Claude app entry (which connectClaudeDesktop is about to replace), or left in
+ * ~/KB25, where KB25 0.12.0 and earlier put new installs' pages, that hold at
+ * least one space and are not `current`.
  */
 function existingKbs(current) {
   const named = [
     readEnvFile(USER_ENV_FILE).KB_DIR,
     readClaudeDesktopConfig()?.mcpServers?.kb25?.env?.KB_DIR,
+    path.join(os.homedir(), "KB25"),
   ];
   const found = new Set();
   for (const dir of named) {
@@ -336,6 +346,7 @@ function createLauncher() {
       version: readVersion(p.app),
       iconPng: path.join(p.app, "public", "favicon-512x512.png"),
     });
+    removeMacApp(OLD_MAC_APP);
     return MAC_APP;
   }
   if (isWindows) {
@@ -352,6 +363,7 @@ function createLauncher() {
         "$s.Save()",
       ].join("; ")
     );
+    fs.rmSync(OLD_START_MENU_LINK, { force: true });
     return exe;
   }
   return null;
@@ -407,19 +419,19 @@ async function connectClaudeDesktop() {
   if (!claudeDesktopInstalled()) return;
   const config = readClaudeDesktopConfig();
   if (!config) {
-    console.log("Couldn't read the Claude app's settings file, so KB25 wasn't connected to it.");
+    console.log("Couldn't read the Claude app's settings file, so Crescent wasn't connected to it.");
     return;
   }
   const entry = { command: p.node, args: [p.mcp] };
   if (JSON.stringify(config.mcpServers?.kb25) === JSON.stringify(entry)) {
-    console.log("The Claude app is already connected to KB25.");
+    console.log("The Claude app is already connected to Crescent.");
     return;
   }
-  if (!(await ask("Connect KB25 to the Claude app?"))) return;
+  if (!(await ask("Connect Crescent to the Claude app?"))) return;
   config.mcpServers = { ...config.mcpServers, kb25: entry };
   fs.mkdirSync(CLAUDE_DESKTOP_DIR, { recursive: true });
   fs.writeFileSync(CLAUDE_DESKTOP_CONFIG, `${JSON.stringify(config, null, 2)}\n`);
-  console.log("Connected. Quit and reopen the Claude app to use KB25 there.");
+  console.log("Connected. Quit and reopen the Claude app to use Crescent there.");
 }
 
 function disconnectClaudeDesktop() {
@@ -445,14 +457,14 @@ function claude(args) {
 async function connectClaudeCode() {
   if (claude(["--version"]) === null) return;
   if (claude(["mcp", "get", "kb25"])?.includes(p.mcp)) {
-    console.log("Claude Code is already connected to KB25.");
+    console.log("Claude Code is already connected to Crescent.");
   } else {
-    if (!(await ask("Connect KB25 to Claude Code?"))) return;
+    if (!(await ask("Connect Crescent to Claude Code?"))) return;
     if (claude(["mcp", "add", "--scope", "user", "kb25", "--", p.node, p.mcp]) === null) {
       console.log("Claude Code didn't accept the connection, so it was skipped.");
       return;
     }
-    console.log("Connected. Start a new Claude Code session to use KB25 there.");
+    console.log("Connected. Start a new Claude Code session to use Crescent there.");
   }
   installSkill();
 }
@@ -481,8 +493,8 @@ async function uninstall() {
   const kbDir = readEnvFile(p.envFile).KB_DIR;
   closeWindow();
   await stopServer(p);
-  if (isMac) removeMacApp(MAC_APP);
-  if (isWindows) fs.rmSync(START_MENU_LINK, { force: true });
+  if (isMac) [MAC_APP, OLD_MAC_APP].forEach(removeMacApp);
+  if (isWindows) [START_MENU_LINK, OLD_START_MENU_LINK].forEach((link) => fs.rmSync(link, { force: true }));
   disconnectClaudeDesktop();
   disconnectClaudeCode();
 
@@ -500,5 +512,5 @@ async function uninstall() {
   } else {
     fs.rmSync(p.home, { recursive: true, force: true });
   }
-  console.log(`KB25 is removed.${kbDir ? ` Your pages are still in ${tildify(kbDir)}.` : ""}`);
+  console.log(`Crescent is removed.${kbDir ? ` Your pages are still in ${tildify(kbDir)}.` : ""}`);
 }

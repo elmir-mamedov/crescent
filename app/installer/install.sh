@@ -1,12 +1,12 @@
 #!/bin/bash
-# KB25 installer for macOS:
+# Crescent installer for macOS:
 #
 #   curl -fsSL https://github.com/elmir-mamedov/kb/releases/latest/download/install.sh | bash
 #
-# Fetches a private copy of Node.js and the latest KB25 release into
+# Fetches a private copy of Node.js and the latest Crescent release into
 # ~/Library/Application Support/KB25, then hands over to installer/setup.mjs
 # for the questions. Needs no admin password and touches nothing system-wide.
-# Running it again updates KB25, or offers to remove it.
+# Running it again updates Crescent, or offers to remove it.
 #
 # For testing: KB25_HOME overrides the install folder, KB25_ZIP installs a
 # local kb25.zip instead of the latest release, KB25_YES=1 takes every default.
@@ -33,14 +33,14 @@ main() {
   esac
 
   echo
-  echo "KB25 installer"
+  echo "Crescent installer"
   if [ -d "$home/app" ]; then
-    ask "KB25 is already installed. Check for an update?" || exit 0
+    ask "Crescent is already installed. Check for an update?" || exit 0
   elif [ -n "${KB25_UPDATE:-}" ]; then
-    echo "KB25 isn't installed in $home, so there is nothing to update."
+    echo "Crescent isn't installed in $home, so there is nothing to update."
     exit 1
   else
-    ask "This installs KB25 for you only. No admin password needed. Continue?" || exit 0
+    ask "This installs Crescent for you only. No admin password needed. Continue?" || exit 0
   fi
   mkdir -p "$home"
 
@@ -49,7 +49,7 @@ main() {
   trap 'rm -rf "$tmp"' EXIT
 
   if [ "$(cat "$home/node/VERSION" 2>/dev/null || true)" != "$node_version" ]; then
-    echo "Downloading Node.js, which only KB25 uses (about 25 MB, first time only)…"
+    echo "Downloading Node.js, which only Crescent uses (about 25 MB, first time only)…"
     stop_server "$home" # it runs on the Node about to be replaced
     local name="node-v$node_version-darwin-$arch"
     curl -fL --progress-bar "https://nodejs.org/dist/v$node_version/$name.tar.xz" -o "$tmp/node.tar.xz"
@@ -67,7 +67,7 @@ main() {
     echo "$node_version" > "$home/node/VERSION"
   fi
 
-  echo "Downloading KB25…"
+  echo "Downloading Crescent…"
   if [ -n "${KB25_ZIP:-}" ]; then
     cp "$KB25_ZIP" "$tmp/kb25.zip"
   else

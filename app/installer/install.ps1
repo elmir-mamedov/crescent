@@ -1,11 +1,11 @@
-# KB25 installer for Windows. In PowerShell:
+# Crescent installer for Windows. In PowerShell:
 #
 #   irm https://github.com/elmir-mamedov/kb/releases/latest/download/install.ps1 | iex
 #
-# Fetches a private copy of Node.js and the latest KB25 release into
+# Fetches a private copy of Node.js and the latest Crescent release into
 # %LOCALAPPDATA%\KB25, then hands over to installer\setup.mjs for the
 # questions. Needs no admin rights and touches nothing system-wide. Running it
-# again updates KB25, or offers to remove it.
+# again updates Crescent, or offers to remove it.
 #
 # For testing: KB25_HOME overrides the install folder, KB25_ZIP installs a
 # local kb25.zip instead of the latest release, KB25_YES=1 takes every default.
@@ -50,13 +50,13 @@
   }
 
   Write-Host ''
-  Write-Host 'KB25 installer'
+  Write-Host 'Crescent installer'
   if (Test-Path (Join-Path $kbHome 'app')) {
-    if (-not (Ask 'KB25 is already installed. Check for an update?')) { return }
+    if (-not (Ask 'Crescent is already installed. Check for an update?')) { return }
   } elseif ($env:KB25_UPDATE) {
-    throw "KB25 isn't installed in $kbHome, so there is nothing to update."
+    throw "Crescent isn't installed in $kbHome, so there is nothing to update."
   } else {
-    if (-not (Ask 'This installs KB25 for you only. No admin rights needed. Continue?')) { return }
+    if (-not (Ask 'This installs Crescent for you only. No admin rights needed. Continue?')) { return }
   }
   New-Item -ItemType Directory -Force -Path $kbHome | Out-Null
 
@@ -67,7 +67,7 @@
     $nodeVersionFile = Join-Path $nodeDir 'VERSION'
     $installedNode = if (Test-Path $nodeVersionFile) { (Get-Content $nodeVersionFile -Raw).Trim() } else { '' }
     if ($installedNode -ne $nodeVersion) {
-      Write-Host 'Downloading Node.js, which only KB25 uses (about 35 MB, first time only)...'
+      Write-Host 'Downloading Node.js, which only Crescent uses (about 35 MB, first time only)...'
       Stop-KB25Server # it runs on the Node about to be replaced
       $name = "node-v$nodeVersion-win-$arch"
       $nodeZip = Join-Path $tmp 'node.zip'
@@ -85,7 +85,7 @@
       Set-Content -Path $nodeVersionFile -Value $nodeVersion
     }
 
-    Write-Host 'Downloading KB25...'
+    Write-Host 'Downloading Crescent...'
     $zip = Join-Path $tmp 'kb25.zip'
     if ($env:KB25_ZIP) {
       Copy-Item $env:KB25_ZIP $zip

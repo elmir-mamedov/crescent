@@ -1,4 +1,4 @@
-// Writes KB25.app: KB25's window on macOS (shell/mac/KB25.swift, built by
+// Writes Crescent.app: KB25's window on macOS (shell/mac/KB25.swift, built by
 // scripts/build-shell.mjs) in a bundle with the viewer's favicon as its icon,
 // so Spotlight, Launchpad, the Dock and Cmd+Tab treat KB25 like any other app.
 // Shared by the developer launcher (scripts/install-app.mjs) and the one-line
@@ -12,7 +12,7 @@ const LSREGISTER =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 
 /**
- * (Re)write `bundle` (e.g. ~/Applications/KB25.app) around `executable`, the
+ * (Re)write `bundle` (e.g. ~/Applications/Crescent.app) around `executable`, the
  * built window. `start` is the command it runs to start the server and learn
  * its address (KB25StartCommand); `resources` are extra files for
  * Contents/Resources, such as a script `start` names. `iconPng` is a square
@@ -67,8 +67,8 @@ function infoPlist({ start, version }) {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>KB25</string>
-  <key>CFBundleDisplayName</key><string>KB25</string>
+  <key>CFBundleName</key><string>Crescent</string>
+  <key>CFBundleDisplayName</key><string>Crescent</string>
   <key>CFBundleIdentifier</key><string>local.kb25.viewer</string>
   <key>CFBundleExecutable</key><string>KB25</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>

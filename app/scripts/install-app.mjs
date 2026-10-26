@@ -1,4 +1,4 @@
-// Installs ~/Applications/KB25.app, KB25's window (shell/mac/KB25.swift, built
+// Installs ~/Applications/Crescent.app, KB25's window (shell/mac/KB25.swift, built
 // here with swiftc) that Spotlight, Launchpad and the Dock pick up. Opening it
 // starts the server when it is not already running and opens the viewer; it
 // stops the server it started when the window closes. A server already running
@@ -19,7 +19,7 @@ import { sh, writeMacApp } from "../installer/mac-app.mjs";
 import { buildMacShell } from "./build-shell.mjs";
 
 if (process.platform !== "darwin") {
-  console.error("KB25.app is a macOS launcher; on other systems run `npm start`.");
+  console.error("Crescent.app is a macOS launcher; on other systems run `npm start`.");
   process.exit(1);
 }
 
@@ -32,11 +32,11 @@ if (!fs.existsSync(tsxCli)) {
 
 const executable = buildMacShell();
 if (!executable) {
-  console.error("Building KB25's window needs swiftc; run `xcode-select --install` first.");
+  console.error("Building Crescent's window needs swiftc; run `xcode-select --install` first.");
   process.exit(1);
 }
 
-const bundle = path.join(os.homedir(), "Applications", "KB25.app");
+const bundle = path.join(os.homedir(), "Applications", "Crescent.app");
 const logPath = path.join(os.homedir(), "Library", "Logs", "kb25-viewer.log");
 const port = process.env.PORT ?? "4000";
 
@@ -58,7 +58,7 @@ if ! up; then
   until up; do
     i=$((i + 1))
     if [ "$i" -gt 60 ]; then
-      osascript -e "display alert \\"KB25 did not start\\" message \\"See $LOG\\"" >/dev/null
+      osascript -e "display alert \\"Crescent did not start\\" message \\"See $LOG\\"" >/dev/null
       exit 1
     fi
     sleep 0.25
@@ -76,4 +76,4 @@ writeMacApp({
   resources: { "start.sh": script },
   iconPng: path.join(appDir, "public", "favicon-512x512.png"),
 });
-console.log(`Installed ${bundle}. Open it from Spotlight: Cmd+Space, "KB25".`);
+console.log(`Installed ${bundle}. Open it from Spotlight: Cmd+Space, "Crescent".`);

@@ -35,7 +35,7 @@ if (!(await isUp(url))) {
   const deadline = Date.now() + 20_000;
   while (!(await isUp(url))) {
     if (Date.now() > deadline || server.exitCode !== null) {
-      alertUser(`KB25 did not start. Details are in ${path.join(p.home, "kb25.log")}`);
+      alertUser(`Crescent did not start. Details are in ${path.join(p.home, "kb25.log")}`);
       process.exit(1);
     }
     await sleep(250);

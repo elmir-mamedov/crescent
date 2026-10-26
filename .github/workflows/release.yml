@@ -68,17 +68,22 @@ jobs:
       # The viewer's Update button runs the installer with no terminal and
       # nobody to answer: it must stop the server, swap the app in and start
       # the server again without asking anything. Posing as 0.0.0 makes the
-      # same zip count as an update.
+      # same zip count as an update. A copy of the launcher under its KB25
+      # name stands in for one 0.12.0 and earlier left, which the update
+      # must remove.
       - name: Update without a terminal (macOS)
         if: runner.os == 'macOS'
         run: |
           echo 0.0.0 > "$HOME/Library/Application Support/KB25/app/VERSION"
+          cp -R "$HOME/Applications/Crescent.app" "$HOME/Applications/KB25.app"
           env -u KB25_YES KB25_UPDATE=1 KB25_ZIP="$PWD/release/kb25.zip" bash release/install.sh < /dev/null
       - name: Update without a terminal (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
           Set-Content "$env:LOCALAPPDATA\KB25\app\VERSION" '0.0.0'
+          $programs = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
+          Copy-Item "$programs\Crescent.lnk" "$programs\KB25.lnk"
           Remove-Item Env:KB25_YES
           $env:KB25_UPDATE = '1'
           $env:KB25_ZIP = "$PWD\release\kb25.zip"
@@ -97,6 +102,6 @@ jobs:
       - run: >
           gh release create "$GITHUB_REF_NAME"
           release/kb25.zip release/install.sh release/install.ps1 release/VERSION
-          --repo "$GITHUB_REPOSITORY" --title "KB25 $GITHUB_REF_NAME" --generate-notes
+          --repo "$GITHUB_REPOSITORY" --title "Crescent $GITHUB_REF_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
