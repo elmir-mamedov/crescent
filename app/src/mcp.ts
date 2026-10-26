@@ -348,7 +348,7 @@ async function writeToken(spaceKey: string): Promise<{ spaceInstructionsToken?: 
 function refuseInstructionsPath(slug: string) {
   if (!isInstructionsSlug(slug)) return null;
   return errorResult(
-    "A space's instructions are edited only from the KB25 web UI (the Space instructions button, top right). They are the space owner's standing orders, so the tools will not change them. You can read them with kb_get_space_instructions."
+    "A space's instructions are edited only from the Crescent web UI (the Space instructions button, top right). They are the space owner's standing orders, so the tools will not change them. You can read them with kb_get_space_instructions."
   );
 }
 
