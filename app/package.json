@@ -1,6 +1,6 @@
 {
   "name": "kb-viewer",
-  "version": "0.12.2",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "description": "Lean viewer/editor for the markdown knowledge base.",
