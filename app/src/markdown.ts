@@ -428,6 +428,7 @@ function mathInline(state: StateInline, silent: boolean): boolean {
     const token = state.push("math_inline", "math", 0);
     token.content = tex;
     token.markup = display ? "$$" : "$";
+    if (spaced) token.meta = { spaced };
   }
   state.pos = end + open;
   return true;
@@ -560,6 +561,36 @@ function mathBlock(state: StateBlock, startLine: number, endLine: number, silent
   token.map = [startLine, last + 1];
   state.line = last + 1;
   return true;
+}
+
+/**
+ * A spaced `$ … $` that is a paragraph of its own, turned into the display
+ * block a `$$ … $$` there would be. An agent that sets a formula on its own
+ * line between two sentences means it to be displayed (feedback issue #19), and
+ * as inline math it sat at the left margin with its fractions shrunk, beside
+ * centred `$$` formulas. Whether the dollars are spaced is only known once the
+ * inline rules have read them, so this runs after them, before the blocks are
+ * anchored. A tight `$x$` on its own line stays inline, as in TeX and Pandoc,
+ * and so does a list item's formula, which belongs beside its bullet.
+ */
+function spacedMathDisplay(state: StateCore): void {
+  const tokens = state.tokens;
+  let listItems = 0;
+  for (let i = 0; i + 2 < tokens.length; i += 1) {
+    const [open, inline, close] = tokens.slice(i, i + 3);
+    if (open.type === "list_item_open") listItems += 1;
+    if (open.type === "list_item_close") listItems -= 1;
+    if (listItems || open.type !== "paragraph_open" || close.type !== "paragraph_close") continue;
+    const [only, ...rest] = inline.children ?? [];
+    if (rest.length || only?.type !== "math_inline" || !only.meta?.spaced) continue;
+    const token = new state.Token("math_block", "math", 0);
+    token.block = true;
+    token.content = only.content;
+    token.markup = only.markup;
+    token.map = open.map;
+    token.level = open.level;
+    tokens.splice(i, 3, token);
+  }
 }
 
 /**
@@ -1189,6 +1220,7 @@ export function createRenderer(
   md.block.ruler.after("fence", "math_block", mathBlock, {
     alt: ["paragraph", "reference", "blockquote", "list"],
   });
+  md.core.ruler.after("inline", "math_display", spacedMathDisplay);
   md.renderer.rules.math_inline = (tokens, idx) =>
     typeset(md, tokens[idx].content, isDisplayMath(tokens[idx].markup));
   md.renderer.rules.math_block = (tokens, idx, _options, _env, self) =>

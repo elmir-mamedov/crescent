@@ -86,6 +86,35 @@ test("TeX spaced inside its dollars is typeset", () => {
   assert.doesNotMatch(html, /\$/);
 });
 
+test("a spaced $ … $ standing as its own paragraph is display math", () => {
+  const body = "Using the result,\n\n$ k_L = \\frac{D}{\\delta} $\n\ngives\n";
+  const html = render(body);
+  const [, math] = sourceBlocks(body);
+  assert.equal(math.line, 2);
+  assert.match(
+    html,
+    new RegExp(`<div class="math-block" data-src-line="2" data-src-hash="${math.hash}"><span class="katex-display">`)
+  );
+  assert.deepEqual(texOf(html), [String.raw`k_L = \frac{D}{\delta}`]);
+});
+
+test("a tight $…$ on its own line, or a spaced one in a sentence or list, stays inline", () => {
+  for (const body of [
+    "$k_L = \\frac{D}{\\delta}$\n",
+    "Then $ k_L = \\frac{D}{\\delta} $ holds.\n",
+    "- $ k_L = \\frac{D}{\\delta} $\n- $ x^2 $\n",
+    "1. $ k_L = \\frac{D}{\\delta} $\n\n2. $ x^2 $\n",
+  ]) {
+    const html = render(body);
+    assert.match(html, /<span class="katex">/, body);
+    assert.doesNotMatch(html, /math-block|katex-display/, body);
+  }
+});
+
+test("a spaced $ … $ alone in a blockquote is display math", () => {
+  assert.match(render("> $ x^2 $\n"), /<blockquote[^>]*>\n<div class="math-block"><span class="katex-display">/);
+});
+
 test("prices spaced from their dollars stay prose", () => {
   const prose = [
     "3 $ bananas and 5 $ apples",
