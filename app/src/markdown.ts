@@ -387,6 +387,11 @@ function imageWithSize(state: StateInline, silent: boolean): boolean {
  * opening `$` needs a non-space after it, and the next unescaped `$` closes only
  * with a non-space before it and no digit after. `$5 and $10` has no closer and
  * is left as text. `\$` is a literal dollar, inside a formula or out.
+ *
+ * Agents also space a formula inside its dollars, as in `$ \boxed{x} $`, the
+ * way they space `\( x \)` (feedback issue #19), and Pandoc leaves that as
+ * text. Such a pair is taken when what it holds reads as TeX (see
+ * `spacedReadsAsTex`), so `3 $ bananas and 5 $ apples` still stays prose.
  */
 function mathInline(state: StateInline, silent: boolean): boolean {
   const src = state.src;
@@ -400,7 +405,7 @@ function mathInline(state: StateInline, silent: boolean): boolean {
   if (display) {
     end = src.indexOf("$$", start + 2);
     if (end >= state.posMax) end = -1;
-  } else if (start + 1 < state.posMax && !isSpaceCode(src.charCodeAt(start + 1))) {
+  } else {
     for (let pos = start + 1; pos < state.posMax; pos += 1) {
       const code = src.charCodeAt(pos);
       if (code === 0x5c /* \ */) {
@@ -408,14 +413,16 @@ function mathInline(state: StateInline, silent: boolean): boolean {
         continue;
       }
       if (code !== 0x24) continue;
-      const digitAfter = /[0-9]/.test(src.charAt(pos + 1));
-      if (!isSpaceCode(src.charCodeAt(pos - 1)) && !digitAfter) end = pos;
+      if (!/[0-9]/.test(src.charAt(pos + 1))) end = pos;
       break;
     }
   }
   if (end < 0) return false;
   const tex = src.slice(start + open, end).trim();
   if (!tex) return false;
+  const spaced =
+    !display && (isSpaceCode(src.charCodeAt(start + 1)) || isSpaceCode(src.charCodeAt(end - 1)));
+  if (spaced && !spacedReadsAsTex(tex)) return false;
 
   if (!silent) {
     const token = state.push("math_inline", "math", 0);
@@ -477,6 +484,26 @@ function mathBracketInline(state: StateInline, silent: boolean): boolean {
  */
 function readsAsTex(tex: string): boolean {
   return /\\[A-Za-z]|[\^_{}=<>+]/.test(tex);
+}
+
+/**
+ * Whether a `$…$` spaced inside its dollars is a formula rather than prose
+ * between two prices. It needs something only TeX writes: a command such as
+ * `\boxed`, or a sub- or superscript such as `k_L`, `x^2` or `k_{L,b}`. The
+ * relations `readsAsTex` also counts are not enough, since `3 $ + 5 $ = 8 $` is
+ * arithmetic on prices, and neither is a lone `_` inside a word like `MAX_PRICE`.
+ *
+ * It must also not run as prose, which `3 $ per m^2 and 5 $` does: with
+ * commands and brace groups set aside, where `\text{…}` keeps its words, a
+ * formula has at most one lowercase word of three letters or more, such as a
+ * bare `exp` or `mol`.
+ */
+function spacedReadsAsTex(tex: string): boolean {
+  if (!/\\[A-Za-z]|[\w)}\]]\^|[\w)}\]]_(?:\{|[A-Za-z0-9](?![A-Za-z0-9]))/.test(tex)) return false;
+  let rest = tex.replace(/\\(?:[A-Za-z]+|[^A-Za-z])/g, " ");
+  while (/\{[^{}]*\}/.test(rest)) rest = rest.replace(/\{[^{}]*\}/g, " ");
+  const words = rest.split(/[^\p{L}]+/u).filter((word) => /^\p{Ll}{3,}$/u.test(word));
+  return words.length < 2;
 }
 
 /** Whether a math token's delimiters ask for display rather than inline. */

@@ -67,6 +67,41 @@ test("dollar amounts in prose are not read as math", () => {
   assert.match(html, /It costs \$5 and \$10, or \$5-\$10\. A lone \$ x\$ too\./);
 });
 
+test("TeX spaced inside its dollars is typeset", () => {
+  // Issue #19: an agent wrote these on their own lines, and Pandoc's rule left
+  // them as text while the $$ formulas around them were typeset.
+  const html = render(
+    String.raw`$ \boxed{Ha_b\approx 2.07\times10^3}. $` +
+      "\n\n" +
+      String.raw`$ k_{L,b}=1.533\times10^{-4}\ \mathrm{m/s}, $` +
+      "\n\nThen $x^2 $ and $ \\ce{2OH- + CO2}$ and $ \\Delta H = 40.7 kJ mol^{-1} $."
+  );
+  assert.deepEqual(texOf(html), [
+    String.raw`\boxed{Ha_b\approx 2.07\times10^3}.`,
+    String.raw`k_{L,b}=1.533\times10^{-4}\ \mathrm{m/s},`,
+    "x^2",
+    String.raw`\ce{2OH- + CO2}`,
+    String.raw`\Delta H = 40.7 kJ mol^{-1}`,
+  ]);
+  assert.doesNotMatch(html, /\$/);
+});
+
+test("prices spaced from their dollars stay prose", () => {
+  const prose = [
+    "3 $ bananas and 5 $ apples",
+    "3 $ + 5 $ = 8 $",
+    "It costs 3 $ per m^2 and 5 $ per m^3.",
+    "Set 3 $ as MAX_PRICE, 5 $ as the floor.",
+    String.raw`Pay 3 $ for the \LaTeX course and 5 $ for books.`,
+    "Stojí 3 $ za kilo a 5 $ za m^2 balení.",
+  ];
+  for (const line of prose) {
+    const html = render(line);
+    assert.doesNotMatch(html, /katex/, line);
+    assert.ok(html.includes(line), line);
+  }
+});
+
 test("an escaped dollar is a literal dollar", () => {
   const html = render(String.raw`Pay \$x$ now`);
   assert.doesNotMatch(html, /katex/);
