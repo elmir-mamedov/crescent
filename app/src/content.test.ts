@@ -845,6 +845,27 @@ test("updateRaw restores the on-disk id when the new source omits it", async () 
   }
 });
 
+test("a page rewritten inside one mtime tick is not served from its old parse", async () => {
+  // Windows CI wrote inside the tick of the read before it, and the reload came
+  // back as the old body. Pinning the mtime makes that tick happen everywhere.
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Docs");
+    const page = await content.createPage("docs", "Deploy", "# Deploy\n");
+    const tick = new Date("2026-01-01T00:00:00Z");
+    await fs.utimes(page.fsPath, tick, tick);
+    assert.match((await content.load(page.slug))?.body ?? "", /# Deploy/);
+
+    const raw = await fs.readFile(page.fsPath, "utf8");
+    await content.updateRaw(page.slug, raw.replace("# Deploy", "# Rewritten"));
+    await fs.utimes(page.fsPath, tick, tick);
+    assert.match((await content.load(page.slug))?.body ?? "", /# Rewritten/);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
 test("updateRaw refuses to let a caller change an existing id", async () => {
   const kb: TempKb = await makeTempKb();
   try {

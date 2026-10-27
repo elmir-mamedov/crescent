@@ -462,6 +462,16 @@ export class Content {
     return entry;
   }
 
+  /**
+   * Replace a file's text and drop its cached parse. The cache trusts mtime, and
+   * a write inside the same mtime tick as the read before it leaves mtime as it
+   * was, so without this the page would keep serving its old parse.
+   */
+  private async overwrite(fsPath: string, raw: string): Promise<void> {
+    await fs.writeFile(fsPath, raw, "utf8");
+    this.parseCache.delete(fsPath);
+  }
+
   /** Load and parse a page by slug. */
   async load(slug: string): Promise<LoadedPage | null> {
     const fsPath = await this.resolve(slug);
@@ -540,7 +550,7 @@ export class Content {
       return { slug: cleanSlug(slug), raw: existing, fsPath, idPreserved };
     }
 
-    await fs.writeFile(fsPath, next, "utf8");
+    await this.overwrite(fsPath, next);
     return { slug: cleanSlug(slug), raw: next, fsPath, idPreserved };
   }
 
@@ -727,7 +737,7 @@ export class Content {
     const nextRaw = stringifyPage(parsed.body, nextData);
     parsePage(nextRaw, fsPath);
 
-    await fs.writeFile(fsPath, nextRaw, "utf8");
+    await this.overwrite(fsPath, nextRaw);
     return { slug: clean, fsPath, changedFsPaths: [fsPath] };
   }
 
@@ -771,9 +781,7 @@ export class Content {
     const nextRaw = stringifyPage(parsed.body, nextData);
     parsePage(nextRaw, fsPath);
 
-    await fs.writeFile(fsPath, nextRaw, "utf8");
-    // Two writes inside one mtime tick would otherwise serve the old parse.
-    this.parseCache.delete(fsPath);
+    await this.overwrite(fsPath, nextRaw);
     return { slug: clean, fsPath, changedFsPaths: [fsPath] };
   }
 
@@ -863,7 +871,7 @@ export class Content {
     const nextRaw = stringifyPage(parsed.body, nextData);
     parsePage(nextRaw, fsPath);
 
-    await fs.writeFile(fsPath, nextRaw, "utf8");
+    await this.overwrite(fsPath, nextRaw);
     return { key: clean, fsPath, changedFsPaths: [fsPath] };
   }
 
@@ -1376,8 +1384,7 @@ export class Content {
         postIsPage,
       });
       if (next !== raw) {
-        await fs.writeFile(node.fsPath, next, "utf8");
-        this.parseCache.delete(node.fsPath);
+        await this.overwrite(node.fsPath, next);
         changed.push(node.fsPath);
       }
     }
@@ -1581,7 +1588,7 @@ export class Content {
     const nextRaw = stringifyPage(parsed.body, data);
     if (nextRaw === raw) return false;
 
-    await fs.writeFile(fsPath, nextRaw, "utf8");
+    await this.overwrite(fsPath, nextRaw);
     return true;
   }
 
@@ -1596,7 +1603,7 @@ export class Content {
     parsePage(nextRaw, fsPath);
     if (nextRaw === raw) return false;
 
-    await fs.writeFile(fsPath, nextRaw, "utf8");
+    await this.overwrite(fsPath, nextRaw);
     return true;
   }
 
@@ -1630,7 +1637,7 @@ export class Content {
     parsePage(nextRaw, fsPath);
     if (nextRaw === raw) return false;
 
-    await fs.writeFile(fsPath, nextRaw, "utf8");
+    await this.overwrite(fsPath, nextRaw);
     return true;
   }
 }
