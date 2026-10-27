@@ -1518,6 +1518,39 @@ test("views: a server started from a terminal offers no Quit", () => {
   }
 });
 
+/** Render with a change feed at `cursor`, then put the default back. */
+function following<T>(cursor: string, render: () => T): T {
+  configureViews({ desktop: false, changeCursor: () => cursor });
+  try {
+    return render();
+  } finally {
+    configureViews({ desktop: false });
+  }
+}
+
+test("views: a page follows the change feed from the cursor it was rendered at", () => {
+  const html = following("feed1234.7", () => layout(pageView()));
+  assert.match(
+    html,
+    /<div class="update-card" data-changes data-cursor="feed1234\.7" data-space="kb25" data-slug="kb25\/notes" role="status" aria-live="polite" hidden><\/div>/
+  );
+  assert.match(html, /new EventSource\("\/_changes\?since=" \+ encodeURIComponent\(cursor\)\)/);
+  // The spaces list follows every space; the folder and diff views follow theirs.
+  assert.match(following("f.0", () => spacesLayout(spacesView())), /data-changes data-cursor="f\.0" data-space="" data-slug=""/);
+  assert.match(following("f.0", () => folderLayout(folderView())), /data-changes data-cursor="f\.0"/);
+});
+
+test("views: the editor never reloads over unsaved edits, and no feed means no follower", () => {
+  assert.doesNotMatch(following("f.0", () => editLayout(editView())), /data-changes|\/_changes/);
+  assert.doesNotMatch(layout(pageView()), /data-changes|\/_changes/);
+});
+
+test("views: a chat turn ending tells the change follower it may reload", () => {
+  const html = following("f.0", () => layout(pageView()));
+  assert.match(html, /document\.dispatchEvent\(new Event\("kb25:chat-idle"\)\)/);
+  assert.match(html, /document\.addEventListener\("kb25:chat-idle", apply\)/);
+});
+
 test("views: a launcher-started server's corner offers Quit, behind a confirmation", () => {
   for (const html of asDesktop(() => [
     spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),

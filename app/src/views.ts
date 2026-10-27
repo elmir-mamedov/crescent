@@ -14,13 +14,17 @@ import type { RenderedNote, Section } from "./markdown.js";
 
 /** Set once at startup by {@link configureViews}; read by every page. */
 let desktop = false;
+let changeCursor: (() => string) | undefined;
 
 /**
  * `desktop`: a launcher started this server (KB25_DESKTOP), so the corner
  * offers Quit (QUIT_SCRIPT) to a page in an ordinary browser tab.
+ * `changeCursor`: where the KB's change feed is (changes.ts), which a page is
+ * rendered with so that it follows the changes after it (CHANGES_SCRIPT).
  */
-export function configureViews(options: { desktop: boolean }): void {
+export function configureViews(options: { desktop: boolean; changeCursor?: () => string }): void {
   desktop = options.desktop;
+  changeCursor = options.changeCursor;
 }
 
 export function escapeHtml(s: string): string {
@@ -675,7 +679,17 @@ function instructionsLink(spaceKey: string): string {
  * that draws it is past sign-in; with sign-in off there is no username, so the
  * corner keeps its tools and drops only the session part.
  */
-function sessionCorner(username?: string | null, spaceKey = "", chatSlug = ""): string {
+/**
+ * `follow`: the page reloads when the KB changes under it (CHANGES_SCRIPT). The
+ * editor doesn't, since a reload would take the reader's unsaved edits with it.
+ */
+function sessionCorner(username?: string | null, spaceKey = "", chatSlug = "", follow = true): string {
+  const cursor = follow ? changeCursor?.() : undefined;
+  const changesCard =
+    cursor === undefined
+      ? ""
+      : `<div class="update-card" data-changes data-cursor="${escapeHtml(cursor)}" data-space="${escapeHtml(spaceKey)}" data-slug="${escapeHtml(chatSlug)}" role="status" aria-live="polite" hidden></div>
+<script>${CHANGES_SCRIPT}</script>`;
   return `<div class="session-corner">
     ${CHAT_BUTTON}
     ${instructionsLink(spaceKey)}
@@ -691,7 +705,7 @@ ${chatDrawer(chatSlug)}
 <script>${CHAT_SCRIPT}</script>
 ${HELP_DIALOG}${desktop ? QUIT_DIALOG : ""}
 <script>${HELP_SCRIPT}</script>
-<script>${UPDATE_SCRIPT}</script>
+<script>${UPDATE_SCRIPT}</script>${changesCard ? `\n${changesCard}` : ""}
 <script type="module">${FEEDBACK_SCRIPT}</script>`;
 }
 
@@ -1393,7 +1407,7 @@ export function editLayout(v: EditView): string {
 <html lang="en">
 ${renderHead(`Edit ${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, SIDEBAR_RENDER_HOLD)}
 <body>
-${sessionCorner(v.username, v.spaceKey, v.activeSlug)}
+${sessionCorner(v.username, v.spaceKey, v.activeSlug, false)}
 ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.labelSet)}
 <main class="content editor-content">
   ${breadcrumb(v.activeSlug, v.titles)}
@@ -1886,7 +1900,10 @@ const CHAT_SCRIPT = `
     busy = on;
     sendBtn.hidden = on;
     stopBtn.hidden = !on;
-    if (!on) setActivity("");
+    if (on) return;
+    setActivity("");
+    // CHANGES_SCRIPT holds its reload while a turn runs.
+    document.dispatchEvent(new Event("kb25:chat-idle"));
   }
 
   function setActivity(text) {
@@ -2493,6 +2510,119 @@ const UPDATE_SCRIPT = `
     }
     if (s.available && s.state !== "updating" && store.get(DISMISSED) !== s.latest) offer(s);
   }).catch(() => {});
+})();
+`;
+
+/**
+ * Follows the KB's change feed (changes.ts) from the cursor the page was
+ * rendered with, so a page an agent wrote shows up without a click (feedback
+ * issue #17). A change to the open page, or to any page in the sidebar's space,
+ * reloads the page, unless that would take something from the reader: then the
+ * card offers the reload instead. A turn in this window's chat, a press, or the
+ * update card holds it until they end, so a turn that writes three pages costs
+ * one reload, when it is done.
+ *
+ * A hidden page lets its stream go, since a browser keeps only six open to a
+ * server and every page holds one, and asks for what it missed when shown again.
+ */
+const CHANGES_SCRIPT = `
+(() => {
+  const card = document.querySelector("[data-changes]");
+  if (!card || !window.EventSource) return;
+  const space = card.dataset.space || "";
+  const slug = card.dataset.slug || "";
+  let cursor = card.dataset.cursor || "";
+  let source = null;
+  let pressed = false;
+  // "page" once the open page has changed, "space" while only others have.
+  let pending = null;
+
+  // Null slugs are a change the feed couldn't name, so it may be this page.
+  function affects(slugs) {
+    if (!slugs || (slug && slugs.includes(slug))) return "page";
+    return slugs.some((s) => !space || s === space || s.startsWith(space + "/")) ? "space" : null;
+  }
+
+  function held() {
+    const stop = document.querySelector("[data-chat-stop]");
+    const update = document.querySelector("[data-update]");
+    return pressed || (stop && !stop.hidden) || (update && !update.hidden);
+  }
+
+  // Text not yet sent or saved, an open dialog, or a selection on its way to
+  // becoming a note. A field that isn't shown, in a closed dialog, keeps
+  // whatever it last held and counts for nothing.
+  function busy() {
+    if (document.querySelector("dialog[open]")) return true;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && selection.toString().trim()) return true;
+    const fields = document.querySelectorAll("textarea, input:not([type]), input[type=text], input[type=search]");
+    for (const field of fields) {
+      if (field.value !== field.defaultValue && field.getClientRects().length) return true;
+    }
+    return false;
+  }
+
+  const button = (label, variant, onClick) => {
+    const node = document.createElement("button");
+    node.type = "button";
+    node.className = "button " + variant;
+    node.textContent = label;
+    node.addEventListener("click", onClick);
+    return node;
+  };
+
+  function offer() {
+    const title = document.createElement("p");
+    title.className = "update-title";
+    title.textContent = pending === "page" ? "This page has changed" : "Pages here have changed";
+    const text = document.createElement("p");
+    text.className = "update-text";
+    text.textContent = "Reload to see the latest version.";
+    const actions = document.createElement("div");
+    actions.className = "update-actions";
+    actions.append(
+      button("Later", "secondary", () => { pending = null; card.hidden = true; card.replaceChildren(); }),
+      button("Reload", "primary", () => location.reload())
+    );
+    card.replaceChildren(title, text, actions);
+    card.hidden = false;
+  }
+
+  // Once offered, the reload is the reader's to make; a later change only
+  // updates what the card says.
+  function apply() {
+    if (!pending || held()) return;
+    if (!card.hidden || busy()) return offer();
+    location.reload();
+  }
+
+  function connect() {
+    if (source || document.hidden) return;
+    source = new EventSource("/_changes?since=" + encodeURIComponent(cursor));
+    source.onmessage = (event) => {
+      if (event.lastEventId) cursor = event.lastEventId;
+      let data;
+      try { data = JSON.parse(event.data); } catch { return; }
+      const change = affects(data.slugs);
+      if (!change) return;
+      pending = pending === "page" ? "page" : change;
+      apply();
+    };
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) return connect();
+    if (source) source.close();
+    source = null;
+  });
+  document.addEventListener("pointerdown", () => { pressed = true; }, true);
+  const released = () => { pressed = false; setTimeout(apply, 0); };
+  document.addEventListener("pointerup", released, true);
+  document.addEventListener("pointercancel", released, true);
+  document.addEventListener("click", () => setTimeout(apply, 0));
+  document.addEventListener("kb25:chat-idle", apply);
+  connect();
 })();
 `;
 

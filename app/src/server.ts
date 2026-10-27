@@ -23,6 +23,7 @@ import {
   type TreeFilter,
 } from "./content.js";
 import { assetHeaders } from "./assets.js";
+import { ChangeFeed, type ChangeBatch } from "./changes.js";
 import { makeGit } from "./git.js";
 import { makeSeenPages } from "./seen.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
@@ -157,7 +158,12 @@ const AUTH_SESSION_SECRET = AUTH_DISABLED
 // and a page in an ordinary browser tab gets a Quit button. Loopback only: on
 // a wider bind it would let any visitor stop the server.
 const DESKTOP = envFlag("KB25_DESKTOP") && isLoopbackHost(HOST);
-configureViews({ desktop: DESKTOP });
+// Writes to the KB that open pages should show: an agent's through MCP, a
+// pull's, another editor's. Each page is rendered with the feed's cursor and
+// follows it from there on GET /_changes.
+const changes = new ChangeFeed(KB_DIR);
+changes.start();
+configureViews({ desktop: DESKTOP, changeCursor: () => changes.cursor });
 const SESSION_COOKIE = "kb_session";
 const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 
@@ -170,7 +176,21 @@ const seen = makeSeenPages(KB_DIR, async () =>
 // Multi-machine sync, off unless KB_SYNC is set. Every auto-commit re-arms a
 // debounced push; failures never reach the request that triggered them.
 const sync = syncFromEnv(KB_DIR);
-const git = makeGit(KB_DIR, sync ? (repoRoot) => sync.notifyCommit(repoRoot) : undefined);
+const kbGit = makeGit(KB_DIR, sync ? (repoRoot) => sync.notifyCommit(repoRoot) : undefined);
+// Every write this server makes ends in one of these commits, with the paths it
+// wrote. The page that made the write already shows it, so the change feed
+// leaves those paths out rather than reload that page over what it has open.
+const git: typeof kbGit = {
+  ...kbGit,
+  commitFiles: (fsPaths, message) => {
+    changes.ownWrite(fsPaths);
+    return kbGit.commitFiles(fsPaths, message);
+  },
+  commitMovedPaths: (fsPaths, message) => {
+    changes.ownWrite(fsPaths);
+    return kbGit.commitMovedPaths(fsPaths, message);
+  },
+};
 // TRUST_PROXY only when the viewer really does sit behind one: it makes Fastify
 // believe `x-forwarded-*`, which is what lets `req.protocol` and `req.ip` report
 // the client rather than the proxy. Believing those headers unproxied would let
@@ -2385,6 +2405,31 @@ app.get("/_chat/threads/:id/events", async (req, reply) => {
   else reply.raw.on("close", unsubscribe);
 });
 
+// The change feed as it happens, for an open page's CHANGES_SCRIPT: first the
+// batches after the page's cursor (EventSource sends the last one it saw as
+// Last-Event-ID when it reconnects), then each new batch.
+const changeStreams = new Set<NodeJS.WritableStream & { end(): unknown }>();
+app.get("/_changes", async (req, reply) => {
+  const lastSeen = req.headers["last-event-id"];
+  const { since } = req.query as { since?: unknown };
+  const cursor = typeof lastSeen === "string" && lastSeen ? lastSeen : typeof since === "string" ? since : "";
+  reply.hijack();
+  reply.raw.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+  reply.raw.write("retry: 2000\n\n");
+  const send = (batch: ChangeBatch) => {
+    if (!reply.raw.writableEnded) {
+      reply.raw.write(`id: ${batch.cursor}\ndata: ${JSON.stringify({ slugs: batch.slugs })}\n\n`);
+    }
+  };
+  for (const batch of changes.since(cursor)) send(batch);
+  const unsubscribe = changes.subscribe(send);
+  changeStreams.add(reply.raw);
+  reply.raw.on("close", () => {
+    unsubscribe();
+    changeStreams.delete(reply.raw);
+  });
+});
+
 app.post("/_chat/threads/:id/stop", async (req, reply) => {
   return reply.send({ ok: chat.stop(chatThreadId(req)) });
 });
@@ -2452,6 +2497,13 @@ async function shutdown(reason: string, closeWindow = false): Promise<void> {
     } catch {}
   }
   windows.clear();
+  changes.close();
+  for (const stream of changeStreams) {
+    try {
+      stream.end();
+    } catch {}
+  }
+  changeStreams.clear();
   // End chat turns cleanly, so their threads are saved and can be resumed.
   await Promise.race([chat.stopAll(), new Promise((resolve) => setTimeout(resolve, 5000))]);
   // Let a save already under way finish, but never wait on it for long.
