@@ -21,6 +21,10 @@
     <Reference Include="System.Windows.Forms" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The loading window's page, which the macOS window shows too. -->
+    <EmbeddedResource Include="../splash.html" LogicalName="splash.html" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <!-- Lets the build run where .NET Framework is not installed (macOS, Linux). -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />

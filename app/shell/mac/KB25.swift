@@ -4,18 +4,21 @@
 // KB25.app's Info.plist names the command that starts the server
 // (KB25StartCommand): the installer's launcher.mjs, or the developer launcher's
 // script. It starts the server unless one already answers and prints the
-// server's address, which the window opens. Closing the window, or Cmd+Q, asks
-// the server to quit with POST /_quit?when=idle, which waits for a chat reply
-// still being written. The page's power button stops the server itself, which
-// says "quit" on GET /_window, and the app quits with it. A restart, as an
-// update does, ends that stream without a word, and the app listens again.
+// server's address, which the window opens. Until its first page has loaded,
+// the window stays hidden behind a small loading window (shell/splash.html).
+// Closing the window, or Cmd+Q, asks the server to quit with POST
+// /_quit?when=idle, which waits for a chat reply still being written. The
+// page's power button stops the server itself, which says "quit" on GET
+// /_window, and the app quits with it. A restart, as an update does, ends that
+// stream without a word, and the app listens again.
 //
 // Links that leave KB25, and links asked for in a new window, open in the
-// default browser. Built by scripts/build-shell.mjs.
+// default browser. Built by scripts/build-shell.mjs, which adds the loading
+// window's page as AppDelegate.splashPage.
 import Cocoa
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler {
   private var window: NSWindow!
   private var webView: WKWebView!
   private var titleObservation: NSKeyValueObservation?
@@ -28,10 +31,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var signalSource: DispatchSourceSignal?
   /// KB25's dark background (--bg in views.ts), its default theme.
   private static let background = NSColor(srgbRed: 13 / 255, green: 17 / 255, blue: 23 / 255, alpha: 1)
+  /// The loading window's border (--line in views.ts).
+  private static let line = NSColor(srgbRed: 48 / 255, green: 54 / 255, blue: 61 / 255, alpha: 1)
+  /// The small loading window, shown until the first page has loaded behind it.
+  private var splash: NSWindow?
+  private var splashView: WKWebView?
+  private var splashLoaded = false
+  /// The first page has loaded in the hidden main window.
+  private var pageReady = false
+  private var readySent = false
+  /// The main window has taken over from the loading window.
+  private var revealed = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.mainMenu = makeMainMenu()
     makeWindow()
+    makeSplash()
     quitOnSIGTERM()
     startServer()
   }
@@ -39,6 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+    if !revealed {
+      splash?.orderFrontRegardless()
+      return true
+    }
     window.makeKeyAndOrderFront(nil)
     return true
   }
@@ -101,6 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         self.server = url
         self.webView.load(URLRequest(url: url))
         self.listenForQuit(url)
+        // Should the first page never finish, don't keep the main window hidden.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { self.reveal() }
       }
     }
     do {
@@ -182,9 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       let title = webView.title ?? ""
       self?.window.title = title.isEmpty ? "Crescent" : title
     }
-    // Shown once the dark "Starting" page has painted: an empty web view is
-    // white. The timer covers that page never finishing.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.showWindow() }
+    // Shown by reveal(), once the loading window has played the moon.
   }
 
   private func showWindow() {
@@ -194,7 +213,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   }
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-    showWindow()
+    if webView === splashView {
+      splashLoaded = true
+      showSplash()
+      sendReady()
+      return
+    }
+    guard !revealed, let scheme = webView.url?.scheme, scheme == "http" || scheme == "https" else { return }
+    pageReady = true
+    sendReady()
   }
 
   /// A message page in KB25's dark colours, for before and between pages.
@@ -205,6 +232,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       <style>html{height:100%;display:grid;place-items:center;background:#0d1117;color:#8b949e;font:15px -apple-system,sans-serif}</style>
       <p>\(message)</p>\(script)
       """
+  }
+
+  // MARK: The loading window
+
+  /// A small borderless window in KB25's dark colours: the ticker while the
+  /// server starts and the first page loads behind it, then the moon.
+  private func makeSplash() {
+    let frame = NSRect(x: 0, y: 0, width: 320, height: 220)
+    let configuration = WKWebViewConfiguration()
+    configuration.userContentController.add(self, name: "splash")
+    let view = WKWebView(frame: frame, configuration: configuration)
+    view.navigationDelegate = self
+    view.autoresizingMask = [.width, .height]
+    if #available(macOS 12.0, *) { view.underPageBackgroundColor = Self.background }
+    view.loadHTMLString(Self.splashPage, baseURL: nil)
+
+    let container = NSView(frame: frame)
+    container.wantsLayer = true
+    container.layer?.backgroundColor = Self.background.cgColor
+    container.layer?.cornerRadius = 12
+    container.layer?.masksToBounds = true
+    container.layer?.borderWidth = 1
+    container.layer?.borderColor = Self.line.cgColor
+    container.addSubview(view)
+
+    let panel = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    panel.title = "Crescent"
+    panel.isOpaque = false
+    panel.backgroundColor = .clear
+    panel.hasShadow = true
+    panel.isReleasedWhenClosed = false
+    panel.contentView = container
+    panel.center()
+    splash = panel
+    splashView = view
+    // Shown once its page has painted, as an empty web view is white; the
+    // timer covers that page never finishing.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.showSplash() }
+  }
+
+  private func showSplash() {
+    guard let splash, !revealed, !splash.isVisible else { return }
+    splash.orderFrontRegardless()
+    splash.invalidateShadow()
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  /// Once both pages have loaded, the loading window plays the moon and then says "done".
+  private func sendReady() {
+    guard pageReady, splashLoaded, !readySent, !revealed else { return }
+    readySent = true
+    splashView?.evaluateJavaScript("crescentReady()")
+    // Should the page never say so, don't keep the main window hidden.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.reveal() }
+  }
+
+  private func setSplashStatus(_ text: String) {
+    guard splashLoaded else { return }
+    splashView?.evaluateJavaScript("crescentStatus(\(String(reflecting: text)))")
+  }
+
+  func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+    if message.name == "splash", message.body as? String == "done" { reveal() }
+  }
+
+  /// Hand over from the loading window to the main one.
+  private func reveal() {
+    guard !revealed else { return }
+    revealed = true
+    showWindow()
+    splash?.orderOut(nil)
+    // Let it go once this turn is over: this may be answering its page's message.
+    DispatchQueue.main.async {
+      self.splashView?.configuration.userContentController.removeScriptMessageHandler(forName: "splash")
+      self.splash = nil
+      self.splashView = nil
+    }
   }
 
   // MARK: Links and downloads
@@ -316,11 +420,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   /// The server is not answering: say so, and keep trying, since an update
   /// restarting it is the usual reason.
   func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    guard webView !== splashView else { return }
     let error = error as NSError
     // Cancelled by this app (a link handed on, a download): nothing failed.
     if error.code == NSURLErrorCancelled || (error.domain == "WebKitErrorDomain" && error.code == 102) { return }
     guard let url = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL, isKB25(url) else { return }
     failedURL = url
+    if !revealed { setSplashStatus("Crescent isn’t answering. Trying again…") }
     webView.loadHTMLString(Self.page("Crescent isn’t answering. Trying again…", retry: url), baseURL: nil)
   }
 

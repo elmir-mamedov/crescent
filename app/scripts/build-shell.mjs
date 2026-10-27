@@ -5,6 +5,9 @@
 //   shell/build/windows/     KB25.exe and the WebView2 libraries, built with the
 //                            .NET SDK, which builds it on any system
 //
+// Both carry the loading window's page, shell/splash.html: the macOS one as a
+// string added to its source here, the Windows one as a resource (KB25.csproj).
+//
 // Each is built where its tools are; the other is skipped, so CI can build
 // each on its own system. `--require mac,windows` fails instead, for the
 // release, which ships both. DOTNET names the dotnet to use.
@@ -32,7 +35,8 @@ export function buildMacShell() {
   const dir = path.join(out, "mac");
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
-  const source = path.join(appDir, "shell", "mac", "KB25.swift");
+  const source = path.join(dir, "main.swift");
+  fs.writeFileSync(source, macSource());
   const slices = ["arm64", "x86_64"].map((arch) => {
     const file = path.join(dir, `KB25-${arch}`);
     execFileSync("swiftc", ["-O", "-swift-version", "5", "-target", `${arch}-apple-macos13`, "-o", file, source], {
@@ -42,8 +46,32 @@ export function buildMacShell() {
   });
   const binary = path.join(dir, "KB25");
   execFileSync("lipo", ["-create", ...slices, "-output", binary]);
-  for (const slice of slices) fs.rmSync(slice);
+  for (const file of [...slices, source]) fs.rmSync(file);
   return binary;
+}
+
+/**
+ * shell/mac/KB25.swift with shell/splash.html added as AppDelegate.splashPage,
+ * as one file: swiftc runs top-level code only from a lone file or main.swift.
+ * #sourceLocation keeps errors pointing at KB25.swift.
+ */
+function macSource() {
+  const file = path.join(appDir, "shell", "mac", "KB25.swift");
+  const page = fs.readFileSync(path.join(appDir, "shell", "splash.html"), "utf8");
+  // A raw string, with enough #s that nothing in the page ends or escapes it.
+  let hashes = "#";
+  while (page.includes(`"""${hashes}`) || page.includes(`\\${hashes}`)) hashes += "#";
+  return [
+    `#sourceLocation(file: ${JSON.stringify(file)}, line: 1)`,
+    fs.readFileSync(file, "utf8"),
+    "#sourceLocation()",
+    "extension AppDelegate {",
+    `  static let splashPage = ${hashes}"""`,
+    page.replace(/\r?\n$/, ""),
+    `"""${hashes}`,
+    "}",
+    "",
+  ].join("\n");
 }
 
 /** Build shell/build/windows/ and return its path, or null without the .NET SDK. */

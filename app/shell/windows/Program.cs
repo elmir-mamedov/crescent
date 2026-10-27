@@ -4,7 +4,9 @@
 // KB25.exe lives in <KB25_HOME>\shell\<version>\, outside app\, which an update
 // replaces while the window is open. It runs the installer's launcher.mjs,
 // which starts the server unless one already answers and prints the server's
-// address, and opens that address. Closing the window asks the server to quit
+// address, and opens that address. Until its first page has loaded, the window
+// stays hidden behind a small loading window (shell/splash.html, built in as a
+// resource by KB25.csproj). Closing the window asks the server to quit
 // with POST /_quit?when=idle, which waits for a chat reply still being written.
 // The page's power button stops the server itself, which says "quit" on GET
 // /_window, and the window closes with it. A restart, as an update does, ends
@@ -59,13 +61,17 @@ namespace KB25
         readonly string home;
         // KB25's dark background (--bg in views.ts), its default theme, so the
         // window is never white before the first page paints.
-        static readonly Color Background = Color.FromArgb(0x0d, 0x11, 0x17);
+        internal static readonly Color Background = Color.FromArgb(0x0d, 0x11, 0x17);
         readonly WebView2 web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Background };
         readonly HttpClient http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         Uri server;
         Uri requested;
         // The server quit first (its power button), so there is nothing to stop.
         bool serverQuit;
+        // The small loading window, shown until the first page has loaded in this
+        // one, which stays hidden until then.
+        readonly SplashWindow splash;
+        bool launched, revealed, closing;
 
         string BoundsFile => Path.Combine(home, "window-bounds.txt");
 
@@ -79,8 +85,14 @@ namespace KB25
             StartPosition = FormStartPosition.CenterScreen;
             RestoreSavedBounds();
             Controls.Add(web);
-            Load += async (sender, e) => await StartAsync();
             FormClosing += OnClosing;
+            FormClosed += (sender, e) =>
+            {
+                if (!splash.IsDisposed) splash.Close();
+            };
+            splash = new SplashWindow(Icon);
+            splash.Done += Reveal;
+            splash.FormClosed += OnSplashClosed;
             var listener = new Thread(() =>
             {
                 while (show.WaitOne())
@@ -92,6 +104,43 @@ namespace KB25
             listener.Start();
         }
 
+        /// <summary>
+        /// Stay hidden behind the loading window until the first page has loaded;
+        /// the first request to show starts everything instead.
+        /// </summary>
+        protected override void SetVisibleCore(bool value)
+        {
+            if (value && !revealed)
+            {
+                if (!launched)
+                {
+                    launched = true;
+                    if (!IsHandleCreated) CreateHandle();
+                    splash.Show();
+                    BeginInvoke((Action)(async () => await StartAsync()));
+                }
+                value = false;
+            }
+            base.SetVisibleCore(value);
+        }
+
+        /// <summary>Hand over from the loading window to this one.</summary>
+        void Reveal()
+        {
+            if (revealed || IsDisposed) return;
+            revealed = true;
+            Show();
+            Activate();
+            splash.Close();
+        }
+
+        /// <summary>The loading window closed before handing over (Alt+F4): quit.</summary>
+        void OnSplashClosed(object sender, FormClosedEventArgs e)
+        {
+            // Once it has finished closing, not from inside its close.
+            if (!revealed && !closing && !IsDisposed) BeginInvoke((Action)Close);
+        }
+
         async Task StartAsync()
         {
             try
@@ -99,10 +148,16 @@ namespace KB25
                 // Its own data folder, beside the install, so pages keep their
                 // settings across updates.
                 var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(home, "webview"));
+                // The loading window first, as it is the one on screen.
+                _ = splash.StartAsync(environment);
+                // This window is still hidden, so its web view gets its handle made here.
+                if (!web.IsHandleCreated) { var unused = web.Handle; }
                 await web.EnsureCoreWebView2Async(environment);
             }
             catch (WebView2RuntimeNotFoundException)
             {
+                splash.FormClosed -= OnSplashClosed;
+                splash.Close();
                 MessageBox.Show(
                     "Crescent needs the Microsoft Edge WebView2 Runtime for its window, so it opens in your browser instead.",
                     "Crescent");
@@ -137,6 +192,10 @@ namespace KB25
             }
             server = new Uri(started);
             core.Navigate(started);
+            // Should the first page never finish, don't keep this window hidden.
+            var fallback = new System.Windows.Forms.Timer { Interval = 10000 };
+            fallback.Tick += (sender, e) => { fallback.Stop(); fallback.Dispose(); Reveal(); };
+            fallback.Start();
             await ListenForQuitAsync();
         }
 
@@ -235,14 +294,24 @@ namespace KB25
         /// </summary>
         void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            if (e.IsSuccess || requested == null) return;
+            if (e.IsSuccess)
+            {
+                // The first page has loaded behind the loading window: play the moon.
+                var source = web.CoreWebView2.Source ?? "";
+                if (!revealed && (source.StartsWith("http://") || source.StartsWith("https://"))) splash.Ready();
+                return;
+            }
+            if (requested == null) return;
             if (e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled) return;
+            if (!revealed) splash.Status("Crescent isn’t answering. Trying again…");
             web.CoreWebView2.NavigateToString(Page("Crescent isn’t answering. Trying again…", requested));
         }
 
         void OnClosing(object sender, FormClosingEventArgs e)
         {
-            SaveBounds();
+            closing = true;
+            // A window never shown is where it was put, maximized or not.
+            if (revealed) SaveBounds();
             if (serverQuit || server == null) return;
             try
             {
@@ -254,6 +323,11 @@ namespace KB25
 
         void BringForward()
         {
+            if (!revealed)
+            {
+                splash.Activate();
+                return;
+            }
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
             Activate();
         }
@@ -269,7 +343,7 @@ namespace KB25
                 + "<p>" + message + "</p>" + script;
         }
 
-        static string JsonString(string value) =>
+        internal static string JsonString(string value) =>
             "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("<", "\\u003c") + "\"";
 
         void RestoreSavedBounds()
@@ -296,6 +370,113 @@ namespace KB25
                 File.WriteAllText(BoundsFile, $"{bounds.X},{bounds.Y},{bounds.Width},{bounds.Height},{maximized}");
             }
             catch (Exception) { }
+        }
+    }
+
+    /// <summary>
+    /// The small loading window: a borderless 320×220 web view showing the ticker
+    /// while the server starts, then the moon once KB25Window says its first page
+    /// has loaded, after which the page says "done" and KB25Window takes over.
+    /// </summary>
+    sealed class SplashWindow : Form
+    {
+        [DllImport("dwmapi.dll")]
+        static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+        const int DwmwaWindowCornerPreference = 33, DwmwaBorderColor = 34, DwmwcpRound = 2;
+        // --line in views.ts (#30363d), as a COLORREF.
+        const int BorderColor = 0x3d3630;
+
+        readonly WebView2 web = new WebView2
+        {
+            Dock = DockStyle.Fill,
+            DefaultBackgroundColor = KB25Window.Background,
+            AllowExternalDrop = false,
+        };
+        bool loaded, readyAsked, readySent;
+        string status;
+        public event Action Done;
+
+        public SplashWindow(Icon icon)
+        {
+            Text = "Crescent";
+            Icon = icon;
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.CenterScreen;
+            ClientSize = new Size(320, 220);
+            BackColor = KB25Window.Background;
+            Controls.Add(web);
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            // Windows 11 rounds the corners and draws the border; Windows 10 ignores both.
+            int round = DwmwcpRound, border = BorderColor;
+            DwmSetWindowAttribute(Handle, DwmwaWindowCornerPreference, ref round, sizeof(int));
+            DwmSetWindowAttribute(Handle, DwmwaBorderColor, ref border, sizeof(int));
+        }
+
+        public async Task StartAsync(CoreWebView2Environment environment)
+        {
+            try
+            {
+                await web.EnsureCoreWebView2Async(environment);
+                var core = web.CoreWebView2;
+                core.Settings.AreDefaultContextMenusEnabled = false;
+                // No reloading it (F5, Ctrl+R), which would start the ticker over.
+                core.Settings.AreBrowserAcceleratorKeysEnabled = false;
+                core.NavigationCompleted += (sender, e) => { loaded = true; Flush(); };
+                core.WebMessageReceived += (sender, e) =>
+                {
+                    string message = null;
+                    try { message = e.TryGetWebMessageAsString(); } catch (ArgumentException) { }
+                    // Once this event is over: Done closes this window and its web view.
+                    if (message == "done") BeginInvoke((Action)(() => Done?.Invoke()));
+                };
+                core.NavigateToString(ReadPage());
+            }
+            catch (Exception) { }
+        }
+
+        /// <summary>The first page has loaded: play the moon.</summary>
+        public void Ready()
+        {
+            readyAsked = true;
+            Flush();
+        }
+
+        /// <summary>Change the line under the ticker.</summary>
+        public void Status(string text)
+        {
+            status = text;
+            Flush();
+        }
+
+        void Flush()
+        {
+            if (!loaded || IsDisposed) return;
+            if (status != null)
+            {
+                _ = web.CoreWebView2.ExecuteScriptAsync("crescentStatus(" + KB25Window.JsonString(status) + ")");
+                status = null;
+            }
+            if (!readyAsked || readySent) return;
+            readySent = true;
+            _ = web.CoreWebView2.ExecuteScriptAsync("crescentReady()");
+            // Should the page never say "done", don't keep the main window hidden.
+            var fallback = new System.Windows.Forms.Timer { Interval = 5000 };
+            fallback.Tick += (sender, e) => { fallback.Stop(); fallback.Dispose(); Done?.Invoke(); };
+            fallback.Start();
+        }
+
+        /// <summary>The page, shell/splash.html, which KB25.csproj builds in.</summary>
+        static string ReadPage()
+        {
+            using (var stream = typeof(SplashWindow).Assembly.GetManifestResourceStream("splash.html"))
+            using (var reader = new StreamReader(stream))
+            {
+                return reader.ReadToEnd();
+            }
         }
     }
 }
