@@ -189,7 +189,7 @@ test("an escaped dollar is a literal dollar", () => {
 test("a $$ block is display math, anchored like any other block", () => {
   const html = render("Intro.\n\n$$\nQ = a\n- b\n$$\n\nAfter.\n");
   // `- b` would start a list if the lines were left to the paragraph rule.
-  assert.doesNotMatch(html, /<ul>/);
+  assert.doesNotMatch(html, /<ul/);
   assert.match(html, /<div class="math-block" data-src-line="2" data-src-hash="[0-9a-f]{8}"><span class="katex-display">/);
   assert.deepEqual(texOf(html), ["Q = a\n- b"]);
   assert.match(html, /<p[^>]*>After\.<\/p>/);
@@ -262,7 +262,7 @@ test("\\(…\\) and \\[…\\] are typeset by KaTeX with their backslashes intact
 
 test("a \\[ … \\] block is display math, anchored like any other block", () => {
   const html = render("Intro.\n\n\\[\nQ = a \\\\\n- b\n\\]\n\nAfter.\n");
-  assert.doesNotMatch(html, /<ul>/);
+  assert.doesNotMatch(html, /<ul/);
   assert.match(html, /<div class="math-block" data-src-line="2" data-src-hash="[0-9a-f]{8}"><span class="katex-display">/);
   assert.deepEqual(texOf(html), ["Q = a \\\\\n- b"]);
   assert.match(html, /<p[^>]*>After\.<\/p>/);
