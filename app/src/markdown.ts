@@ -401,28 +401,19 @@ function mathInline(state: StateInline, silent: boolean): boolean {
   // `$$…$$` in the middle of a paragraph is display math all the same.
   const display = src.charCodeAt(start + 1) === 0x24;
   const open = display ? 2 : 1;
-  let end = -1;
+  let end: number;
+  let tex: string;
+  let spaced = false;
   if (display) {
     end = src.indexOf("$$", start + 2);
-    if (end >= state.posMax) end = -1;
+    if (end < 0 || end >= state.posMax) return false;
+    tex = src.slice(start + 2, end).trim();
+    if (!tex) return false;
   } else {
-    for (let pos = start + 1; pos < state.posMax; pos += 1) {
-      const code = src.charCodeAt(pos);
-      if (code === 0x5c /* \ */) {
-        pos += 1;
-        continue;
-      }
-      if (code !== 0x24) continue;
-      if (!/[0-9]/.test(src.charAt(pos + 1))) end = pos;
-      break;
-    }
+    const formula = singleDollar(src, start, state.posMax);
+    if (!formula) return false;
+    ({ end, tex, spaced } = formula);
   }
-  if (end < 0) return false;
-  const tex = src.slice(start + open, end).trim();
-  if (!tex) return false;
-  const spaced =
-    !display && (isSpaceCode(src.charCodeAt(start + 1)) || isSpaceCode(src.charCodeAt(end - 1)));
-  if (spaced && !spacedReadsAsTex(tex)) return false;
 
   if (!silent) {
     const token = state.push("math_inline", "math", 0);
@@ -432,6 +423,34 @@ function mathInline(state: StateInline, silent: boolean): boolean {
   }
   state.pos = end + open;
   return true;
+}
+
+/**
+ * The single-dollar formula whose `$` is at `start`, by the rule `mathInline`
+ * describes: the index of its closing `$`, the TeX between, and whether it is
+ * spaced inside its dollars. Undefined when that `$` opens no formula.
+ */
+function singleDollar(
+  src: string,
+  start: number,
+  max: number
+): { end: number; tex: string; spaced: boolean } | undefined {
+  let end = -1;
+  for (let pos = start + 1; pos < max; pos += 1) {
+    const code = src.charCodeAt(pos);
+    if (code === 0x5c /* \ */) {
+      pos += 1;
+      continue;
+    }
+    if (code !== 0x24) continue;
+    if (!/[0-9]/.test(src.charAt(pos + 1))) end = pos;
+    break;
+  }
+  if (end < 0) return undefined;
+  const tex = src.slice(start + 1, end).trim();
+  const spaced = isSpaceCode(src.charCodeAt(start + 1)) || isSpaceCode(src.charCodeAt(end - 1));
+  if (!tex || (spaced && !spacedReadsAsTex(tex))) return undefined;
+  return { end, tex, spaced };
 }
 
 /**
@@ -560,6 +579,56 @@ function mathBlock(state: StateBlock, startLine: number, endLine: number, silent
   token.markup = opener;
   token.map = [startLine, last + 1];
   state.line = last + 1;
+  return true;
+}
+
+/**
+ * A paragraph that opens with a single-dollar formula running over several
+ * lines, kept whole. Agents write display math that way, with `=` on a line of
+ * its own (feedback issue #20), and a lone `=` or `-` under a line is a setext
+ * underline, so the block pass made headings of the formula's lines before
+ * `mathInline` could see them. A line starting `- ` or `1. ` broke it into a
+ * list the same way. What counts as a formula is `mathInline`'s rule, so a
+ * paragraph led by a price is not held together. Past the closing `$` the
+ * paragraph goes on as any other would, so it renders as it would have had
+ * the formula's lines not looked like block syntax.
+ */
+function mathParagraph(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
+  if (state.sCount[startLine] - state.blkIndent >= 4) return false;
+  const first = blockLine(state, startLine);
+  if (!first.startsWith("$") || first.startsWith("$$")) return false;
+
+  // The closer is looked for up to a blank line, where TeX would refuse it too.
+  let stop = startLine + 1;
+  while (stop < endLine && !state.isEmpty(stop) && state.sCount[stop] >= state.blkIndent) stop += 1;
+  const text = state.getLines(startLine, stop, state.blkIndent, false).trimStart();
+  const formula = singleDollar(text, 0, text.length);
+  if (!formula) return false;
+  const last = startLine + text.slice(0, formula.end).split("\n").length - 1;
+  // Closed on its first line, the formula has no lines for a block to take.
+  if (last === startLine) return false;
+  if (silent) return true;
+
+  // What markdown-it's paragraph rule does from here: lines run on until a
+  // blank one or one that a list, quote, fence or the like may interrupt.
+  const terminators = state.md.block.ruler.getRules("paragraph");
+  const parentType = state.parentType;
+  state.parentType = "paragraph";
+  let next = last + 1;
+  for (; next < endLine && !state.isEmpty(next); next += 1) {
+    if (state.sCount[next] - state.blkIndent > 3 || state.sCount[next] < 0) continue;
+    if (terminators.some((rule) => rule(state, next, endLine, true))) break;
+  }
+  state.parentType = parentType;
+
+  const open = state.push("paragraph_open", "p", 1);
+  open.map = [startLine, next];
+  const inline = state.push("inline", "", 0);
+  inline.content = state.getLines(startLine, next, state.blkIndent, false).trim();
+  inline.map = [startLine, next];
+  inline.children = [];
+  state.push("paragraph_close", "p", -1);
+  state.line = next;
   return true;
 }
 
@@ -1220,6 +1289,8 @@ export function createRenderer(
   md.block.ruler.after("fence", "math_block", mathBlock, {
     alt: ["paragraph", "reference", "blockquote", "list"],
   });
+  // Ahead of `lheading`, which would take a formula's `=` line as an underline.
+  md.block.ruler.after("math_block", "math_paragraph", mathParagraph);
   md.core.ruler.after("inline", "math_display", spacedMathDisplay);
   md.renderer.rules.math_inline = (tokens, idx) =>
     typeset(md, tokens[idx].content, isDisplayMath(tokens[idx].markup));

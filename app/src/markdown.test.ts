@@ -115,6 +115,55 @@ test("a spaced $ … $ alone in a blockquote is display math", () => {
   assert.match(render("> $ x^2 $\n"), /<blockquote[^>]*>\n<div class="math-block"><span class="katex-display">/);
 });
 
+test("a $ … $ formula over several lines is not torn into headings or lists", () => {
+  // Issue #20: each lone `=` was read as a setext underline, so the formula
+  // came out as two <h1>s and a paragraph of raw TeX.
+  const body =
+    "For a slice of area $A_c$,\n\n" +
+    "$ \\frac{d\\dot n_{A,G}}{dz}\n=\n-A_c r_A\n=\n-A_c a_e j_A. $\n\n" +
+    "gives\n\n" +
+    "$ \\boxed{ \\frac{dY}{dz}\n=\n-\\frac{A_c r_A}{\\dot n_I} }. $\n\n" +
+    "$ k_1 c_A\n- k_2 c_B $\n";
+  const html = render(body);
+  assert.doesNotMatch(html, /<h1|<ul|\$/);
+  assert.deepEqual(extractSections(body), []);
+  assert.deepEqual(texOf(html), [
+    "A_c",
+    "\\frac{d\\dot n_{A,G}}{dz}\n=\n-A_c r_A\n=\n-A_c a_e j_A.",
+    "\\boxed{ \\frac{dY}{dz}\n=\n-\\frac{A_c r_A}{\\dot n_I} }.",
+    "k_1 c_A\n- k_2 c_B",
+  ]);
+  const blocks = sourceBlocks(body);
+  assert.deepEqual(
+    blocks.map((block) => block.line),
+    [0, 2, 8, 10, 14]
+  );
+  assert.match(
+    html,
+    new RegExp(`<div class="math-block" data-src-line="2" data-src-hash="${blocks[1].hash}"><span class="katex-display">`)
+  );
+  assert.equal(html.match(/katex-display/g)?.length, 3);
+});
+
+test("past a several-line formula, its paragraph runs on as any other", () => {
+  const html = render("$ \\frac{a}{b}\n=\nc $ where $c$ is\nthe rate.\n\n- next\n");
+  assert.match(html, /^<p[^>]*><span class="katex">/);
+  assert.match(html, / where <span class="katex">.* is\nthe rate\.<\/p>\n<ul /s);
+  assert.doesNotMatch(html, /<h1|katex-display/);
+
+  // A tight one wrapped in prose renders as it always has.
+  assert.match(render("$a +\nb$ is the sum.\n"), /^<p[^>]*><span class="katex">.*<\/span> is the sum\.<\/p>\n$/s);
+});
+
+test("a paragraph led by a price keeps its Markdown, and a blank line ends a formula", () => {
+  const prices = render("$ 5 for the first\n- and 3 $ for the rest\n");
+  assert.doesNotMatch(prices, /katex/);
+  assert.match(prices, /<ul /);
+  const blank = render("$ x^2\n=\n\ny $\n");
+  assert.doesNotMatch(blank, /katex/);
+  assert.match(blank, /<h1/);
+});
+
 test("prices spaced from their dollars stay prose", () => {
   const prose = [
     "3 $ bananas and 5 $ apples",
