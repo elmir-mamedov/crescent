@@ -143,6 +143,47 @@ test("the check runs at most every 6 hours", async () => {
   }
 });
 
+test("opening KB25 asks for a fresh check, unless one started within the last minute", async () => {
+  const tmp = await makeTempKb();
+  try {
+    let clock = 0;
+    let body = "0.2.0";
+    const calls: string[] = [];
+    const impl = (async (url: string | URL | Request) => {
+      calls.push(String(url));
+      return new Response(body);
+    }) as typeof fetch;
+    const updater = makeUpdater({ install: install(tmp.dir), releasesUrl: RELEASES, fetch: impl, now: () => clock });
+    // The check the server starts with, then the window opening right after.
+    await Promise.all([updater.status(), updater.status({ fresh: true })]);
+    clock += 30 * 1000;
+    await updater.status({ fresh: true });
+    assert.equal(calls.length, 1);
+    // Opened again an hour later, by when a release is out.
+    body = "0.3.0";
+    clock += HOUR;
+    assert.equal((await updater.status()).available, false, "a page's own check still waits its 6 hours");
+    assert.equal((await updater.status({ fresh: true })).available, true);
+    assert.equal(calls.length, 2);
+  } finally {
+    await tmp.cleanup();
+  }
+});
+
+test("each server answers with an id of its own, the same every time", async () => {
+  const tmp = await makeTempKb();
+  try {
+    const options = { install: install(tmp.dir), releasesUrl: RELEASES, fetch: fakeFetch("0.3.0").impl };
+    const first = makeUpdater(options);
+    const { instance } = await first.status();
+    assert.match(instance, /^[0-9a-f-]{36}$/);
+    assert.equal((await first.status()).instance, instance);
+    assert.notEqual((await makeUpdater(options).status()).instance, instance);
+  } finally {
+    await tmp.cleanup();
+  }
+});
+
 test("a failed check offers nothing and retries after an hour", async () => {
   const tmp = await makeTempKb();
   try {

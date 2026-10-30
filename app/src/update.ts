@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -15,6 +16,8 @@ export const DEFAULT_RELEASES_URL = "https://github.com/elmir-mamedov/crescent/r
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
 const RETRY_FAILED_CHECK_MS = 60 * 60 * 1000;
 const CHECK_TIMEOUT_MS = 5000;
+/** How old a check a fresh status, as opening KB25 asks for, still takes. */
+const FRESH_CHECK_MS = 60 * 1000;
 
 /** An installed copy of KB25: the one-line installer's layout around this server. */
 export interface Install {
@@ -83,6 +86,12 @@ export interface UpdateStatus {
   notesUrl: string;
   state: UpdateState;
   logFile: string;
+  /**
+   * This server's own id. A page following an update sees it change when the
+   * server restarts; a new one still on the old version means the update
+   * failed after stopping this server.
+   */
+  instance: string;
 }
 
 export type StartResult = { ok: true } | { ok: false; reason: string };
@@ -103,7 +112,8 @@ export interface UpdaterOptions {
 }
 
 export interface Updater {
-  status(): Promise<UpdateStatus>;
+  /** `fresh` checks again unless a check started within the last minute, for opening KB25. */
+  status(options?: { fresh?: boolean }): Promise<UpdateStatus>;
   start(): Promise<StartResult>;
 }
 
@@ -114,13 +124,16 @@ export function makeUpdater(options: UpdaterOptions): Updater {
   const now = options.now ?? Date.now;
   const spawn: Spawner = options.spawn ?? ((command, args, opts) => nodeSpawn(command, args, opts));
 
+  const instance = randomUUID();
   let latest: string | null = null;
   let nextCheckAt = 0;
+  let checkedAt = -Infinity;
   let checking: Promise<void> | null = null;
   let state: UpdateState = "idle";
 
   /** Refresh `latest`. A failed check keeps what was known and retries sooner. */
   async function check(): Promise<void> {
+    checkedAt = now();
     try {
       const response = await fetchImpl(`${releasesUrl}/latest/download/VERSION`, {
         signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
@@ -134,8 +147,8 @@ export function makeUpdater(options: UpdaterOptions): Updater {
     }
   }
 
-  async function status(): Promise<UpdateStatus> {
-    if (now() >= nextCheckAt) {
+  async function status({ fresh = false } = {}): Promise<UpdateStatus> {
+    if (now() >= nextCheckAt || (fresh && now() - checkedAt >= FRESH_CHECK_MS)) {
       checking ??= check().finally(() => {
         checking = null;
       });
@@ -148,6 +161,7 @@ export function makeUpdater(options: UpdaterOptions): Updater {
       notesUrl: latest ? `${releasesUrl}/tag/v${latest}` : `${releasesUrl}/latest`,
       state,
       logFile: install.logFile,
+      instance,
     };
   }
 
