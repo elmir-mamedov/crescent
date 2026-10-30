@@ -9,6 +9,7 @@ import {
   type LabelDef,
 } from "./labels.js";
 import type { DiffLine } from "./diff.js";
+import { IMAGE_ACCEPT, type GalleryImage } from "./gallery.js";
 import { relativeAge, type NotePageGroup, type NoteSummary } from "./note-index.js";
 import type { RenderedNote, Section } from "./markdown.js";
 
@@ -333,6 +334,21 @@ export interface DashboardsView {
   titles: Map<string, string>;
   spaceTitle: string;
   cards: DashboardCard[];
+  username?: string | null;
+}
+
+export interface GalleryView {
+  siteTitle: string;
+  spaces: SpaceInfo[];
+  spaceKey: string;
+  tree: PageNode[];
+  labelSet?: LabelDef[];
+  titles: Map<string, string>;
+  spaceTitle: string;
+  images: GalleryImage[];
+  /** Paths (inside `_assets`) of the images just uploaded, marked in the grid. */
+  added?: string[];
+  notice?: ViewNotice;
   username?: string | null;
 }
 
@@ -685,6 +701,22 @@ function instructionsLink(spaceKey: string): string {
   </a>`;
 }
 
+/** Where the current space's image gallery lives. */
+export function galleryHref(spaceKey: string): string {
+  return `/_gallery?space=${encodeURIComponent(spaceKey)}`;
+}
+
+/**
+ * Link to the current space's image gallery. Same gate as the dashboard: the
+ * images live in one space's `_assets`, and the home page is not in one.
+ */
+function galleryLink(spaceKey: string): string {
+  if (!spaceKey) return "";
+  return `<a class="gallery-button" href="${galleryHref(spaceKey)}" aria-label="Gallery" title="Gallery — every image in this space">
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="M21 15l-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg>
+  </a>`;
+}
+
 /**
  * Chat + dashboard + theme toggle + Help + username + Log out pinned to the
  * top-right corner, with the chat drawer the first of them opens. Every page
@@ -704,6 +736,7 @@ function sessionCorner(username?: string | null, spaceKey = "", chatSlug = "", f
 <script>${CHANGES_SCRIPT}</script>`;
   return `<div class="session-corner">
     ${CHAT_BUTTON}
+    ${galleryLink(spaceKey)}
     ${instructionsLink(spaceKey)}
     ${dashboardLink(spaceKey)}
     ${themeToggle()}
@@ -1192,6 +1225,133 @@ export function dashboardsLayout(v: DashboardsView): string {
     username: v.username,
   });
 }
+
+/** A file size the way a person reads it: `830 KB`, `2.4 MB`. */
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** The URL an image in a space's `_assets` is served at, each part encoded. */
+function assetHref(spaceKey: string, rel: string): string {
+  return `/${encodeURIComponent(spaceKey)}/_assets/${rel.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+/**
+ * The gallery: every image in one space's `_assets`, used on a page or not,
+ * and the form that uploads more. The caption under each is the reference a
+ * page's Markdown uses, which for now is the only way onto a page.
+ *
+ * A thumbnail is a link to the image itself, so it opens with scripts off;
+ * GALLERY_SCRIPT shows it in a dialog instead, which keeps a desktop window
+ * on the gallery. The upload is a plain multipart form for the same reason.
+ */
+export function galleryLayout(v: GalleryView): string {
+  const added = new Set(v.added ?? []);
+  const count = v.images.length;
+  const tiles = v.images
+    .map((image) => {
+      const href = escapeHtml(assetHref(v.spaceKey, image.path));
+      const ref = escapeHtml(`_assets/${image.path}`);
+      const name = escapeHtml(image.path.split("/").pop() ?? image.path);
+      const size = escapeHtml(formatSize(image.size));
+      return `<li class="gallery-item${added.has(image.path) ? " is-new" : ""}">
+      <a class="gallery-thumb" href="${href}" data-gallery-open data-name="${name}" data-ref="${ref}" data-size="${size}" aria-label="View ${name}">
+        <img src="${href}" alt="" loading="lazy" decoding="async" />
+      </a>
+      <code class="gallery-ref" title="${ref}">${ref}</code>
+      <span class="gallery-size">${size}</span>
+    </li>`;
+    })
+    .join("\n    ");
+
+  const grid = count
+    ? `<p class="gallery-count">${count} ${count === 1 ? "image" : "images"}</p>
+  <ul class="gallery-grid">
+    ${tiles}
+  </ul>`
+    : `<p class="dash-empty">No images in <strong>${escapeHtml(v.spaceTitle)}</strong> yet. Upload one to start.</p>`;
+
+  return layout({
+    siteTitle: v.siteTitle,
+    spaces: v.spaces,
+    spaceKey: v.spaceKey,
+    tree: v.tree,
+    labelSet: v.labelSet,
+    activeSlug: "",
+    titles: v.titles,
+    title: `${v.spaceTitle} · Gallery`,
+    contentHtml: `<div class="gallery">
+  <div class="gallery-bar">
+    <p class="dash-lede">Every image in this space's <code>_assets</code> folder, whether a page shows it or not. To show one on a page, edit the page and add <code>![](_assets/name.png)</code> to its Markdown.</p>
+    <form class="gallery-upload" method="post" action="${escapeHtml(galleryHref(v.spaceKey))}" enctype="multipart/form-data" data-gallery-upload>
+      <label class="button primary">
+        <input type="file" name="image" accept="${escapeHtml(IMAGE_ACCEPT)}" multiple required data-gallery-file />
+        <span data-gallery-upload-label>Upload images</span>
+      </label>
+      <noscript><button class="button secondary" type="submit">Upload</button></noscript>
+    </form>
+  </div>
+  ${grid}
+</div>
+<dialog class="gallery-viewer" data-gallery-viewer>
+  <form method="dialog" class="help-head">
+    <h2 data-gallery-viewer-name></h2>
+    <button class="help-close" aria-label="Close" value="close">&times;</button>
+  </form>
+  <div class="gallery-viewer-frame"><img data-gallery-viewer-img alt="" /></div>
+  <p class="gallery-viewer-meta"><code data-gallery-viewer-ref></code> · <span data-gallery-viewer-size></span></p>
+</dialog>
+<script>${GALLERY_SCRIPT}</script>`,
+    notice: v.notice,
+    canEdit: false,
+    username: v.username,
+  });
+}
+
+/**
+ * Choosing files sends them at once, with no second Upload click; and a
+ * thumbnail opens in the dialog rather than leaving the page. A click with a
+ * modifier key still opens the image the browser's way.
+ */
+const GALLERY_SCRIPT = `
+(() => {
+  const form = document.querySelector("[data-gallery-upload]");
+  const input = form && form.querySelector("[data-gallery-file]");
+  if (form && input) {
+    input.addEventListener("change", () => {
+      if (!input.files || !input.files.length) return;
+      const label = form.querySelector("[data-gallery-upload-label]");
+      if (label) label.textContent = "Uploading…";
+      form.classList.add("is-busy");
+      form.submit();
+    });
+  }
+
+  const viewer = document.querySelector("[data-gallery-viewer]");
+  if (!viewer || typeof viewer.showModal !== "function") return;
+  const img = viewer.querySelector("[data-gallery-viewer-img]");
+  const name = viewer.querySelector("[data-gallery-viewer-name]");
+  const ref = viewer.querySelector("[data-gallery-viewer-ref]");
+  const size = viewer.querySelector("[data-gallery-viewer-size]");
+  document.addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest("[data-gallery-open]") : null;
+    if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    img.src = link.href;
+    name.textContent = link.dataset.name || "";
+    ref.textContent = link.dataset.ref || "";
+    size.textContent = link.dataset.size || "";
+    viewer.showModal();
+  });
+  // A click on the backdrop lands on the dialog itself.
+  viewer.addEventListener("click", (event) => {
+    if (event.target === viewer) viewer.close();
+  });
+  viewer.addEventListener("close", () => img.removeAttribute("src"));
+})();
+`;
 
 /** Where the Labels view lives, filtered to the given labels and query. */
 export function labelsHref(spaceKey: string, labels: readonly string[] = [], query = ""): string {
@@ -1739,7 +1899,7 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog>
   </form>
   <section class="help-section">
     <h3>About Crescent</h3>
-    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
+    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
   </section>
   <section class="help-section">
     <h3>Keyboard shortcuts</h3>
@@ -5626,13 +5786,13 @@ body.dragging-page .space-current{
   display:flex; align-items:center; gap:8px}
 /* The corner's two icon buttons share one box; only the theme toggle swaps its
    glyph, so the rules below it stay on that class alone. */
-.theme-toggle,.chat-button,.dash-button,.instructions-button,.feedback-button,.quit-button{
+.theme-toggle,.chat-button,.gallery-button,.dash-button,.instructions-button,.feedback-button,.quit-button{
   display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto;
   width:34px; height:34px; padding:0; border:1px solid var(--line); border-radius:6px;
   background:var(--surface); color:var(--fg-secondary); cursor:pointer;
 }
-.theme-toggle:hover,.chat-button:hover,.dash-button:hover,.instructions-button:hover,.feedback-button:hover,.quit-button:hover{background:var(--surface-hover-2); color:var(--fg)}
-.chat-button svg,.dash-button svg,.instructions-button svg,.feedback-button svg,.quit-button svg{display:block}
+.theme-toggle:hover,.chat-button:hover,.gallery-button:hover,.dash-button:hover,.instructions-button:hover,.feedback-button:hover,.quit-button:hover{background:var(--surface-hover-2); color:var(--fg)}
+.chat-button svg,.gallery-button svg,.dash-button svg,.instructions-button svg,.feedback-button svg,.quit-button svg{display:block}
 .chat-button[aria-expanded="true"]{background:var(--active-bg); border-color:var(--accent); color:var(--accent)}
 .theme-toggle .theme-icon{display:block}
 .theme-toggle .icon-moon{display:none}
@@ -6128,6 +6288,46 @@ body.dragging-page .space-current{
 .hub-title{font-size:16px; font-weight:600; color:var(--accent)}
 .hub-stat{display:flex; align-items:baseline; gap:6px}
 .hub-desc{font-size:13px; color:var(--fg-secondary); line-height:1.45}
+/* Gallery. Each thumbnail box is square before its image loads, so a grid of
+   lazy images never shifts the page as they arrive. */
+.gallery-bar{display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex-wrap:wrap}
+.gallery-bar .dash-lede{flex:1 1 320px; margin-bottom:12px}
+.gallery-upload{flex:0 0 auto; margin:0}
+.gallery-upload label{position:relative; cursor:pointer}
+/* Out of sight but still focusable; the label is what is seen. */
+.gallery-upload input[type="file"]{position:absolute; width:1px; height:1px; opacity:0; overflow:hidden}
+.gallery-upload label:focus-within{outline:2px solid var(--focus-ring-soft); outline-offset:1px}
+.gallery-upload.is-busy label{opacity:.7; pointer-events:none}
+.gallery-count{margin:0 0 10px; color:var(--muted); font-size:13px}
+.prose .gallery-grid{
+  list-style:none; margin:0; padding:0;
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(168px, 1fr)); gap:14px;
+}
+.gallery-item{display:flex; flex-direction:column; gap:4px; min-width:0}
+.gallery-thumb{
+  display:block; aspect-ratio:1; overflow:hidden;
+  border:1px solid var(--line); border-radius:8px; background:var(--code-bg);
+}
+.gallery-thumb:hover{border-color:var(--accent)}
+.gallery-thumb:focus-visible{outline:2px solid var(--focus-ring-soft); outline-offset:1px}
+.gallery-item.is-new .gallery-thumb{border-color:var(--accent); box-shadow:0 0 0 2px var(--focus-ring-soft)}
+.prose .gallery-thumb img{display:block; width:100%; height:100%; max-width:none; object-fit:contain; box-sizing:border-box}
+/* Clipped by overflow rather than nowrap, which would widen the whole page
+   (see .task-crumb). One click selects the whole reference, ready to paste. */
+.prose .gallery-ref{
+  display:block; max-height:1.5em; overflow:hidden; overflow-wrap:anywhere;
+  padding:0; background:none; color:var(--fg-secondary); font-size:12px; user-select:all;
+}
+.gallery-size{color:var(--muted); font-size:12px}
+.gallery-viewer{
+  width:min(1100px,94vw); max-height:94vh; border:1px solid var(--line); border-radius:10px;
+  padding:0; color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
+}
+.gallery-viewer::backdrop{background:var(--backdrop)}
+.gallery-viewer .help-head h2{font-size:15px; overflow-wrap:anywhere}
+.gallery-viewer-frame{display:flex; justify-content:center; padding:16px 20px 0}
+.prose .gallery-viewer-frame img{max-width:100%; max-height:72vh; object-fit:contain}
+.gallery-viewer-meta{margin:0; padding:12px 20px 16px; color:var(--muted); font-size:13px; overflow-wrap:anywhere}
 /* Labels. A chip or dot reads its colours from --lc-*, which default to grey
    and are repointed by the data-label-color rule that follows. Chips wrap
    rather than nowrap: nowrap text inside .content widens the whole page. */

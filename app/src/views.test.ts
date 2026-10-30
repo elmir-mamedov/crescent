@@ -5,6 +5,7 @@ import {
   dashboardLayout,
   dashboardsLayout,
   editLayout,
+  galleryLayout,
   labelsDashboardLayout,
   labelsHref,
   layout,
@@ -15,6 +16,7 @@ import {
   type DashboardView,
   type DashboardsView,
   type EditView,
+  type GalleryView,
   type LabelsDashboardView,
   type PageView,
   type FolderView,
@@ -101,6 +103,20 @@ function dashboardView(overrides: Partial<DashboardView> = {}): DashboardView {
       newestAt: "2026-08-17T11:00:00Z",
     },
     now: Date.parse("2026-08-17T12:00:00Z"),
+    username: "alice",
+    ...overrides,
+  };
+}
+
+function galleryView(overrides: Partial<GalleryView> = {}): GalleryView {
+  return {
+    siteTitle: "KB",
+    spaces: [{ key: "kb25", title: "KB25", archived: false }],
+    spaceKey: "kb25",
+    tree: [],
+    titles: new Map([["kb25", "KB25"]]),
+    spaceTitle: "KB25",
+    images: [{ path: "shot.png", size: 1024, modified: 0 }],
     username: "alice",
     ...overrides,
   };
@@ -1043,6 +1059,72 @@ test("dashboard: no button outside a space, where it would report on nothing", (
   // The stylesheet still carries the rule — it is the anchor that must be absent.
   assert.doesNotMatch(html, /class="dash-button"/);
   assert.doesNotMatch(html, /href="\/_dashboard/);
+});
+
+test("gallery: the corner button sits right after the chat's and opens this space's gallery", () => {
+  const html = layout(pageView());
+  assert.match(
+    html,
+    /data-chat-open[^>]*>[\s\S]*?<\/button>\s*<a class="gallery-button" href="\/_gallery\?space=kb25" aria-label="Gallery"/
+  );
+});
+
+test("gallery: no button outside a space, and the key is URL-encoded inside one", () => {
+  const home = spacesLayout({
+    siteTitle: "KB",
+    spaces: [{ key: "kb25", title: "KB25", archived: false }],
+    username: "alice",
+  } satisfies SpacesView);
+  assert.doesNotMatch(home, /class="gallery-button"/);
+  assert.match(layout(pageView({ spaceKey: "a b&c" })), /href="\/_gallery\?space=a%20b%26c"/);
+});
+
+test("gallery: each image links to its asset URL, captioned with the reference a page uses", () => {
+  const html = galleryLayout(
+    galleryView({
+      images: [
+        { path: "diagrams/flow chart.png", size: 2_516_582, modified: 0 },
+        { path: "logo.svg", size: 900, modified: 0 },
+      ],
+    })
+  );
+  assert.match(html, /<title>KB25 · Gallery · KB<\/title>/);
+  assert.match(html, /<p class="gallery-count">2 images<\/p>/);
+  assert.match(html, /<a class="gallery-thumb" href="\/kb25\/_assets\/diagrams\/flow%20chart\.png" data-gallery-open data-name="flow chart\.png"/);
+  assert.match(html, /<img src="\/kb25\/_assets\/diagrams\/flow%20chart\.png" alt="" loading="lazy"/);
+  assert.match(html, /<code class="gallery-ref" title="_assets\/diagrams\/flow chart\.png">_assets\/diagrams\/flow chart\.png<\/code>/);
+  assert.match(html, /<span class="gallery-size">2\.4 MB<\/span>/);
+  assert.match(html, /<span class="gallery-size">900 B<\/span>/);
+});
+
+test("gallery: an image's name is escaped wherever it appears", () => {
+  const html = galleryLayout(galleryView({ images: [{ path: `<b>"x".png`, size: 1, modified: 0 }] }));
+  assert.doesNotMatch(html, /<b>"x"/);
+  assert.match(html, /data-name="&lt;b&gt;&quot;x&quot;\.png"/);
+});
+
+test("gallery: the upload is a multipart form back to the gallery, taking images only", () => {
+  const html = galleryLayout(galleryView());
+  assert.match(html, /<form class="gallery-upload" method="post" action="\/_gallery\?space=kb25" enctype="multipart\/form-data"/);
+  assert.match(html, /<input type="file" name="image" accept="\.png,\.jpg,\.jpeg,\.gif,\.webp,\.avif,\.svg" multiple required/);
+});
+
+test("gallery: just-uploaded images are marked, and an empty space says so", () => {
+  const html = galleryLayout(
+    galleryView({
+      images: [
+        { path: "new.png", size: 1, modified: 0 },
+        { path: "old.png", size: 1, modified: 0 },
+      ],
+      added: ["new.png"],
+    })
+  );
+  assert.match(html, /<li class="gallery-item is-new">\s*<a class="gallery-thumb" href="\/kb25\/_assets\/new\.png"/);
+  assert.match(html, /<li class="gallery-item">\s*<a class="gallery-thumb" href="\/kb25\/_assets\/old\.png"/);
+
+  const empty = galleryLayout(galleryView({ images: [] }));
+  assert.match(empty, /No images in <strong>KB25<\/strong> yet/);
+  assert.doesNotMatch(empty, /class="gallery-grid"/);
 });
 
 test("dashboard: the space key is URL-encoded, not pasted into the href raw", () => {
