@@ -102,9 +102,13 @@ sidebar marks the new pages until you open them.
 
 ## Updating and removing
 
-When a new version is available, a notice appears in the bottom-right corner
-of Crescent. **Update** installs it in the background and reloads the page.
-Pages and settings are kept.
+When a new version is available, Crescent installs it before it opens: the
+next time you open it, it asks you to **Install update** and opens once that
+is done. If the update can't be installed, for example without an internet
+connection, Crescent says so and opens on the version you have. While
+Crescent is already open, a notice appears in its bottom-right corner instead,
+whose **Update** installs it in the background and reloads the page. Pages and
+settings are kept.
 
 Running the install command again also updates Crescent when a newer version
 exists. When Crescent is already up to date, the command offers to remove it.

@@ -87,6 +87,7 @@ import {
   loginLayout,
   notFound,
   spacesLayout,
+  updateGateLayout,
   type LabelResult,
   type ViewNotice,
 } from "./views.js";
@@ -2275,7 +2276,33 @@ if (updater) {
     if (!started.ok) return reply.code(409).send({ error: started.reason });
     return reply.code(202).send(await updater.status());
   });
+  // Check while the server starts, so the window opening it seldom waits.
+  void updater.status();
 }
+
+// Where KB25's window opens (installer/launcher.mjs). While a newer release is
+// out, an installed copy opens on the update gate instead of the app (feedback
+// issue #21): updates can carry security fixes, so opening KB25 installs them,
+// and only an update that fails lets the person in on this version. A page
+// already open when a release comes out gets the update card instead.
+app.get("/_launch", async (_req, reply) => {
+  const status = updater ? await updater.status({ fresh: true }) : null;
+  if (!status?.available || !status.latest) return reply.redirect("/", 303);
+  return reply
+    .header("cache-control", "no-store")
+    .type("text/html")
+    .send(
+      updateGateLayout({
+        siteTitle: SITE_TITLE,
+        current: status.current,
+        latest: status.latest,
+        notesUrl: status.notesUrl,
+        logFile: status.logFile,
+        instance: status.instance,
+        updating: status.state === "updating",
+      })
+    );
+});
 
 // Feedback to the developer (feedback.ts). GET answers what a report would
 // carry besides the person's own words, for the dialog to show before

@@ -11,6 +11,7 @@ import {
   folderLayout,
   loginLayout,
   spacesLayout,
+  updateGateLayout,
   type DashboardView,
   type DashboardsView,
   type EditView,
@@ -19,6 +20,7 @@ import {
   type FolderView,
   type LoginView,
   type SpacesView,
+  type UpdateGateView,
 } from "./views.js";
 import type { PageNode } from "./content.js";
 import type { IndexedNote } from "./note-index.js";
@@ -695,6 +697,7 @@ test("every view with a sidebar holds the first paint for it, and only those", (
     ["dashboard", dashboardLayout(dashboardView())],
     ["login", loginLayout({ siteTitle: "KB", next: "/" } as LoginView)],
     ["spaces", spacesLayout(spacesView())],
+    ["update gate", updateGateLayout(gateView())],
   ];
   for (const [name, html] of views) {
     const sidebar = html.includes('<aside class="sidebar">');
@@ -1489,6 +1492,45 @@ test("views: every page with the corner carries a hidden update card that asks /
     assert.match(html, /fetch\("\/_update"/);
     assert.doesNotMatch(html, /\.innerHTML\s*=\s*s\./, "server text never goes in as HTML");
   }
+});
+
+function gateView(overrides: Partial<UpdateGateView> = {}): UpdateGateView {
+  return {
+    siteTitle: "KB",
+    current: "0.15.1",
+    latest: "0.16.0",
+    notesUrl: "https://example.test/releases/tag/v0.16.0",
+    logFile: "/kb25/update.log",
+    instance: "server-1",
+    updating: false,
+    ...overrides,
+  };
+}
+
+test("feedback #21: the update gate's only way on is installing, then the app opens on the new version", () => {
+  const html = updateGateLayout(gateView());
+  assert.match(html, /<h1 data-gate-title>Update Crescent to 0\.16\.0<\/h1>/);
+  assert.match(html, /<button type="button" class="button primary" data-gate-install>Install update<\/button>/);
+  assert.match(html, /href="https:\/\/example\.test\/releases\/tag\/v0\.16\.0" target="_blank"/);
+  // Nothing on the page leads to the app until the script lets it.
+  const body = html.slice(html.indexOf("<body"), html.indexOf("<script>", html.indexOf("<body")));
+  assert.doesNotMatch(body, /href="\/"/);
+  assert.doesNotMatch(html, /class="session-corner"/);
+  assert.doesNotMatch(html, /data-updating/);
+  const script = html.slice(html.lastIndexOf("<script>"));
+  assert.match(script, /fetch\("\/_update", \{ method: "POST" \}\)/);
+  assert.match(script, /now\.current !== current/);
+  assert.match(script, /now\.instance !== instance/, "a server back on the old version means it failed");
+  assert.match(script, /location\.replace\("\/"\)/);
+  // A failed update lets the person in on this version.
+  assert.match(script, /"Continue with " \+ current/);
+  assert.doesNotMatch(script, /\.innerHTML/, "server text never goes in as HTML");
+});
+
+test("feedback #21: the update gate escapes what the server says, and follows an update already running", () => {
+  const html = updateGateLayout(gateView({ logFile: '/a "b" <c>/update.log', updating: true }));
+  assert.match(html, /data-log="\/a &quot;b&quot; &lt;c&gt;\/update\.log"/);
+  assert.match(html, / data-updating>/);
 });
 
 test("views: every page with the corner offers feedback, through /_feedback", () => {

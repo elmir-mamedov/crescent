@@ -6,6 +6,8 @@
 //
 // KB25_NO_BROWSER=1, which the windows set, only starts the server. Without it,
 // the address also opens in the default browser, for this script run by hand.
+// The address is /_launch, which opens on the update gate while a newer release
+// is out (server.ts), and on the app otherwise.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -42,5 +44,6 @@ if (!(await isUp(url))) {
   }
 }
 
-console.log(url);
-if (!process.env.KB25_NO_BROWSER) openUrl(url);
+const launch = `${url}/_launch`;
+console.log(launch);
+if (!process.env.KB25_NO_BROWSER) openUrl(launch);
