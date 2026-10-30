@@ -1502,7 +1502,8 @@ test("views: every page with the corner offers feedback, through /_feedback", ()
     assert.match(script, /app: "kb25"/);
     assert.match(script, /button: false/, "the corner's own button opens it");
     assert.match(script, /fetch\("\/_feedback"/);
-    assert.match(script, /The last lines of Crescent's log/);
+    assert.match(script, /label: "Diagnostic logs",\s*recommended: true,/);
+    assert.doesNotMatch(script, /checked: true/, "the logs go only when ticked");
     assert.doesNotMatch(html, /<dialog class="feedback-dialog"/, "the package draws the dialog now");
   }
 });

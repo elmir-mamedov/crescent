@@ -2373,7 +2373,9 @@ const feedback = mountFeedback({
   facts: () => info().then((i) => (i ? i.facts : {})),
   extras: [
     {
-      label: "The last lines of Crescent's log",
+      // The end of kb25.log and update.log (feedback.ts): what helps most with a bug.
+      label: "Diagnostic logs",
+      recommended: true,
       load: () => info().then((i) => (i && i.logs ? { logs: i.logs } : null)),
     },
   ],

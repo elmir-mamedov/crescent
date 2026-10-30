@@ -115,10 +115,10 @@ Removing Crescent leaves your pages in place.
 The speech-bubble button in the top-right corner sends a bug report or
 suggestion to the developer, with optional screenshots and an optional email
 address for a reply. Each report includes Crescent's version, the operating
-system, the browser and its window size. The current page, recent errors and
-the end of Crescent's log are added only if you tick them, and **What else is
-sent** shows their contents before sending. Reports written while offline are
-sent once a connection is available.
+system, the browser and its window size. Errors Crescent ran into are added
+unless you untick them, and **Diagnostic logs**, the end of Crescent's log,
+only if you tick it. The dialog shows everything that goes before you send.
+Reports written while offline are sent once a connection is available.
 
 ## Development
 
