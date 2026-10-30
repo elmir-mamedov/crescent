@@ -1631,16 +1631,16 @@ ${sessionCorner(v.username)}
 <main class="spaces-main">
   <header class="spaces-head">
     <h1>${escapeHtml(v.siteTitle)}</h1>
-    <div class="actions">
-      <a class="button secondary" href="/_archive">Archive</a>
-    </div>
   </header>
   ${notice}${confirm}
   <section class="spaces-grid">${cards}</section>
-  <form class="new-space-form" method="post" action="/_create-space">
-    <input type="text" name="title" placeholder="New space name" aria-label="New space name" maxlength="80" required />
-    <button class="button primary" type="submit">New Space</button>
-  </form>
+  <div class="spaces-foot">
+    <form class="new-space-form" method="post" action="/_create-space">
+      <input type="text" name="title" placeholder="New space name" aria-label="New space name" maxlength="80" required />
+      <button class="button primary" type="submit">New Space</button>
+    </form>
+    <a class="button secondary" href="/_archive">Archive</a>
+  </div>
 </main>
 <script>${SPACE_MENU_SCRIPT}</script>
 </body>
@@ -5874,7 +5874,10 @@ body.dragging-page .space-current{
 }
 .space-menu-pop .menu-name-form button:hover{background:var(--surface-hover-2)}
 .space-confirm .confirm-actions{margin-top:12px}
-.new-space-form{display:flex; gap:8px; margin-top:28px}
+/* The Archive button sits down here, beside New Space, rather than in the
+   header, whose top-right corner .session-corner floats over (feedback #24). */
+.spaces-foot{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:28px}
+.new-space-form{display:flex; flex:1 1 auto; gap:8px}
 .new-space-form input{
   flex:1; max-width:360px; border:1px solid var(--line); border-radius:6px; padding:8px 10px;
   color:var(--fg); background:var(--surface);

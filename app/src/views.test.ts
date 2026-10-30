@@ -414,6 +414,17 @@ test("TODO #1: each space card carries a ⋯ menu with Rename, Archive, Delete",
   assert.match(html, /href="\/_delete-space\/kb25">Delete<\/a>/);
 });
 
+test("feedback #24: the home page's Archive button sits beside New Space, clear of the corner tools", () => {
+  const html = spacesLayout(spacesView());
+  const head = html.match(/<header class="spaces-head">[\s\S]*?<\/header>/)?.[0] ?? "";
+  assert.ok(head, "the home page has a header");
+  assert.doesNotMatch(head, /_archive/);
+  assert.match(
+    html,
+    /<div class="spaces-foot">\s*<form class="new-space-form"[\s\S]*?<\/form>\s*<a class="button secondary" href="\/_archive">Archive<\/a>/
+  );
+});
+
 test("TODO #1: confirmDelete renders a scary confirmation posting to _delete-space", () => {
   const html = spacesLayout(spacesView({ confirmDelete: { key: "kb25", title: "KB25" } }));
   assert.match(html, /Delete the “KB25” space\?/);
