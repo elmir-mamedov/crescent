@@ -359,6 +359,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     return nil
   }
 
+  /// A page's file picker (the gallery's upload, feedback's screenshots).
+  /// WKWebView has none of its own on macOS: without this, choosing a file
+  /// does nothing. The page's `accept` is not passed on, so the server still
+  /// checks what it is sent.
+  func webView(
+    _ webView: WKWebView,
+    runOpenPanelWith parameters: WKOpenPanelParameters,
+    initiatedByFrame frame: WKFrameInfo,
+    completionHandler: @escaping ([URL]?) -> Void
+  ) {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = parameters.allowsDirectories
+    panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+    panel.beginSheetModal(for: window) { response in
+      completionHandler(response == .OK ? panel.urls : nil)
+    }
+  }
+
   func webView(
     _ webView: WKWebView,
     decidePolicyFor response: WKNavigationResponse,
