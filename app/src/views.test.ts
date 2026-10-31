@@ -2521,3 +2521,19 @@ test("tabs: a place comes back only for a page opened afresh, without a #section
   assert.match(tabs, /const moved = anchor\.getBoundingClientRect\(\)\.top - anchorTop;\s*if \(Math\.abs\(moved\) >= 1\) window\.scrollBy\(0, moved\);/);
   assert.doesNotMatch(pageHtml(), /scroll-behavior/);
 });
+
+test("tabs: a new tab shows up once its page has loaded, the strip sliding in for the second", () => {
+  const tabs = [...pageHtml().matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('const TABS_KEY = "kb25.tabs"'));
+  assert.ok(tabs);
+  // The page it was opened from is left as it was.
+  assert.match(tabs, /if \(known\) draw\(""\);\s*else write\("sessionStorage", ARRIVAL_KEY, \{ url: path, tab: tab\.id, strip: before < 2 \}\);/);
+  assert.match(tabs, /if \(shown && arrived && arrived\.strip\) \{\s*whenLoaded\(\(\) => showStrip\(true, true\), 2000\);/);
+  // Only that change animates: a page loading with tabs open just has them.
+  assert.match(tabs, /\} else \{\s*showStrip\(shown, false\);/);
+  assert.match(pageHtml(), /html\.tabs-animate body\{transition:padding-top/);
+  assert.doesNotMatch(pageHtml(), /\nbody\{[^}]*transition/);
+  assert.match(pageHtml(), /\.tab\.is-new\{animation:tab-in [^}]*animation-play-state:paused\}\s*html\.tabs-loaded \.tab\.is-new\{animation-play-state:running\}/);
+  assert.match(pageHtml(), /@media \(prefers-reduced-motion:reduce\)\{/);
+});

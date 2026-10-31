@@ -3550,6 +3550,9 @@ export const TAB_MODEL = `
  * Cmd/Ctrl-click or a middle click on a link to a Crescent page opens it in a
  * new tab. Crescent's window would otherwise send that click to the browser,
  * as it does any link asked for in a new window, so the click never reaches it.
+ * A new tab shows up on the page it opens, once that has loaded: the strip
+ * slides down when it is the second tab, and the tab fades in when it joins
+ * others. Until then the page that was open stays as it was.
  *
  * Scroll positions go in localStorage, for the pages in tabs and the last few
  * read in any (scrollRemember). One comes back only when a page is opened
@@ -3567,10 +3570,35 @@ const TABS_SCRIPT = `
 ${TAB_MODEL}
   const TABS_KEY = "kb25.tabs";
   const SCROLL_KEY = "kb25.scroll";
+  const ARRIVAL_KEY = "kb25.tabs-arrival";
   const root = document.documentElement;
   const here = location.pathname + location.search;
   const title = strip.getAttribute("data-tab-title") || document.title;
   const reopen = strip.hasAttribute("data-tabs-reopen");
+
+  // A glyph built as nodes: no page script here assigns HTML.
+  function glyph(size, attrs, paths) {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("width", size);
+    svg.setAttribute("height", size);
+    svg.setAttribute("aria-hidden", "true");
+    for (const name of Object.keys(attrs)) svg.setAttribute(name, attrs[name]);
+    for (const d of paths) {
+      const path = document.createElementNS(NS, "path");
+      path.setAttribute("d", d);
+      svg.append(path);
+    }
+    return svg;
+  }
+  const pageGlyph = () =>
+    glyph(14, { class: "tab-icon", fill: "none", stroke: "currentColor", "stroke-width": "1.3", "stroke-linejoin": "round" }, [
+      "M4.25 1.75h4.5l3.5 3.5v8a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1z",
+      "M8.5 1.75v3.75h3.75",
+    ]);
+  const crossGlyph = () =>
+    glyph(10, { fill: "none", stroke: "currentColor", "stroke-width": "1.75", "stroke-linecap": "round" }, ["M4 4l8 8M12 4l-8 8"]);
 
   function read(store, key) {
     try {
@@ -3581,7 +3609,8 @@ ${TAB_MODEL}
   }
   function write(store, key, value) {
     try {
-      window[store].setItem(key, JSON.stringify(value));
+      if (value === null) window[store].removeItem(key);
+      else window[store].setItem(key, JSON.stringify(value));
     } catch {}
   }
   function newId() {
@@ -3655,17 +3684,18 @@ ${TAB_MODEL}
   tabsArrive(state, here, title, navType(), newId);
   save();
 
-  function render() {
-    const shown = state.tabs.length > 1;
-    strip.hidden = !shown;
-    document.documentElement.classList.toggle("has-tabs", shown);
+  // The tab this page was opened into, left by openTab on the page before.
+  const arrival = read("sessionStorage", ARRIVAL_KEY);
+  write("sessionStorage", ARRIVAL_KEY, null);
+  const arrived = arrival && arrival.url === here && typeof arrival.tab === "string" ? arrival : null;
+
+  function draw(newTab) {
     list.textContent = "";
-    if (!shown) return;
     for (const tab of state.tabs) {
       const open = tab.id === state.active;
       const name = tab.title || tab.url;
       const item = document.createElement("div");
-      item.className = open ? "tab is-open" : "tab";
+      item.className = "tab" + (open ? " is-open" : "") + (tab.id === newTab ? " is-new" : "");
       item.setAttribute("data-tab", tab.id);
       const link = document.createElement("a");
       link.className = "tab-link";
@@ -3681,14 +3711,42 @@ ${TAB_MODEL}
       shut.setAttribute("data-tab-close", "");
       shut.setAttribute("aria-label", "Close " + name);
       shut.title = "Close tab";
-      shut.textContent = "×";
-      item.append(link, shut);
+      shut.append(crossGlyph());
+      item.append(pageGlyph(), link, shut);
       list.append(item);
     }
     const openItem = list.querySelector(".tab.is-open");
     if (openItem && list.scrollWidth > list.clientWidth) {
       list.scrollLeft = openItem.offsetLeft - (list.clientWidth - openItem.offsetWidth) / 2;
     }
+  }
+
+  // The strip comes and goes by sliding, the page moving with it; a page
+  // that loads with tabs already open just has it, so moving between them
+  // never animates anything.
+  let settling = 0;
+  function showStrip(shown, animate) {
+    const visible = !strip.hidden && !strip.classList.contains("is-leaving");
+    if (shown === visible) return;
+    window.clearTimeout(settling);
+    strip.classList.remove("is-entering", "is-leaving");
+    if (!animate) {
+      strip.hidden = !shown;
+      root.classList.toggle("has-tabs", shown);
+      return;
+    }
+    root.classList.add("tabs-animate");
+    strip.hidden = false;
+    strip.classList.add(shown ? "is-entering" : "is-leaving");
+    root.classList.toggle("has-tabs", shown);
+    settling = window.setTimeout(() => {
+      root.classList.remove("tabs-animate");
+      strip.classList.remove("is-entering");
+      if (strip.classList.contains("is-leaving")) {
+        strip.classList.remove("is-leaving");
+        strip.hidden = true;
+      }
+    }, 360);
   }
 
   // The corner's tools sit at the right end of the strip; the tabs stop short
@@ -3699,14 +3757,23 @@ ${TAB_MODEL}
   };
   reserve();
   if (corner && typeof ResizeObserver === "function") new ResizeObserver(reserve).observe(corner);
-  render();
+
+  const shown = state.tabs.length > 1;
+  draw(arrived ? arrived.tab : "");
+  if (shown && arrived && arrived.strip) {
+    whenLoaded(() => showStrip(true, true), 2000);
+  } else {
+    showStrip(shown, false);
+  }
+  // A new tab waits, faded out, for its page to load.
+  whenLoaded(() => root.classList.add("tabs-loaded"), 2000);
 
   function showTab(id) {
     const tab = state.tabs.find((t) => t.id === id);
     if (!tab || id === state.active) return;
     state.active = id;
     save();
-    render();
+    draw("");
     location.href = tab.url;
   }
 
@@ -3714,9 +3781,20 @@ ${TAB_MODEL}
     const wasOpen = id === state.active;
     tabsClose(state, id);
     save();
-    render();
     const next = state.tabs.find((t) => t.id === state.active);
-    if (wasOpen && next) location.href = next.url;
+    // The next tab's page draws the strip as it should be.
+    if (wasOpen && next) {
+      location.href = next.url;
+      return;
+    }
+    if (state.tabs.length < 2) {
+      showStrip(false, true);
+      return;
+    }
+    const item = list.querySelector('[data-tab="' + CSS.escape(id) + '"]');
+    if (!item) return draw("");
+    item.classList.add("is-closing");
+    window.setTimeout(() => draw(""), 160);
   }
 
   function openTab(href, name) {
@@ -3728,9 +3806,12 @@ ${TAB_MODEL}
       if (url.hash) location.hash = url.hash;
       return;
     }
-    tabsOpen(state, path, name || path, newId);
+    const before = state.tabs.length;
+    const known = state.tabs.some((t) => t.url === path);
+    const tab = tabsOpen(state, path, name || path, newId);
     save();
-    render();
+    if (known) draw("");
+    else write("sessionStorage", ARRIVAL_KEY, { url: path, tab: tab.id, strip: before < 2 });
     location.href = path + url.hash;
   }
 
@@ -3789,7 +3870,8 @@ ${TAB_MODEL}
     state = tabsValid(read("sessionStorage", TABS_KEY)) || state;
     tabsArrive(state, here, title, "back_forward", newId);
     save();
-    render();
+    draw("");
+    showStrip(state.tabs.length > 1, false);
   });
 
   // MOVE_SCRIPT, once a drag in the sidebar has moved pages.
@@ -5919,6 +6001,8 @@ const STYLES = `
   --tabs-h:58px;
   --fg-secondary:#374151;
   --surface:#fff; --surface-hover:#eef0f3; --surface-hover-2:#f7f8fa;
+  --tabs-bg:rgba(247,248,250,.86); --tab-hover-bg:rgba(15,23,42,.05); --tab-open-bg:#fff;
+  --tab-open-shadow:0 0 0 1px rgba(15,23,42,.07), 0 1px 2px rgba(15,23,42,.08), 0 2px 6px rgba(15,23,42,.04);
   --active-bg:#e7efff; --selected-bg:#dbeafe;
   --mark-bg:#fde68a; --mark-bg-strong:#fcd34d; --mark-fg:#713f12;
   /* A note is teal by default, which is what a remark keeps… */
@@ -5966,6 +6050,8 @@ const STYLES = `
   --fresh-glow:rgba(68,147,248,.6);
   --fg-secondary:#c9d1d9;
   --surface:#161b22; --surface-hover:#21262d; --surface-hover-2:#21262d;
+  --tabs-bg:rgba(11,14,20,.84); --tab-hover-bg:rgba(240,246,252,.06); --tab-open-bg:#1c2129;
+  --tab-open-shadow:0 0 0 1px rgba(240,246,252,.09), 0 1px 3px rgba(0,0,0,.45);
   --active-bg:#1f2d44; --selected-bg:#253a5e;
   --mark-bg:#5c4708; --mark-bg-strong:#7a5f0a; --mark-fg:#f5d67b;
   --note-bg:#134e4a; --note-bg-strong:#115e59; --note-fg:#99f6e4;
@@ -6003,6 +6089,8 @@ const STYLES = `
     --fresh-glow:rgba(68,147,248,.6);
     --fg-secondary:#c9d1d9;
     --surface:#161b22; --surface-hover:#21262d; --surface-hover-2:#21262d;
+    --tabs-bg:rgba(11,14,20,.84); --tab-hover-bg:rgba(240,246,252,.06); --tab-open-bg:#1c2129;
+    --tab-open-shadow:0 0 0 1px rgba(240,246,252,.09), 0 1px 3px rgba(0,0,0,.45);
     --active-bg:#1f2d44; --selected-bg:#253a5e;
     --mark-bg:#5c4708; --mark-bg-strong:#7a5f0a; --mark-fg:#f5d67b;
     --note-bg:#134e4a; --note-bg-strong:#115e59; --note-fg:#99f6e4;
@@ -6330,42 +6418,77 @@ body.dragging-page .space-current{
    or more are open, when TABS_SCRIPT puts has-tabs on the root. The corner's
    tools float over its right end, which --tabs-reserve (their width) keeps
    clear of tabs. The strip is fixed and out of body's flex row, so its
-   nowrap titles cannot widen the page. */
+   nowrap titles cannot widen the page; the page scrolls on under it, frosted. */
 .tab-strip{
   position:fixed; top:0; left:0; right:0; z-index:45; height:var(--tabs-h);
   display:flex; align-items:center;
-  padding:0 calc(var(--tabs-reserve, 0px) + 28px) 0 16px;
-  background:var(--sidebar); border-bottom:1px solid var(--line);
+  padding:0 calc(var(--tabs-reserve, 0px) + 28px) 0 12px;
+  background:var(--tabs-bg); border-bottom:1px solid var(--line);
+  -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
 }
 .tab-strip[hidden]{display:none}
+/* Padded so that the scrolling box does not clip the open tab's shadow. */
 .tab-list{
-  position:relative; flex:1; min-width:0; display:flex; gap:6px;
-  overflow-x:auto; scrollbar-width:none;
+  position:relative; flex:1; min-width:0; display:flex; align-items:center; gap:3px;
+  padding:4px 2px; overflow-x:auto; scrollbar-width:none;
 }
 .tab-list::-webkit-scrollbar{display:none}
 .tab{
-  flex:0 1 220px; min-width:96px; height:34px; display:flex; align-items:center;
-  border:1px solid var(--line); border-radius:6px; background:var(--surface);
-  color:var(--fg-secondary); cursor:pointer;
+  position:relative; flex:0 1 200px; min-width:88px; height:32px;
+  display:flex; align-items:center; gap:7px; padding:0 5px 0 11px;
+  border-radius:8px; color:var(--muted); cursor:pointer;
+  transition:background-color .15s ease, color .15s ease, box-shadow .15s ease;
 }
-.tab:hover{background:var(--surface-hover-2); color:var(--fg)}
-.tab.is-open{background:var(--active-bg); border-color:var(--accent); color:var(--accent)}
+/* Hairlines between tabs, as in a browser. They give way beside the open tab
+   and the one under the pointer, which have a shape of their own. */
+.tab + .tab::before{
+  content:""; position:absolute; left:-2px; top:9px; bottom:9px; width:1px;
+  background:var(--line); transition:opacity .15s ease;
+}
+.tab:hover::before,.tab:hover + .tab::before,.tab.is-open::before,.tab.is-open + .tab::before{opacity:0}
+.tab:hover{background:var(--tab-hover-bg); color:var(--fg-secondary)}
+.tab.is-open{background:var(--tab-open-bg); color:var(--fg); box-shadow:var(--tab-open-shadow)}
+.tab:has(.tab-link:focus-visible){box-shadow:0 0 0 2px var(--focus-ring)}
+.tab-icon{flex:0 0 auto; display:block; opacity:.7}
+.tab.is-open .tab-icon{color:var(--accent); opacity:1}
+/* A long title fades out at the end rather than stopping on an ellipsis. */
 .tab-link{
-  flex:1; min-width:0; padding:0 4px 0 12px; color:inherit; font-size:13px; font-weight:600;
-  line-height:32px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  flex:1; min-width:0; color:inherit; font-size:12.5px; font-weight:500; line-height:32px;
+  white-space:nowrap; overflow:hidden;
+  -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  mask-image:linear-gradient(to right, #000 calc(100% - 16px), transparent);
 }
 .tab-link:hover{text-decoration:none}
+.tab-link:focus-visible{outline:none}
 .tab-close{
-  flex:0 0 auto; width:22px; height:22px; margin-right:5px; padding:0;
-  border:0; border-radius:4px; background:transparent; color:var(--muted);
-  font:inherit; font-size:16px; line-height:1; cursor:pointer;
+  flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
+  width:20px; height:20px; padding:0; border:0; border-radius:6px;
+  background:transparent; color:inherit; cursor:pointer; opacity:0;
+  transition:opacity .12s ease, background-color .12s ease;
 }
-.tab-close:hover{background:var(--surface-hover); color:var(--fg)}
+.tab-close svg{display:block}
+.tab:hover .tab-close,.tab.is-open .tab-close,.tab-close:focus-visible{opacity:.6}
+.tab-close:hover{opacity:1; background:color-mix(in srgb, currentColor 14%, transparent)}
+/* The strip slides in and out, the page moving with it (tabs-animate, for
+   that one change only); a new tab fades in once its page has loaded
+   (tabs-loaded); a closed one folds away. */
+@keyframes tabs-in{from{transform:translateY(-100%)}}
+@keyframes tabs-out{to{transform:translateY(-100%)}}
+@keyframes tab-in{from{opacity:0; transform:translateY(-3px) scale(.97)}}
+@keyframes tab-out{to{opacity:0; flex-basis:0; min-width:0; padding:0}}
+.tab-strip.is-entering{animation:tabs-in .3s cubic-bezier(.2,.8,.2,1)}
+.tab-strip.is-leaving{animation:tabs-out .3s cubic-bezier(.2,.8,.2,1) forwards}
+.tab.is-new{animation:tab-in .24s cubic-bezier(.2,.8,.2,1) both; animation-play-state:paused}
+html.tabs-loaded .tab.is-new{animation-play-state:running}
+.tab.is-closing{overflow:hidden; pointer-events:none; animation:tab-out .16s ease-in forwards}
+html.tabs-animate body{transition:padding-top .3s cubic-bezier(.2,.8,.2,1)}
+html.tabs-animate .toc{transition:top .3s cubic-bezier(.2,.8,.2,1), max-height .3s cubic-bezier(.2,.8,.2,1), padding-top .3s cubic-bezier(.2,.8,.2,1)}
 html.has-tabs{scroll-padding-top:var(--tabs-h)}
 html.has-tabs body{padding-top:var(--tabs-h)}
 html.has-tabs .toc{top:var(--tabs-h); max-height:calc(100vh - var(--tabs-h)); padding-top:32px}
 @media (min-width:781px){
   html.has-tabs .sidebar{top:var(--tabs-h); height:calc(100vh - var(--tabs-h))}
+  html.tabs-animate .sidebar{transition:top .3s cubic-bezier(.2,.8,.2,1), height .3s cubic-bezier(.2,.8,.2,1)}
 }
 /* Too narrow for tabs beside the tools: the tabs take a row under them. */
 @media (max-width:780px){
@@ -6380,7 +6503,9 @@ html.has-tabs .toc{top:var(--tabs-h); max-height:calc(100vh - var(--tabs-h)); pa
 html.kb-placing main,html.kb-placing .toc{visibility:hidden; animation:kb-show 0s 2s forwards}
 html.kb-placed main,html.kb-placed .toc{animation:kb-fade-in .14s ease-out}
 @media (prefers-reduced-motion:reduce){
+  .tab-strip.is-entering,.tab-strip.is-leaving,.tab.is-new,.tab.is-closing,
   html.kb-placed main,html.kb-placed .toc{animation:none}
+  html.tabs-animate body,html.tabs-animate .toc,html.tabs-animate .sidebar{transition:none}
 }
 .help-dialog{
   width:min(520px,92vw); border:1px solid var(--line); border-radius:10px;
