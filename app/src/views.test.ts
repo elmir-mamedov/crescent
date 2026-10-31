@@ -1109,6 +1109,16 @@ test("gallery: the upload is a multipart form back to the gallery, taking images
   assert.match(html, /<input type="file" name="image" accept="\.png,\.jpg,\.jpeg,\.gif,\.webp,\.avif,\.svg" multiple required/);
 });
 
+test("dialogs: opening one focuses the dialog, not the close button in its corner", () => {
+  // A focused close button wears the browser's focus ring until clicked away.
+  const gallery = galleryLayout(galleryView());
+  assert.match(gallery, /<dialog class="gallery-viewer" data-gallery-viewer tabindex="-1">/);
+  assert.match(gallery, /viewer\.showModal\(\);\s*\/\/[^\n]*\n\s*viewer\.focus\(\);/);
+  const page = layout(pageView());
+  assert.match(page, /<dialog class="help-dialog" data-help-dialog tabindex="-1">/);
+  assert.match(page, /dialog\.showModal\(\);\s*else dialog\.setAttribute\("open", ""\);\s*\/\/[^\n]*\n\s*dialog\.focus\(\);/);
+});
+
 test("gallery: just-uploaded images are marked, and an empty space says so", () => {
   const html = galleryLayout(
     galleryView({
@@ -1693,7 +1703,7 @@ test("views: a launcher-started server's corner offers Quit, behind a confirmati
     layout(pageView()),
   ])) {
     assert.match(html, /<button type="button" class="quit-button" data-quit-open aria-label="Quit Crescent"/);
-    assert.match(html, /<dialog class="help-dialog" data-quit-dialog>/);
+    assert.match(html, /<dialog class="help-dialog" data-quit-dialog tabindex="-1">/);
     assert.match(html, /data-quit-confirm/);
     assert.match(html, /fetch\("\/_quit", \{ method: "POST" \}\)/);
   }

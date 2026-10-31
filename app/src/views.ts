@@ -1295,7 +1295,7 @@ export function galleryLayout(v: GalleryView): string {
   </div>
   ${grid}
 </div>
-<dialog class="gallery-viewer" data-gallery-viewer>
+<dialog class="gallery-viewer" data-gallery-viewer tabindex="-1">
   <form method="dialog" class="help-head">
     <h2 data-gallery-viewer-name></h2>
     <button class="help-close" aria-label="Close" value="close">&times;</button>
@@ -1344,6 +1344,8 @@ const GALLERY_SCRIPT = `
     ref.textContent = link.dataset.ref || "";
     size.textContent = link.dataset.size || "";
     viewer.showModal();
+    // Not its close button, which would wear a focus ring until clicked away.
+    viewer.focus();
   });
   // A click on the backdrop lands on the dialog itself.
   viewer.addEventListener("click", (event) => {
@@ -1892,7 +1894,7 @@ const PAGE_DOT = `<svg class="tree-page-dot" viewBox="0 0 16 16" width="14" heig
 const COPY_GLYPH = `<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>`;
 
 /** Help dialog content: a short KB25 overview plus the keyboard shortcuts. */
-const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog>
+const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
   <form method="dialog" class="help-head">
     <h2>Crescent Help</h2>
     <button class="help-close" aria-label="Close help" value="close">&times;</button>
@@ -1930,6 +1932,8 @@ const HELP_SCRIPT = `
   openBtn.addEventListener("click", () => {
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
+    // Not its close button, which would wear a focus ring until clicked away.
+    dialog.focus();
   });
 })();
 `;
@@ -1940,7 +1944,7 @@ const QUIT_BUTTON = `<button type="button" class="quit-button" data-quit-open ar
   </button>`;
 
 /** Asks before quitting: Quit stops every open KB25 tab, not just this one. */
-const QUIT_DIALOG = `<dialog class="help-dialog" data-quit-dialog>
+const QUIT_DIALOG = `<dialog class="help-dialog" data-quit-dialog tabindex="-1">
   <form method="dialog" class="help-head">
     <h2>Quit Crescent?</h2>
     <button class="help-close" aria-label="Cancel" value="cancel">&times;</button>
@@ -2969,6 +2973,7 @@ const QUIT_SCRIPT = `
       error.hidden = true;
       if (typeof dialog.showModal === "function") dialog.showModal();
       else dialog.setAttribute("open", "");
+      dialog.focus();
       return;
     }
     const confirm = target.closest("[data-quit-confirm]");
@@ -5803,6 +5808,9 @@ body.dragging-page .space-current{
   padding:0; color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
 }
 .help-dialog::backdrop{background:var(--backdrop)}
+/* An opened dialog holds the focus itself (HELP_SCRIPT, GALLERY_SCRIPT), so
+   Tab and Esc work at once; the frame needs no ring for it. */
+.help-dialog:focus,.gallery-viewer:focus{outline:none}
 /* The feedback dialog draws itself in a shadow root (FEEDBACK_SCRIPT); these
    hand it KB25's colours, which follow the theme like everything else. */
 :root{
@@ -6324,7 +6332,8 @@ body.dragging-page .space-current{
   padding:0; color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
 }
 .gallery-viewer::backdrop{background:var(--backdrop)}
-.gallery-viewer .help-head h2{font-size:15px; overflow-wrap:anywhere}
+/* It sits inside .prose, whose h2 is underlined like a page's section. */
+.gallery-viewer .help-head h2{font-size:15px; margin:0; padding:0; border:0; overflow-wrap:anywhere}
 .gallery-viewer-frame{display:flex; justify-content:center; padding:16px 20px 0}
 .prose .gallery-viewer-frame img{max-width:100%; max-height:72vh; object-fit:contain}
 .gallery-viewer-meta{margin:0; padding:12px 20px 16px; color:var(--muted); font-size:13px; overflow-wrap:anywhere}
