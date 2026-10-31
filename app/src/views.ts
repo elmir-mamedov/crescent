@@ -1972,6 +1972,8 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
       <dd>Copy this page's relative link (space/&hellip;/page)</dd>
       <dt><kbd>&#8984;</kbd> / <kbd>Ctrl</kbd> + click</dt>
       <dd>Open a page from the sidebar in a new tab</dd>
+      <dt><kbd>Shift</kbd> + click</dt>
+      <dd>Select a page in the sidebar; Shift-click another to select both and every page between them, then drag them together</dd>
       <dt><kbd>Esc</kbd></dt>
       <dd>Close the search results or this dialog</dd>
     </dl>
@@ -3882,12 +3884,14 @@ const MOVE_SCRIPT = `
   ).filter((el) => !treeEl || !treeEl.contains(el));
   const errorEl = document.querySelector("[data-move-error]");
 
-  // Multi-selection: shift-click selects an inclusive range from the anchor.
-  // Cmd/Ctrl-click opens a page in a new tab instead (TABS_SCRIPT). State is
-  // in-memory only — it just needs to survive from the click until the drag,
-  // and navigation reloads.
+  // Multi-selection, for dragging several pages at once (feedback #18): the
+  // first shift-click selects that page alone and anchors the range, and each
+  // shift-click after it selects everything from the anchor to the page
+  // clicked. Cmd/Ctrl-click opens a page in a new tab instead (TABS_SCRIPT).
+  // State is in-memory only — it just needs to survive from the click until
+  // the drag, and navigation reloads.
   const selected = new Set();
-  let anchorIndex = orderedLinks.findIndex((el) => el.classList.contains("active"));
+  let anchorIndex = -1;
   let dragSlugs = [];
 
   function slugOf(el) {
@@ -4153,13 +4157,14 @@ const MOVE_SCRIPT = `
       if (event.metaKey || event.ctrlKey) return;
       if (event.shiftKey) {
         event.preventDefault();
-        if (anchorIndex < 0) anchorIndex = index;
+        if (anchorIndex < 0 || selected.size === 0) anchorIndex = index;
         selectRange(anchorIndex, index);
         const sel = window.getSelection();
         if (sel) sel.removeAllRanges();
       } else {
         // Plain click navigates; drop any lingering selection first.
         selected.clear();
+        anchorIndex = -1;
         applySelection();
       }
     });

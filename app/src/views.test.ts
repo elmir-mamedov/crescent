@@ -2467,7 +2467,7 @@ test("tabs: only Crescent's own window reopens what it had open", () => {
   assert.match(script, /const fresh = windowed && !state;/);
 });
 
-test("tabs: Cmd/Ctrl-click in the sidebar opens a tab instead of selecting the page", () => {
+test("tabs: Cmd/Ctrl-click in the sidebar opens a tab, and shift-click starts a range at the page clicked", () => {
   const html = layout(pageView());
   const move = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
     .map((m) => m[1])
@@ -2476,6 +2476,9 @@ test("tabs: Cmd/Ctrl-click in the sidebar opens a tab instead of selecting the p
   // Cmd/Ctrl no longer toggles a page into the selection.
   assert.match(move, /if \(event\.metaKey \|\| event\.ctrlKey\) return;\s*if \(event\.shiftKey\) \{/);
   assert.doesNotMatch(move, /selected\.delete\(slug\)/);
+  // No anchor until the first shift-click, which therefore selects one page.
+  assert.match(move, /let anchorIndex = -1;/);
+  assert.match(move, /if \(anchorIndex < 0 \|\| selected\.size === 0\) anchorIndex = index;/);
   // A drag that moves pages tells the tabs where they went.
   assert.equal([...move.matchAll(/if \(window\.kbTabs\) window\.kbTabs\.moved\(result\.moved\);/g)].length, 2);
 
@@ -2489,6 +2492,7 @@ test("tabs: Cmd/Ctrl-click in the sidebar opens a tab instead of selecting the p
   assert.match(tabs, /if \(!item\) return;\s*\/\/[^\n]*\n\s*event\.preventDefault\(\);/);
 
   assert.match(html, /<dt><kbd>&#8984;<\/kbd> \/ <kbd>Ctrl<\/kbd> \+ click<\/dt>\s*<dd>Open a page from the sidebar in a new tab<\/dd>/);
+  assert.match(html, /<dt><kbd>Shift<\/kbd> \+ click<\/dt>/);
 });
 
 test("tabs: a place comes back only for a page opened afresh, without a #section", () => {
