@@ -67,6 +67,14 @@ main() {
     echo "$node_version" > "$home/node/VERSION"
   fi
 
+  # Crescent runs only bin/node, so drop the rest of the Node.js download:
+  # mostly npm and the C headers, about 77 MB. This runs on every install and
+  # update, not only when Node is downloaded, so it trims copies installed
+  # before it too. Never fatal: a file left behind costs only space.
+  find "$home/node" -mindepth 1 -maxdepth 1 ! -name bin ! -name LICENSE ! -name VERSION \
+    -exec rm -rf {} + 2>/dev/null || true
+  find "$home/node/bin" -mindepth 1 -maxdepth 1 ! -name node -exec rm -rf {} + 2>/dev/null || true
+
   echo "Downloading Crescent…"
   if [ -n "${KB25_ZIP:-}" ]; then
     cp "$KB25_ZIP" "$tmp/kb25.zip"

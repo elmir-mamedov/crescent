@@ -85,6 +85,16 @@
       Set-Content -Path $nodeVersionFile -Value $nodeVersion
     }
 
+    # Crescent runs only node.exe, so drop the rest of the Node.js download:
+    # mostly npm, about 11 MB. This runs on every install and update, not only
+    # when Node is downloaded, so it trims copies installed before it too.
+    # Never fatal: a file left behind costs only space.
+    try {
+      Get-ChildItem $nodeDir -Force |
+        Where-Object { $_.Name -notin 'node.exe', 'LICENSE', 'VERSION' } |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    } catch { }
+
     Write-Host 'Downloading Crescent...'
     $zip = Join-Path $tmp 'kb25.zip'
     if ($env:KB25_ZIP) {
