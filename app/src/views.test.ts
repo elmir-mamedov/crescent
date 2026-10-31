@@ -14,6 +14,7 @@ import {
   loginLayout,
   spacesLayout,
   updateGateLayout,
+  TAB_MODEL,
   type ArchiveView,
   type DashboardView,
   type DashboardsView,
@@ -1581,7 +1582,11 @@ test("the scroll spy's probe line clears the scroll margin by a pixel", () => {
   // headings. Probing at exactly 28 hands the highlight to the section above the
   // one the reader just clicked, on roughly half of them.
   const html = layout(pageView({ sections: sections() }));
-  assert.match(html, /const line = 28 \+ 1;/);
+  assert.match(html, /const line = pad \+ 28 \+ 1;/);
+  // With tabs open the jump also clears their strip, which is the root's
+  // scroll-padding, so the line moves down by as much.
+  assert.match(html, /const pad = parseFloat\(getComputedStyle\(document\.documentElement\)\.scrollPaddingTop\) \|\| 0;/);
+  assert.match(html, /html\.has-tabs\{scroll-padding-top:var\(--tabs-h\)\}/);
 });
 
 test("issue #9: the Add note button waits for a drag-selection to end", () => {
@@ -2247,4 +2252,253 @@ test("views: the chat picks a model and effort from what the engine listed, per 
   assert.match(script, /effortPicker\.hidden = !efforts\.length/);
   assert.doesNotMatch(script, /Default (model|effort)/);
   assert.match(script, /model: modelPicker\.value \|\| undefined,\s*effort: effortPicker\.value \|\| undefined,/);
+});
+
+// --- tabs (feedback #18) -------------------------------------------------------
+
+interface Tab {
+  id: string;
+  url: string;
+  title: string;
+}
+interface Tabs {
+  tabs: Tab[];
+  active: string;
+}
+interface ScrollMemory {
+  at: Record<string, number>;
+  recent: string[];
+}
+interface TabModel {
+  tabsValid(saved: unknown): Tabs | null;
+  tabsArrive(state: Tabs, here: string, title: string, navType: string, newId: () => string): Tabs;
+  tabsOpen(state: Tabs, url: string, title: string, newId: () => string): Tab;
+  tabsClose(state: Tabs, id: string): Tabs;
+  tabsMoved(state: Tabs, moves: unknown[]): Tabs;
+  scrollFor(memory: unknown, here: string): number;
+  scrollRemember(memory: unknown, here: string, y: number, keep: string[]): ScrollMemory;
+}
+
+/** TAB_MODEL's functions, run the way the page runs them. */
+function tabModel(): TabModel {
+  return new Function(
+    `${TAB_MODEL}\nreturn { tabsValid, tabsArrive, tabsOpen, tabsClose, tabsMoved, scrollFor, scrollRemember };`
+  )() as TabModel;
+}
+
+/** Ids t1, t2, … in the order they are asked for. */
+function ids(): () => string {
+  let n = 0;
+  return () => `t${++n}`;
+}
+
+function urls(state: Tabs): string[] {
+  return state.tabs.map((t) => t.url);
+}
+
+function openUrl(state: Tabs): string | undefined {
+  return state.tabs.find((t) => t.id === state.active)?.url;
+}
+
+test("tabs: the first page loaded is the one tab, and a page loading takes over the open tab", () => {
+  const m = tabModel();
+  const id = ids();
+  const state = m.tabsArrive({ tabs: [], active: "" }, "/kb25/a", "A", "navigate", id);
+  assert.deepEqual(state, { tabs: [{ id: "t1", url: "/kb25/a", title: "A" }], active: "t1" });
+
+  m.tabsOpen(state, "/kb25/b", "B", id);
+  // Following a link in the open tab changes that tab, not the other one.
+  m.tabsArrive(state, "/kb25/c", "C", "navigate", id);
+  assert.deepEqual(urls(state), ["/kb25/a", "/kb25/c"]);
+  assert.equal(openUrl(state), "/kb25/c");
+  assert.equal(state.tabs[1].title, "C");
+});
+
+test("tabs: Back to a page another tab holds goes back to that tab", () => {
+  const m = tabModel();
+  const id = ids();
+  const state = m.tabsArrive({ tabs: [], active: "" }, "/kb25/a", "A", "navigate", id);
+  m.tabsOpen(state, "/kb25/b", "B", id);
+  m.tabsArrive(state, "/kb25/b", "B", "navigate", id);
+
+  m.tabsArrive(state, "/kb25/a", "A", "back_forward", id);
+  assert.deepEqual(urls(state), ["/kb25/a", "/kb25/b"], "nothing is copied into the open tab");
+  assert.equal(openUrl(state), "/kb25/a");
+
+  // A page no tab holds still lands in the open one.
+  m.tabsArrive(state, "/kb25/z", "Z", "back_forward", id);
+  assert.deepEqual(urls(state), ["/kb25/z", "/kb25/b"]);
+});
+
+test("tabs: a new tab opens beside the open one, and a page already in a tab is switched to", () => {
+  const m = tabModel();
+  const id = ids();
+  const state = m.tabsArrive({ tabs: [], active: "" }, "/kb25/a", "A", "navigate", id);
+  m.tabsOpen(state, "/kb25/c", "C", id);
+  state.active = state.tabs[0].id;
+  m.tabsOpen(state, "/kb25/b", "B", id);
+  assert.deepEqual(urls(state), ["/kb25/a", "/kb25/b", "/kb25/c"]);
+  assert.equal(openUrl(state), "/kb25/b");
+
+  const again = m.tabsOpen(state, "/kb25/c", "C", id);
+  assert.equal(state.tabs.length, 3, "no second tab of the same page");
+  assert.equal(state.active, again.id);
+  assert.equal(openUrl(state), "/kb25/c");
+});
+
+test("tabs: closing the open tab opens the one after it, or else the one before", () => {
+  const m = tabModel();
+  const state: Tabs = {
+    tabs: [
+      { id: "a", url: "/kb25/a", title: "A" },
+      { id: "b", url: "/kb25/b", title: "B" },
+      { id: "c", url: "/kb25/c", title: "C" },
+    ],
+    active: "b",
+  };
+  m.tabsClose(state, "b");
+  assert.equal(state.active, "c");
+  m.tabsClose(state, "c");
+  assert.equal(state.active, "a");
+  // Closing one that is not open leaves the open one be.
+  state.tabs.push({ id: "d", url: "/kb25/d", title: "D" });
+  m.tabsClose(state, "d");
+  assert.equal(state.active, "a");
+  assert.deepEqual(urls(state), ["/kb25/a"]);
+});
+
+test("tabs: only paths on this site come back from storage", () => {
+  const m = tabModel();
+  assert.equal(m.tabsValid(null), null);
+  assert.equal(m.tabsValid({ tabs: "nope" }), null);
+  const state = m.tabsValid({
+    tabs: [
+      { id: "a", url: "/kb25/a", title: "A" },
+      { id: "b", url: "//evil.example/x", title: "B" },
+      { id: "c", url: "/\\evil.example/x", title: "C" },
+      { id: "d", url: "javascript:alert(1)", title: "D" },
+      { id: "a", url: "/kb25/again", title: "dup" },
+      { id: "e", url: "/kb25/e" },
+    ],
+    active: "a",
+  });
+  assert.deepEqual(state, {
+    tabs: [
+      { id: "a", url: "/kb25/a", title: "A" },
+      { id: "e", url: "/kb25/e", title: "" },
+    ],
+    active: "a",
+  });
+});
+
+test("tabs: a page moved in the sidebar takes its tab and its subpages' tabs along", () => {
+  const m = tabModel();
+  const state: Tabs = {
+    tabs: [
+      { id: "a", url: "/kb25/notes", title: "Notes" },
+      { id: "b", url: "/kb25/notes/today", title: "Today" },
+      { id: "c", url: "/kb25/notes-old", title: "Old notes" },
+    ],
+    active: "c",
+  };
+  m.tabsMoved(state, [{ oldSlug: "kb25/notes", newSlug: "kb25/archive/notes" }, null]);
+  assert.deepEqual(urls(state), ["/kb25/archive/notes", "/kb25/archive/notes/today", "/kb25/notes-old"]);
+});
+
+test("scroll memory: the page being read and the three before it, plus every page in a tab", () => {
+  const m = tabModel();
+  let memory: unknown = null;
+  for (const [i, url] of ["/kb25/a", "/kb25/b", "/kb25/c", "/kb25/d", "/kb25/e"].entries()) {
+    memory = m.scrollRemember(memory, url, (i + 1) * 100, ["/kb25/a"]);
+  }
+  const kept = memory as ScrollMemory;
+  assert.deepEqual(kept.recent, ["/kb25/e", "/kb25/d", "/kb25/c", "/kb25/b"]);
+  // /kb25/a fell out of the recent pages but stays, because a tab holds it.
+  assert.deepEqual(kept.at, { "/kb25/a": 100, "/kb25/b": 200, "/kb25/c": 300, "/kb25/d": 400, "/kb25/e": 500 });
+
+  // Closing its tab lets it go at the next save.
+  memory = m.scrollRemember(memory, "/kb25/e", 0, []);
+  assert.equal(m.scrollFor(memory, "/kb25/a"), 0);
+  assert.equal(m.scrollFor(memory, "/kb25/b"), 200);
+  // Back at the top is kept too, so an old place cannot come back.
+  assert.equal((memory as ScrollMemory).at["/kb25/e"], 0);
+  assert.equal(m.scrollFor(memory, "/kb25/e"), 0);
+  // Revisiting a page moves it to the front without a second entry.
+  memory = m.scrollRemember(memory, "/kb25/c", 350, []);
+  assert.deepEqual((memory as ScrollMemory).recent, ["/kb25/c", "/kb25/e", "/kb25/d", "/kb25/b"]);
+  assert.equal(m.scrollFor(memory, "/kb25/c"), 350);
+  assert.equal(m.scrollFor({ at: "junk" }, "/kb25/c"), 0);
+});
+
+test("tabs: every view with the corner draws the strip first, hidden until there are two", () => {
+  const views: Array<[string, string]> = [
+    ["page", layout(pageView())],
+    ["folder", folderLayout(folderView())],
+    ["edit", editLayout(editView())],
+    ["dashboard", dashboardLayout(dashboardView())],
+    ["spaces", spacesLayout(spacesView())],
+  ];
+  for (const [name, html] of views) {
+    const strip = html.indexOf('<nav class="tab-strip" data-tabs');
+    assert.ok(strip > 0, `${name}: has the strip`);
+    assert.ok(strip > html.indexOf('<div class="session-corner">'), `${name}: after the corner it measures`);
+    const aside = html.indexOf('<aside class="sidebar">');
+    if (aside >= 0) assert.ok(strip < aside, `${name}: before the sidebar it makes room above`);
+    assert.match(html, /<nav class="tab-strip"[^>]* aria-label="Open pages" hidden><div class="tab-list" data-tab-list><\/div><\/nav>\s*<script>/, name);
+  }
+  assert.match(layout(pageView({ title: 'Q & "A"' })), /data-tab-title="Q &amp; &quot;A&quot;"/);
+  assert.match(spacesLayout(spacesView()), /data-tab-title="Spaces"/);
+  // The editor is not read, so it keeps no place of its own.
+  assert.match(editLayout(editView()), /<nav class="tab-strip"[^>]* data-no-scroll-memory /);
+  assert.doesNotMatch(layout(pageView()), /data-no-scroll-memory /);
+  for (const name of ["login", "update gate"]) {
+    const html = name === "login" ? loginLayout({ siteTitle: "KB", next: "/" } as LoginView) : updateGateLayout(gateView());
+    assert.doesNotMatch(html, /data-tabs/, name);
+  }
+});
+
+test("tabs: only Crescent's own window reopens what it had open", () => {
+  const strip = (html: string) => html.match(/<nav class="tab-strip"[^>]*>/)?.[0] ?? "";
+  assert.doesNotMatch(strip(layout(pageView())), /data-tabs-reopen/);
+  assert.match(strip(asDesktop(() => layout(pageView()))), /data-tabs-reopen/);
+  const script = layout(pageView());
+  // Once per window, on the home page it opens on, and only with a window's own storage.
+  assert.match(script, /if \(fresh && reopen && here === "\/"\) \{/);
+  assert.match(script, /const fresh = windowed && !state;/);
+});
+
+test("tabs: Cmd/Ctrl-click in the sidebar opens a tab instead of selecting the page", () => {
+  const html = layout(pageView());
+  const move = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes("function selectRange"));
+  assert.ok(move);
+  // Cmd/Ctrl no longer toggles a page into the selection.
+  assert.match(move, /if \(event\.metaKey \|\| event\.ctrlKey\) return;\s*if \(event\.shiftKey\) \{/);
+  assert.doesNotMatch(move, /selected\.delete\(slug\)/);
+  // A drag that moves pages tells the tabs where they went.
+  assert.equal([...move.matchAll(/if \(window\.kbTabs\) window\.kbTabs\.moved\(result\.moved\);/g)].length, 2);
+
+  const tabs = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('const TABS_KEY = "kb25.tabs"'));
+  assert.ok(tabs);
+  assert.match(tabs, /if \(event\.button !== 0 \|\| !\(event\.metaKey \|\| event\.ctrlKey\) \|\| event\.altKey\) return;/);
+  assert.match(tabs, /closest\("\.sidebar a\[href\]"\)/);
+  // The window would hand a modified click on a tab to the browser.
+  assert.match(tabs, /if \(!item\) return;\s*\/\/[^\n]*\n\s*event\.preventDefault\(\);/);
+
+  assert.match(html, /<dt><kbd>&#8984;<\/kbd> \/ <kbd>Ctrl<\/kbd> \+ click<\/dt>\s*<dd>Open a page from the sidebar in a new tab<\/dd>/);
+});
+
+test("tabs: a place comes back only for a page opened afresh, without a #section", () => {
+  const tabs = [...layout(pageView()).matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('const SCROLL_KEY = "kb25.scroll"'));
+  assert.ok(tabs);
+  assert.match(tabs, /let placing = target > 0 && navType\(\) === "navigate" && !location\.hash;/);
+  assert.doesNotMatch(tabs, /scrollRestoration/, "Back and reload keep the browser's own restore");
+  // Leaving before the page is back in place keeps the place, not the top.
+  assert.match(tabs, /const y = placing \? target : Math\.round\(window\.scrollY\);/);
+  assert.match(tabs, /window\.addEventListener\("pagehide", remember\);/);
 });

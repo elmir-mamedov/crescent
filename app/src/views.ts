@@ -764,6 +764,27 @@ ${HELP_DIALOG}${desktop ? QUIT_DIALOG : ""}
 }
 
 /**
+ * The pages open side by side, as tabs along the top of the window (feedback
+ * #18). The server knows nothing of them: TABS_SCRIPT keeps them in the
+ * browser and draws them here, and only once there are two, so a person who
+ * never opens a second tab sees the page exactly as before. It comes straight
+ * after the corner, whose width it measures, and before the sidebar, so the
+ * room it takes at the top is there before either paints.
+ *
+ * `title` is what the tab says for this view. `scrollMemory: false` leaves out
+ * a view that is not read, such as the editor, so that it neither takes one of
+ * the remembered places nor gets put back where it was.
+ */
+function tabStrip(title: string, options: { scrollMemory?: boolean } = {}): string {
+  // Crescent's own window is the only one there is, so what it had open can
+  // outlast it; a browser can hold the site in several windows at once.
+  const reopen = desktop ? " data-tabs-reopen" : "";
+  const memory = options.scrollMemory === false ? " data-no-scroll-memory" : "";
+  return `<nav class="tab-strip" data-tabs data-tab-title="${escapeHtml(title)}"${reopen}${memory} aria-label="Open pages" hidden><div class="tab-list" data-tab-list></div></nav>
+<script>${TABS_SCRIPT}</script>`;
+}
+
+/**
  * Holds the first paint until the sidebar has been parsed (Chromium; other
  * browsers ignore it), so a page never shows its tree before TREE_PLACE_SCRIPT
  * has opened and scrolled it. Chromium lifts the hold as soon as the expected
@@ -905,6 +926,7 @@ export function layout(v: PageView): string {
 ${renderHead(`${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, `${SIDEBAR_RENDER_HOLD}${mathCss}`)}
 <body>
 ${sessionCorner(v.username, v.spaceKey, v.activeSlug)}
+${tabStrip(v.title)}
 ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, v.isArchiveView, v.labelSet)}
 <main class="content">
   ${breadcrumb(v.activeSlug, v.titles)}
@@ -998,6 +1020,7 @@ export function folderLayout(v: FolderView): string {
 ${renderHead(`${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, SIDEBAR_RENDER_HOLD)}
 <body>
 ${sessionCorner(v.username, v.spaceKey, v.activeSlug)}
+${tabStrip(v.title)}
 ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.labelSet)}
 <main class="content">
   ${breadcrumb(v.activeSlug, v.titles)}
@@ -1597,6 +1620,7 @@ export function editLayout(v: EditView): string {
 ${renderHead(`Edit ${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, SIDEBAR_RENDER_HOLD)}
 <body>
 ${sessionCorner(v.username, v.spaceKey, v.activeSlug, false)}
+${tabStrip(`Edit ${v.title}`, { scrollMemory: false })}
 ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.labelSet)}
 <main class="content editor-content">
   ${breadcrumb(v.activeSlug, v.titles)}
@@ -1705,6 +1729,7 @@ export function diffLayout(v: DiffView): string {
 ${renderHead(`History ${escapeHtml(v.title)} · ${escapeHtml(v.siteTitle)}`, SIDEBAR_RENDER_HOLD)}
 <body>
 ${sessionCorner(v.username, v.spaceKey, v.activeSlug)}
+${tabStrip(`History ${v.title}`)}
 ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.labelSet)}
 <main class="content">
   ${breadcrumb(v.activeSlug, v.titles)}
@@ -1854,6 +1879,7 @@ export function spacesLayout(v: SpacesView): string {
 ${renderHead(`Spaces · ${escapeHtml(v.siteTitle)}`)}
 <body class="spaces-page">
 ${sessionCorner(v.username)}
+${tabStrip("Spaces")}
 <main class="spaces-main">
   <header class="spaces-head">
     <h1>${escapeHtml(v.siteTitle)}</h1>
@@ -1931,7 +1957,7 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
   </form>
   <section class="help-section">
     <h3>About Crescent</h3>
-    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
+    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. To keep several pages open at once, <kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click them in the sidebar: each opens in a <strong>tab</strong> along the top. A page in a tab, like each of the last few pages you read, opens again where you left it. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
   </section>
   <section class="help-section">
     <h3>Keyboard shortcuts</h3>
@@ -1944,6 +1970,8 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
       <dd>Save the page you are editing</dd>
       <dt><kbd>&#8984;</kbd> / <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>L</kbd></dt>
       <dd>Copy this page's relative link (space/&hellip;/page)</dd>
+      <dt><kbd>&#8984;</kbd> / <kbd>Ctrl</kbd> + click</dt>
+      <dd>Open a page from the sidebar in a new tab</dd>
       <dt><kbd>Esc</kbd></dt>
       <dd>Close the search results or this dialog</dd>
     </dl>
@@ -3245,8 +3273,10 @@ const TOC_SCRIPT = `
     // A jump to #section scrolls to the heading's offset minus that margin, and
     // the browser snaps the result to a whole pixel: a heading sitting on a
     // fraction then comes to rest a fraction *below* the line, and without the
-    // slack the entry above it wins the section the reader just clicked.
-    const line = 28 + 1;
+    // slack the entry above it wins the section the reader just clicked. With
+    // tabs open, the jump also clears their strip, the root's scroll-padding.
+    const pad = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+    const line = pad + 28 + 1;
     let found = null;
     for (const entry of entries) {
       if (entry.heading.getBoundingClientRect().top <= line) found = entry;
@@ -3395,6 +3425,399 @@ const INSTRUCTIONS_COUNT_SCRIPT = `
 `;
 
 /**
+ * What TABS_SCRIPT keeps, as plain functions of the stored state with no DOM
+ * in them, so that views.test.ts can run them.
+ *
+ * The tabs are `{ tabs: [{ id, url, title }], active }`, each `url` a path on
+ * this site, and `active` the tab this window shows. The scroll memory is
+ * `{ at: { url: y }, recent: [url] }`: where each page was left, kept for the
+ * pages in tabs and for the one being read and the SCROLL_RECENT before it.
+ */
+export const TAB_MODEL = `
+  const SCROLL_RECENT = 3;
+
+  // A path on this site: never another origin's //host or /\\host.
+  function tabsPath(url) {
+    return typeof url === "string" && url.charAt(0) === "/" && url.charAt(1) !== "/" && url.charCodeAt(1) !== 92;
+  }
+
+  /** Stored tabs, or null when there are none to read. */
+  function tabsValid(saved) {
+    if (!saved || typeof saved !== "object" || !Array.isArray(saved.tabs)) return null;
+    const seen = new Set();
+    const tabs = [];
+    for (const t of saved.tabs) {
+      if (!t || typeof t.id !== "string" || !t.id || seen.has(t.id) || !tabsPath(t.url)) continue;
+      seen.add(t.id);
+      tabs.push({ id: t.id, url: t.url, title: typeof t.title === "string" ? t.title : "" });
+    }
+    return { tabs: tabs, active: typeof saved.active === "string" ? saved.active : "" };
+  }
+
+  /**
+   * A page has loaded: it is what the open tab now shows. Back and Forward walk
+   * one history that every tab shares, so arriving that way at a page another
+   * tab holds goes back to that tab, rather than copying the page into this one.
+   */
+  function tabsArrive(state, here, title, navType, newId) {
+    let tab = state.tabs.find((t) => t.id === state.active);
+    if (!tab || (navType === "back_forward" && tab.url !== here)) {
+      tab = state.tabs.find((t) => t.url === here) || tab;
+    }
+    if (!tab) {
+      tab = { id: newId(), url: here, title: title };
+      state.tabs.push(tab);
+    }
+    tab.url = here;
+    tab.title = title;
+    state.active = tab.id;
+    return state;
+  }
+
+  /** Open a page in a tab of its own, beside the open one; a page already in a tab is switched to instead. */
+  function tabsOpen(state, url, title, newId) {
+    let tab = state.tabs.find((t) => t.url === url);
+    if (!tab) {
+      tab = { id: newId(), url: url, title: title };
+      const at = state.tabs.findIndex((t) => t.id === state.active);
+      state.tabs.splice(at < 0 ? state.tabs.length : at + 1, 0, tab);
+    }
+    state.active = tab.id;
+    return tab;
+  }
+
+  /** Close a tab; closing the open one opens its neighbour, the one after it first. */
+  function tabsClose(state, id) {
+    const at = state.tabs.findIndex((t) => t.id === id);
+    if (at < 0) return state;
+    state.tabs.splice(at, 1);
+    if (state.active === id) {
+      const next = state.tabs[at] || state.tabs[at - 1];
+      state.active = next ? next.id : "";
+    }
+    return state;
+  }
+
+  /** Pages moved in the sidebar take their tabs, and their subpages' tabs, along. */
+  function tabsMoved(state, moves) {
+    const pathOf = (slug) => "/" + slug.split("/").map(encodeURIComponent).join("/");
+    for (const tab of state.tabs) {
+      for (const move of moves) {
+        if (!move || typeof move.oldSlug !== "string" || typeof move.newSlug !== "string") continue;
+        const from = pathOf(move.oldSlug);
+        if (tab.url === from || tab.url.indexOf(from + "/") === 0) {
+          tab.url = pathOf(move.newSlug) + tab.url.slice(from.length);
+          break;
+        }
+      }
+    }
+    return state;
+  }
+
+  /** Where to put a page back to: 0 for a page with no place kept. */
+  function scrollFor(memory, here) {
+    const at = memory && typeof memory === "object" && memory.at && typeof memory.at === "object" ? memory.at : null;
+    const y = at && Object.prototype.hasOwnProperty.call(at, here) ? at[here] : 0;
+    return typeof y === "number" && y > 0 ? y : 0;
+  }
+
+  /** Keep where a page is; forget every page neither in a tab (keep) nor read lately. */
+  function scrollRemember(memory, here, y, keep) {
+    const ok = memory && typeof memory === "object" && memory.at && typeof memory.at === "object" && Array.isArray(memory.recent);
+    const at = ok ? memory.at : {};
+    const before = ok ? memory.recent.filter((u) => tabsPath(u) && u !== here) : [];
+    at[here] = y;
+    const next = { at: {}, recent: [here].concat(before).slice(0, 1 + SCROLL_RECENT) };
+    for (const url of new Set(next.recent.concat(keep))) {
+      if (Object.prototype.hasOwnProperty.call(at, url) && typeof at[url] === "number") next.at[url] = at[url];
+    }
+    return next;
+  }
+`;
+
+/**
+ * The tabs (tabStrip) and where each page was left, on the TAB_MODEL above.
+ *
+ * Every view is its own page load, so a tab is just an address: switching tabs
+ * loads the other tab's page, and a page loading takes over the open tab, the
+ * way following a link does in a browser. The tabs live in sessionStorage,
+ * which is this window's alone; Crescent's own window also copies them to
+ * localStorage, and a new window opening on the home page goes back to the tab
+ * the last one had open.
+ *
+ * Cmd/Ctrl-click or a middle click on a link in the sidebar opens it in a new
+ * tab. Crescent's window would otherwise send that click to the browser, as it
+ * does any link asked for in a new window, so the click never reaches it.
+ *
+ * Scroll positions go in localStorage, for the pages in tabs and the last few
+ * read in any (scrollRemember). One comes back only when a page is opened
+ * afresh: a #section link goes to its section, and Back, Forward and a reload
+ * get the browser's own restore, which stays per history entry.
+ */
+const TABS_SCRIPT = `
+(() => {
+  const strip = document.querySelector("[data-tabs]");
+  const list = strip && strip.querySelector("[data-tab-list]");
+  if (!strip || !list) return;
+${TAB_MODEL}
+  const TABS_KEY = "kb25.tabs";
+  const SCROLL_KEY = "kb25.scroll";
+  const here = location.pathname + location.search;
+  const title = strip.getAttribute("data-tab-title") || document.title;
+  const reopen = strip.hasAttribute("data-tabs-reopen");
+
+  function read(store, key) {
+    try {
+      return JSON.parse(window[store].getItem(key) || "null");
+    } catch {
+      return null;
+    }
+  }
+  function write(store, key, value) {
+    try {
+      window[store].setItem(key, JSON.stringify(value));
+    } catch {}
+  }
+  function newId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+  function pathOf(href) {
+    try {
+      const url = new URL(href, location.href);
+      return url.origin === location.origin ? url.pathname + url.search : "";
+    } catch {
+      return "";
+    }
+  }
+  function navType() {
+    try {
+      const nav = performance.getEntriesByType("navigation")[0];
+      return nav ? nav.type : "navigate";
+    } catch {
+      return "navigate";
+    }
+  }
+
+  // Without a sessionStorage of its own, every page would look like the
+  // first in a new window, and the home page could never be reached.
+  const windowed = (() => {
+    try {
+      sessionStorage.setItem("kb25.probe", "1");
+      sessionStorage.removeItem("kb25.probe");
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  let state = tabsValid(read("sessionStorage", TABS_KEY));
+  const fresh = windowed && !state;
+  if (!state && reopen) state = tabsValid(read("localStorage", TABS_KEY));
+  if (!state) state = { tabs: [], active: "" };
+
+  function save() {
+    write("sessionStorage", TABS_KEY, state);
+    if (reopen) write("localStorage", TABS_KEY, state);
+  }
+
+  // The window opens on the home page. Once per window, since sessionStorage
+  // is the window's: go back to what was open when the last one closed.
+  if (fresh && reopen && here === "/") {
+    const last = state.tabs.find((t) => t.id === state.active);
+    if (last && last.url !== "/") {
+      save();
+      location.replace(last.url);
+      return;
+    }
+  }
+
+  tabsArrive(state, here, title, navType(), newId);
+  save();
+
+  function render() {
+    const shown = state.tabs.length > 1;
+    strip.hidden = !shown;
+    document.documentElement.classList.toggle("has-tabs", shown);
+    list.textContent = "";
+    if (!shown) return;
+    for (const tab of state.tabs) {
+      const open = tab.id === state.active;
+      const name = tab.title || tab.url;
+      const item = document.createElement("div");
+      item.className = open ? "tab is-open" : "tab";
+      item.setAttribute("data-tab", tab.id);
+      const link = document.createElement("a");
+      link.className = "tab-link";
+      link.href = tab.url;
+      link.title = name;
+      link.textContent = name;
+      // The reflected property, so that no view carries the attribute's name
+      // in its HTML: one with no open page claims nothing as current.
+      if (open) link.ariaCurrent = "page";
+      const shut = document.createElement("button");
+      shut.type = "button";
+      shut.className = "tab-close";
+      shut.setAttribute("data-tab-close", "");
+      shut.setAttribute("aria-label", "Close " + name);
+      shut.title = "Close tab";
+      shut.textContent = "×";
+      item.append(link, shut);
+      list.append(item);
+    }
+    const openItem = list.querySelector(".tab.is-open");
+    if (openItem && list.scrollWidth > list.clientWidth) {
+      list.scrollLeft = openItem.offsetLeft - (list.clientWidth - openItem.offsetWidth) / 2;
+    }
+  }
+
+  // The corner's tools sit at the right end of the strip; the tabs stop short
+  // of them, however many tools this view has.
+  const corner = document.querySelector(".session-corner");
+  const reserve = () => {
+    strip.style.setProperty("--tabs-reserve", (corner ? corner.offsetWidth : 0) + "px");
+  };
+  reserve();
+  if (corner && typeof ResizeObserver === "function") new ResizeObserver(reserve).observe(corner);
+  render();
+
+  function showTab(id) {
+    const tab = state.tabs.find((t) => t.id === id);
+    if (!tab || id === state.active) return;
+    state.active = id;
+    save();
+    render();
+    location.href = tab.url;
+  }
+
+  function closeTab(id) {
+    const wasOpen = id === state.active;
+    tabsClose(state, id);
+    save();
+    render();
+    const next = state.tabs.find((t) => t.id === state.active);
+    if (wasOpen && next) location.href = next.url;
+  }
+
+  function openTab(href, name) {
+    const url = pathOf(href);
+    if (!url) return;
+    tabsOpen(state, url, name || url, newId);
+    save();
+    render();
+    if (url !== here) location.href = url;
+  }
+
+  list.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const item = target ? target.closest("[data-tab]") : null;
+    if (!item) return;
+    // Modifier keys too: the window would send a tab's link to the browser.
+    event.preventDefault();
+    const id = item.getAttribute("data-tab") || "";
+    if (target.closest("[data-tab-close]")) closeTab(id);
+    else showTab(id);
+  });
+  // The middle button closes a tab, as in a browser, and starts no autoscroll.
+  list.addEventListener("mousedown", (event) => {
+    if (event.button === 1) event.preventDefault();
+  });
+  list.addEventListener("auxclick", (event) => {
+    if (event.button !== 1) return;
+    const item = event.target instanceof Element ? event.target.closest("[data-tab]") : null;
+    if (!item) return;
+    event.preventDefault();
+    closeTab(item.getAttribute("data-tab") || "");
+  });
+
+  // Delegated to the document, because the sidebar comes after this script.
+  function sidebarLink(event) {
+    const link = event.target instanceof Element ? event.target.closest(".sidebar a[href]") : null;
+    if (!link || link.hasAttribute("download") || !pathOf(link.href)) return null;
+    return link;
+  }
+  document.addEventListener("click", (event) => {
+    if (event.button !== 0 || !(event.metaKey || event.ctrlKey) || event.altKey) return;
+    const link = sidebarLink(event);
+    if (!link) return;
+    event.preventDefault();
+    openTab(link.href, (link.textContent || "").trim());
+  });
+  document.addEventListener("auxclick", (event) => {
+    if (event.button !== 1) return;
+    const link = sidebarLink(event);
+    if (!link) return;
+    event.preventDefault();
+    openTab(link.href, (link.textContent || "").trim());
+  });
+
+  // A page put back from the back/forward cache runs none of the above again.
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    state = tabsValid(read("sessionStorage", TABS_KEY)) || state;
+    tabsArrive(state, here, title, "back_forward", newId);
+    save();
+    render();
+  });
+
+  // MOVE_SCRIPT, once a drag in the sidebar has moved pages.
+  window.kbTabs = {
+    moved(moves) {
+      if (!Array.isArray(moves)) return;
+      tabsMoved(state, moves);
+      save();
+    },
+  };
+
+  if (strip.hasAttribute("data-no-scroll-memory")) return;
+
+  const target = scrollFor(read("localStorage", SCROLL_KEY), here);
+  // Until the page is back where it was left, that is where it is: leaving
+  // before then must not keep the top of it instead.
+  let placing = target > 0 && navType() === "navigate" && !location.hash;
+  const remember = () => {
+    const y = placing ? target : Math.round(window.scrollY);
+    const keep = state.tabs.map((t) => t.url);
+    write("localStorage", SCROLL_KEY, scrollRemember(read("localStorage", SCROLL_KEY), here, y, keep));
+  };
+  let timer = 0;
+  window.addEventListener(
+    "scroll",
+    () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(remember, 200);
+    },
+    { passive: true }
+  );
+  window.addEventListener("pagehide", remember);
+
+  if (!placing) return;
+  // Images and diagrams arrive after the text and push it down, so the place
+  // is kept while the page grows, until the reader moves or it settles.
+  const STOP = ["wheel", "touchstart", "keydown", "mousedown"];
+  let observer = null;
+  const place = () => {
+    if (placing) window.scrollTo(0, target);
+  };
+  const done = () => {
+    if (!placing) return;
+    placing = false;
+    if (observer) observer.disconnect();
+    for (const type of STOP) window.removeEventListener(type, done, true);
+  };
+  for (const type of STOP) window.addEventListener(type, done, { capture: true, passive: true });
+  const start = () => {
+    place();
+    if (typeof ResizeObserver === "function") {
+      observer = new ResizeObserver(place);
+      observer.observe(document.body);
+    }
+    window.setTimeout(done, 3000);
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
+})();
+`;
+
+/**
  * Puts the sidebar tree in the shape it is read in: groups opened by hand come
  * back on a reload of the same page, and the open page's row is scrolled into
  * the sidebar's view. Emitted inside the <aside>, straight after the tree,
@@ -3459,9 +3882,10 @@ const MOVE_SCRIPT = `
   ).filter((el) => !treeEl || !treeEl.contains(el));
   const errorEl = document.querySelector("[data-move-error]");
 
-  // Multi-selection: shift-click selects an inclusive range from the anchor;
-  // Ctrl/Cmd-click toggles a single item. State is in-memory only — it just
-  // needs to survive from the click until the drag, and navigation reloads.
+  // Multi-selection: shift-click selects an inclusive range from the anchor.
+  // Cmd/Ctrl-click opens a page in a new tab instead (TABS_SCRIPT). State is
+  // in-memory only — it just needs to survive from the click until the drag,
+  // and navigation reloads.
   const selected = new Set();
   let anchorIndex = orderedLinks.findIndex((el) => el.classList.contains("active"));
   let dragSlugs = [];
@@ -3671,6 +4095,7 @@ const MOVE_SCRIPT = `
       "Move failed."
     );
     if (!result) return;
+    if (window.kbTabs) window.kbTabs.moved(result.moved);
     if (result.error) {
       // Partial success: show the note briefly, then land on a moved page.
       showError(result.error);
@@ -3694,6 +4119,7 @@ const MOVE_SCRIPT = `
       "Could not reorder pages."
     );
     if (!result) return;
+    if (window.kbTabs) window.kbTabs.moved(result.moved);
     if (result.error) {
       showError(result.error);
       window.setTimeout(() => settle(result), 2000);
@@ -3723,19 +4149,14 @@ const MOVE_SCRIPT = `
 
   orderedLinks.forEach((link, index) => {
     link.addEventListener("click", (event) => {
+      // Opens the page in a new tab, and leaves the selection alone.
+      if (event.metaKey || event.ctrlKey) return;
       if (event.shiftKey) {
         event.preventDefault();
         if (anchorIndex < 0) anchorIndex = index;
         selectRange(anchorIndex, index);
         const sel = window.getSelection();
         if (sel) sel.removeAllRanges();
-      } else if (event.metaKey || event.ctrlKey) {
-        event.preventDefault();
-        const slug = slugOf(link);
-        if (selected.has(slug)) selected.delete(slug);
-        else selected.add(slug);
-        anchorIndex = index;
-        applySelection();
       } else {
         // Plain click navigates; drop any lingering selection first.
         selected.clear();
@@ -3749,8 +4170,7 @@ const MOVE_SCRIPT = `
       let slugs = selected.has(slug) && selected.size > 0 ? Array.from(selected) : [slug];
       // Drop descendants of another dragged slug — the ancestor carries them.
       slugs = slugs.filter((s) => !slugs.some((o) => o !== s && s.startsWith(o + "/")));
-      // Sidebar order, so a multi-page drop lands in the order it was shown in
-      // rather than the order the pages happened to be ctrl-clicked.
+      // Sidebar order, so a multi-page drop lands in the order it was shown in.
       slugs.sort((a, b) => indexOfSlug(a) - indexOfSlug(b));
       dragSlugs = slugs;
       buildSeq();
@@ -5424,6 +5844,8 @@ const STYLES = `
   /* The halo around a fresh page's dot in the sidebar: the accent, softened. */
   --fresh-glow:rgba(37,99,235,.55);
   --maxw:1216px;
+  /* The tab strip's height: the corner's 34px tools with 12px above and below. */
+  --tabs-h:58px;
   --fg-secondary:#374151;
   --surface:#fff; --surface-hover:#eef0f3; --surface-hover-2:#f7f8fa;
   --active-bg:#e7efff; --selected-bg:#dbeafe;
@@ -5833,6 +6255,52 @@ body.dragging-page .space-current{
 .theme-toggle .icon-moon{display:none}
 :root[data-theme="dark"] .theme-toggle .icon-sun{display:none}
 :root[data-theme="dark"] .theme-toggle .icon-moon{display:block}
+/* The tabs (tabStrip): a bar along the top of the window, drawn only while two
+   or more are open, when TABS_SCRIPT puts has-tabs on the root. The corner's
+   tools float over its right end, which --tabs-reserve (their width) keeps
+   clear of tabs. The strip is fixed and out of body's flex row, so its
+   nowrap titles cannot widen the page. */
+.tab-strip{
+  position:fixed; top:0; left:0; right:0; z-index:45; height:var(--tabs-h);
+  display:flex; align-items:center;
+  padding:0 calc(var(--tabs-reserve, 0px) + 28px) 0 16px;
+  background:var(--sidebar); border-bottom:1px solid var(--line);
+}
+.tab-strip[hidden]{display:none}
+.tab-list{
+  position:relative; flex:1; min-width:0; display:flex; gap:6px;
+  overflow-x:auto; scrollbar-width:none;
+}
+.tab-list::-webkit-scrollbar{display:none}
+.tab{
+  flex:0 1 220px; min-width:96px; height:34px; display:flex; align-items:center;
+  border:1px solid var(--line); border-radius:6px; background:var(--surface);
+  color:var(--fg-secondary); cursor:pointer;
+}
+.tab:hover{background:var(--surface-hover-2); color:var(--fg)}
+.tab.is-open{background:var(--active-bg); border-color:var(--accent); color:var(--accent)}
+.tab-link{
+  flex:1; min-width:0; padding:0 4px 0 12px; color:inherit; font-size:13px; font-weight:600;
+  line-height:32px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.tab-link:hover{text-decoration:none}
+.tab-close{
+  flex:0 0 auto; width:22px; height:22px; margin-right:5px; padding:0;
+  border:0; border-radius:4px; background:transparent; color:var(--muted);
+  font:inherit; font-size:16px; line-height:1; cursor:pointer;
+}
+.tab-close:hover{background:var(--surface-hover); color:var(--fg)}
+html.has-tabs{scroll-padding-top:var(--tabs-h)}
+html.has-tabs body{padding-top:var(--tabs-h)}
+html.has-tabs .toc{top:var(--tabs-h); max-height:calc(100vh - var(--tabs-h)); padding-top:32px}
+@media (min-width:781px){
+  html.has-tabs .sidebar{top:var(--tabs-h); height:calc(100vh - var(--tabs-h))}
+}
+/* Too narrow for tabs beside the tools: the tabs take a row under them. */
+@media (max-width:780px){
+  html.has-tabs{--tabs-h:104px}
+  .tab-strip{align-items:flex-end; padding:0 12px 10px}
+}
 .help-dialog{
   width:min(520px,92vw); border:1px solid var(--line); border-radius:10px;
   padding:0; color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
@@ -6565,12 +7033,14 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
 .chat-drawer [hidden]{display:none}
 body.chat-open{padding-right:400px}
 body.chat-open .session-corner,body.chat-open .update-card{right:416px}
+body.chat-open .tab-strip{right:400px}
 /* The page loses the drawer's width, so the "On this page" rail needs that
    much more window to fit beside it (its own cutoff is 1180px). */
 @media (max-width:1580px){body.chat-open .toc{display:none}}
 @media (max-width:900px){
   body.chat-open{padding-right:0}
   body.chat-open .session-corner,body.chat-open .update-card{right:16px}
+  body.chat-open .tab-strip{right:0}
   .chat-drawer{width:100vw; border-left:0}
 }
 .chat-head{display:flex; align-items:center; gap:2px; padding:10px 10px 10px 16px; border-bottom:1px solid var(--line)}
