@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  archiveLayout,
   configureViews,
   dashboardLayout,
   dashboardsLayout,
@@ -13,6 +14,7 @@ import {
   loginLayout,
   spacesLayout,
   updateGateLayout,
+  type ArchiveView,
   type DashboardView,
   type DashboardsView,
   type EditView,
@@ -432,15 +434,34 @@ test("TODO #1: each space card carries a ⋯ menu with Rename, Archive, Delete",
   assert.match(html, /href="\/_delete-space\/kb25">Delete<\/a>/);
 });
 
-test("feedback #24: the home page's Archive button sits beside New Space, clear of the corner tools", () => {
+test("feedback #28: the home page links to no archive, since every space keeps its own", () => {
   const html = spacesLayout(spacesView());
-  const head = html.match(/<header class="spaces-head">[\s\S]*?<\/header>/)?.[0] ?? "";
-  assert.ok(head, "the home page has a header");
-  assert.doesNotMatch(head, /_archive/);
-  assert.match(
-    html,
-    /<div class="spaces-foot">\s*<form class="new-space-form"[\s\S]*?<\/form>\s*<a class="button secondary" href="\/_archive">Archive<\/a>/
+  assert.doesNotMatch(html, /href="\/_archive/);
+  assert.match(html, /<div class="spaces-foot">\s*<form class="new-space-form"[\s\S]*?<\/form>\s*<\/div>/);
+  // Outside a space (a 404) the sidebar lists the spaces, and no archive either.
+  assert.doesNotMatch(layout(pageView({ spaceKey: "", tree: [], activeSlug: "" })), /href="\/_archive/);
+});
+
+test("feedback #28: archived spaces sit apart on the home page, each restorable from its menu", () => {
+  const html = spacesLayout(
+    spacesView({
+      spaces: [
+        { key: "kb25", title: "KB25", archived: false },
+        { key: "old", title: "Old notes", archived: true },
+      ],
+    })
   );
+  const [live, archived] = html.split('<section class="spaces-archived"');
+  assert.ok(archived, "an archived space gets its own section");
+  assert.match(live, /href="\/kb25"/);
+  assert.doesNotMatch(live, /href="\/old"/);
+  assert.match(archived, /<h2 id="spaces-archived-head">Archived spaces<\/h2>/);
+  assert.match(archived, /<div class="space-card-wrap is-archived">\s*<a class="space-card" href="\/old">/);
+  assert.match(archived, /<form method="post" action="\/_restore\/old">\s*<button type="submit">Restore<\/button>/);
+  assert.doesNotMatch(archived, /_archive-space|_rename-space/);
+
+  // The stylesheet still carries the rule; it is the section that must be absent.
+  assert.doesNotMatch(spacesLayout(spacesView()), /<section class="spaces-archived"/);
 });
 
 test("TODO #1: confirmDelete renders a scary confirmation posting to _delete-space", () => {
@@ -647,9 +668,54 @@ test("a view with no open page renders every group collapsed", () => {
   }
 });
 
-test("the archive tree has no carets, so it never renders a group shut", () => {
-  const html = layout(pageView({ isArchiveView: true, activeSlug: "", tree: branchyTree() }));
-  assert.doesNotMatch(html, /<li [^>]*class="collapsed"/);
+function archiveView(overrides: Partial<ArchiveView> = {}): ArchiveView {
+  return {
+    siteTitle: "KB",
+    spaces: [{ key: "kb25", title: "KB25", archived: false }],
+    spaceKey: "kb25",
+    spaceTitle: "KB25",
+    tree: branchyTree(),
+    archiveTree: [
+      node({
+        slug: "kb25/handbook",
+        title: "Handbook",
+        isSection: true,
+        children: [node({ slug: "kb25/handbook/old", title: "Old", archived: true, fresh: true })],
+      }),
+    ],
+    titles: new Map([["kb25", "KB25"]]),
+    username: "alice",
+    ...overrides,
+  };
+}
+
+test("feedback #28: a space's archive lists its archived pages beside its ordinary sidebar", () => {
+  const html = archiveLayout(archiveView());
+  assert.match(html, /<title>KB25 · Archive · KB<\/title>/);
+  const content = html.match(/<article class="prose">[\s\S]*?<\/article>/)?.[0] ?? "";
+  assert.match(content, /<a href="\/kb25\/handbook\/old">Old<\/a>/);
+  // The folder holding it is a label, not a link: it is not archived itself.
+  assert.match(content, /<span class="tree-label">Handbook<\/span>/);
+  // The sidebar is the space's own: groups start shut, rows drag.
+  assert.match(sidebarTree(html), /<li [^>]*class="collapsed"/);
+  assert.match(sidebarTree(html), /data-drag-slug=/);
+  assert.match(html, /<dialog class="label-dialog"/);
+  assert.match(html, /<dialog class="folder-dialog"/);
+  assert.match(html, /<script>[\s\S]*?data-move-error/);
+});
+
+test("feedback #28: the sidebar's Archive link opens this space's archive, marked while on it", () => {
+  assert.match(layout(pageView()), /<a class="sidebar-link" href="\/_archive\?space=kb25">Archive<\/a>/);
+  assert.match(
+    archiveLayout(archiveView()),
+    /<a class="sidebar-link active" href="\/_archive\?space=kb25" aria-current="page">Archive<\/a>/
+  );
+  assert.match(layout(pageView({ spaceKey: "a b&c" })), /href="\/_archive\?space=a%20b%26c"/);
+});
+
+test("feedback #28: an empty archive says so, by its space's name", () => {
+  const html = archiveLayout(archiveView({ archiveTree: [] }));
+  assert.match(html, /No archived pages in <strong>KB25<\/strong>\./);
 });
 
 /**
@@ -766,14 +832,10 @@ test("issue #2: every group gets an insertion line above each row and one closin
   assert.match(html, /\.tree \.drop-line\.drop-line-active::before\{opacity:1\}/);
 });
 
-test("issue #2: the archive view renders no insertion lines, since it cannot drag", () => {
-  const html = layout(
-    pageView({
-      isArchiveView: true,
-      tree: [node({ slug: "kb25/notes", title: "Notes", archived: true })],
-    })
-  );
-  assert.doesNotMatch(html, /data-drop-line/);
+test("issue #2: the archive's list of pages renders no insertion lines, since it cannot drag", () => {
+  const html = archiveLayout(archiveView());
+  const content = html.match(/<article class="prose">[\s\S]*?<\/article>/)?.[0] ?? "";
+  assert.doesNotMatch(content, /data-drop-line/);
 });
 
 test("issue #2: a line drop posts to /_reorder and stays on the current page", () => {
@@ -1899,11 +1961,10 @@ test("fresh: a group hiding a fresh page shows a ring, drawn only while it is sh
   assert.match(html, /\.tree li\.collapsed > \.tree-row > \.tree-fresh-within\{display:block\}/);
 });
 
-test("fresh: the archive tree never shows the mark", () => {
-  const html = layout(
-    pageView({ isArchiveView: true, tree: [node({ slug: "kb25/a", title: "A", archived: true, fresh: true })] })
-  );
-  assert.doesNotMatch(sidebarTree(html), /tree-fresh/);
+test("fresh: the archive's list of pages never shows the mark", () => {
+  const html = archiveLayout(archiveView());
+  const content = html.match(/<article class="prose">[\s\S]*?<\/article>/)?.[0] ?? "";
+  assert.doesNotMatch(content, /tree-fresh/);
 });
 
 test("labels: the page header shows its labels as chips linking to the Labels view", () => {
@@ -1976,11 +2037,9 @@ test("label dialog: a palette name cannot break out of its attribute", () => {
   assert.doesNotMatch(html, /"><script>x<\/script>/);
 });
 
-test("label dialog: absent outside a space and in the archive browser", () => {
+test("label dialog: absent outside a space", () => {
   const outside = layout(pageView({ spaceKey: "" }));
   assert.doesNotMatch(outside, /<dialog class="label-dialog"/);
-  const archive = layout(pageView({ isArchiveView: true }));
-  assert.doesNotMatch(archive, /<dialog class="label-dialog"/);
 });
 
 test("label dialog: its script builds rows without markup strings", () => {
@@ -2099,9 +2158,8 @@ test("folder dialog: one per sidebar, a labelled name field and both hidden targ
   assert.match(html, /<button type="submit" class="button primary" data-folder-submit>Create folder<\/button>/);
 });
 
-test("folder dialog: absent outside a space and in the archive browser", () => {
+test("folder dialog: absent outside a space", () => {
   assert.doesNotMatch(layout(pageView({ spaceKey: "" })), /<dialog class="folder-dialog"/);
-  assert.doesNotMatch(layout(pageView({ isArchiveView: true })), /<dialog class="folder-dialog"/);
 });
 
 test("folder dialog: its script switches modes and mirrors the server's name rule", () => {

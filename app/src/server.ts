@@ -723,16 +723,26 @@ async function renderPage(
   return { status: 200, html };
 }
 
-async function renderArchiveBrowser(): Promise<string> {
-  const [spaces, archiveTree, titles] = await Promise.all([
+/**
+ * One space's archive: its archived pages, beside its ordinary sidebar. An
+ * archived space's own tree is all archived, so its sidebar widens to `all`,
+ * as the dashboards do.
+ */
+async function renderArchive(space: SpaceInfo): Promise<string> {
+  const [spaces, { tree, labelSet }, titles, archiveTree] = await Promise.all([
     content.spaces(),
-    content.tree("archived"),
+    spaceChrome(space.key, space.archived ? "all" : "live"),
     content.titleIndex(),
+    content.spaceTree(space.key, "archived"),
   ]);
 
   return archiveLayout({
     siteTitle: SITE_TITLE,
     spaces,
+    spaceKey: space.key,
+    spaceTitle: space.title,
+    tree,
+    labelSet,
     archiveTree,
     titles,
     username: AUTH_USERNAME,
@@ -1366,7 +1376,7 @@ app.post("/_create-space", async (req, reply) => {
       .send(
         spacesLayout({
           siteTitle: SITE_TITLE,
-          spaces: await content.spaces(),
+          spaces: await content.spaces("all"),
           notice,
           username: AUTH_USERNAME,
         })
@@ -1407,7 +1417,7 @@ async function renderSpacesPage(
     .send(
       spacesLayout({
         siteTitle: SITE_TITLE,
-        spaces: await content.spaces(),
+        spaces: await content.spaces("all"),
         username: AUTH_USERNAME,
         ...extra,
       })
@@ -1883,8 +1893,12 @@ app.get("/_search", async (req, reply) => {
   });
 });
 
-app.get("/_archive", async (_req, reply) => {
-  return reply.type("text/html").send(await renderArchiveBrowser());
+// A space's archive, named by ?space= like a dashboard. There is no archive
+// of every space at once (feedback #28): without a space this goes home.
+app.get("/_archive", async (req, reply) => {
+  const space = await dashboardSpace(req, reply);
+  if (!space) return reply;
+  return reply.type("text/html").send(await renderArchive(space));
 });
 
 /**
@@ -2259,7 +2273,8 @@ app.post("/_delete/*", async (req, reply) => {
 
 // Home: the spaces landing grid (each top-level folder is a space).
 app.get("/", async (_req, reply) => {
-  const spaces = await content.spaces();
+  // Archived spaces too, which the page lists apart from the rest.
+  const spaces = await content.spaces("all");
   return reply.type("text/html").send(
     spacesLayout({
       siteTitle: SITE_TITLE,

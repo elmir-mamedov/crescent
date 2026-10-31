@@ -242,6 +242,7 @@ export interface PageView {
   canEdit?: boolean;
   isArchived?: boolean;
   archivedAt?: string;
+  /** A space's archive: the sidebar marks its Archive link, and no page is open. */
   isArchiveView?: boolean;
   notice?: ViewNotice;
   username?: string | null;
@@ -293,6 +294,12 @@ export interface DiffView {
 export interface ArchiveView {
   siteTitle: string;
   spaces: SpaceInfo[];
+  spaceKey: string;
+  spaceTitle: string;
+  /** The space's navigation, for the sidebar. */
+  tree: PageNode[];
+  labelSet?: LabelDef[];
+  /** Its archived pages, under the folders that hold them. */
   archiveTree: PageNode[];
   titles: Map<string, string>;
   username?: string | null;
@@ -443,9 +450,8 @@ function sidebarHtml(
   isArchiveView = false,
   labelSet: readonly LabelDef[] = []
 ): string {
-  const archiveCls = isArchiveView ? " active" : "";
-
-  // Outside any space (archive browser, 404): just list the spaces.
+  // Outside any space (a 404): just list the spaces. Each space keeps its own
+  // archive (feedback #28), so there is none to link to here.
   if (!spaceKey) {
     const list = spaces.length
       ? `<ul>${spaces
@@ -459,7 +465,6 @@ function sidebarHtml(
       : "";
     return `<aside class="sidebar">
   <a class="brand" href="/">${escapeHtml(siteTitle)}</a>
-  <a class="sidebar-link${archiveCls}" href="/_archive">Archive</a>
   <nav class="tree">${list}</nav>
   ${SIDEBAR_PLACED_MARKER}
 </aside>`;
@@ -476,18 +481,16 @@ function sidebarHtml(
   // `data-drop-slug` (not `data-drop-root`, which would mean the KB root, outside
   // any space) so MOVE_SCRIPT picks it up with no change and the semantics stay
   // exactly what the old strip had: targetKind "page", targetSlug = the space.
-  const rootDropAttrs = isArchiveView
-    ? ""
-    : ` data-drop-slug="${escapeHtml(spaceKey)}" title="Drop a page here to move it to the space root"`;
+  const rootDropAttrs = ` data-drop-slug="${escapeHtml(spaceKey)}" title="Drop a page here to move it to the space root"`;
   const switcher = `<div class="space-switcher">
     <a class="space-current" href="${slugPath(spaceKey)}"${rootDropAttrs}>${escapeHtml(spaceLabel)}</a>
     <a class="space-all" href="/">↩ All spaces</a>
   </div>`;
   // MOVE_SCRIPT still writes every drag failure into [data-move-error]; it used
   // to sit beside the removed drop strip, so it keeps its slot above the tree.
-  const moveError = isArchiveView
-    ? ""
-    : `<div class="move-error" data-move-error hidden></div>`;
+  const moveError = `<div class="move-error" data-move-error hidden></div>`;
+  // The space's own archive; its page keeps this sidebar, and marks the link.
+  const archiveCurrent = isArchiveView ? ' aria-current="page"' : "";
 
   // The labels a person can pick in this space — the palette, then orphans the
   // pages carry — shared by the search filter and the label dialog.
@@ -511,18 +514,24 @@ function sidebarHtml(
       ${newFolderButton(spaceKey, current?.title ?? spaceKey, "Folder")}
     </div>
   </details>
-  <a class="sidebar-link${archiveCls}" href="/_archive">Archive</a>
+  <a class="sidebar-link${isArchiveView ? " active" : ""}" href="${archiveHref(spaceKey)}"${archiveCurrent}>Archive</a>
   ${moveError}
   <nav class="tree">${renderTree(tree, activeSlug, {
-    dragEnabled: !isArchiveView,
-    collapsible: !isArchiveView,
+    dragEnabled: true,
+    collapsible: true,
     parentSlug: spaceKey,
-  })}</nav>${isArchiveView ? "" : `\n  <script>${TREE_PLACE_SCRIPT}</script>`}
+  })}</nav>
+  <script>${TREE_PLACE_SCRIPT}</script>
   ${SIDEBAR_PLACED_MARKER}
 </aside>
 <script>${SEARCH_SCRIPT}</script>
-${isArchiveView ? "" : `${labelDialog(spaceKey, offered)}
-${folderDialog()}`}`;
+${labelDialog(spaceKey, offered)}
+${folderDialog()}`;
+}
+
+/** Where a space's archive lives: its archived pages, and only its own. */
+export function archiveHref(spaceKey: string): string {
+  return `/_archive?space=${encodeURIComponent(spaceKey)}`;
 }
 
 /**
@@ -915,7 +924,7 @@ ${notesData}
 <script>${COPY_LINK_SCRIPT}</script>
 ${toc ? `<script>${TOC_SCRIPT}</script>` : ""}
 ${notesData ? `<script>${NOTES_SCRIPT}</script>` : ""}
-${v.isArchiveView ? "" : `<script>${MOVE_SCRIPT}</script>`}
+<script>${MOVE_SCRIPT}</script>
 ${v.contentHtml.includes('class="mermaid"') ? MERMAID_SCRIPT : ""}
 </body>
 </html>`;
@@ -1011,21 +1020,27 @@ ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.
 </html>`;
 }
 
+/**
+ * One space's archive: its archived pages, under the folders that hold them.
+ * Every space keeps its own; there is no archive shared by all of them
+ * (feedback #28). An archived page opens as itself, with its Restore button.
+ */
 export function archiveLayout(v: ArchiveView): string {
   const archiveHtml = v.archiveTree.length
     ? `<div class="archive-browser tree">${renderTree(v.archiveTree, "", {
         archiveMode: true,
       })}</div>`
-    : "<p>No archived pages.</p>";
+    : `<p class="dash-empty">No archived pages in <strong>${escapeHtml(v.spaceTitle)}</strong>.</p>`;
 
   return layout({
     siteTitle: v.siteTitle,
     spaces: v.spaces,
-    spaceKey: "",
-    tree: [],
+    spaceKey: v.spaceKey,
+    tree: v.tree,
+    labelSet: v.labelSet,
     activeSlug: "",
     titles: v.titles,
-    title: "Archive",
+    title: `${v.spaceTitle} · Archive`,
     contentHtml: archiveHtml,
     canEdit: false,
     isArchiveView: true,
@@ -1801,18 +1816,16 @@ export function spacesLayout(v: SpacesView): string {
     </form>
   </div>`
     : "";
-  const cards = v.spaces.length
-    ? v.spaces
-        .map((s) => {
-          const icon = s.icon
-            ? `<span class="space-icon">${escapeHtml(s.icon)}</span>`
-            : "";
-          const summary = s.summary
-            ? `<p class="space-summary">${escapeHtml(s.summary)}</p>`
-            : "";
-          // The card link cannot contain the interactive ⋯ menu (no nested
-          // forms/anchors), so wrap both and float the menu into the corner.
-          return `<div class="space-card-wrap">
+  const card = (s: SpaceInfo): string => {
+    const icon = s.icon
+      ? `<span class="space-icon">${escapeHtml(s.icon)}</span>`
+      : "";
+    const summary = s.summary
+      ? `<p class="space-summary">${escapeHtml(s.summary)}</p>`
+      : "";
+    // The card link cannot contain the interactive ⋯ menu (no nested
+    // forms/anchors), so wrap both and float the menu into the corner.
+    return `<div class="space-card-wrap${s.archived ? " is-archived" : ""}">
     <a class="space-card" href="${slugPath(s.key)}">
       ${icon}
       <span class="space-card-title">${escapeHtml(s.title)}</span>
@@ -1820,9 +1833,21 @@ export function spacesLayout(v: SpacesView): string {
     </a>
     ${spaceMenu(s)}
   </div>`;
-        })
-        .join("")
+  };
+  const live = v.spaces.filter((s) => !s.archived);
+  const archived = v.spaces.filter((s) => s.archived);
+  const cards = live.length
+    ? live.map(card).join("")
     : `<p class="empty">No spaces yet — create your first one below.</p>`;
+  // An archived space is out of the way, not gone: it waits here, apart from
+  // the rest, until it is restored. Only drawn while there is one.
+  const archivedSection = archived.length
+    ? `
+  <section class="spaces-archived" aria-labelledby="spaces-archived-head">
+    <h2 id="spaces-archived-head">Archived spaces</h2>
+    <div class="spaces-grid">${archived.map(card).join("")}</div>
+  </section>`
+    : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -1840,8 +1865,7 @@ ${sessionCorner(v.username)}
       <input type="text" name="title" placeholder="New space name" aria-label="New space name" maxlength="80" required />
       <button class="button primary" type="submit">New Space</button>
     </form>
-    <a class="button secondary" href="/_archive">Archive</a>
-  </div>
+  </div>${archivedSection}
 </main>
 <script>${SPACE_MENU_SCRIPT}</script>
 </body>
@@ -1852,13 +1876,15 @@ ${sessionCorner(v.username)}
  * Per-space ⋯ menu on the home grid: edit the space's display name (an inline
  * rename, the space's key/URL stays put), archive the whole space, or delete it
  * outright. Mirrors the sidebar page menu, but scoped to space-level actions.
+ * An archived space offers Restore in place of Archive and Rename.
  */
 function spaceMenu(space: SpaceInfo): string {
   const key = space.key;
-  return `<details class="space-menu">
-    <summary aria-label="Space actions">⋯</summary>
-    <div class="space-menu-pop">
-      <form class="menu-name-form" method="post" action="/_rename-space">
+  const middle = space.archived
+    ? `<form method="post" action="/_restore${slugPath(key)}">
+        <button type="submit">Restore</button>
+      </form>`
+    : `<form class="menu-name-form" method="post" action="/_rename-space">
         <input type="hidden" name="key" value="${escapeHtml(key)}" />
         <input type="text" name="title" value="${escapeHtml(space.title)}" aria-label="Space name" required />
         <button type="submit">Rename</button>
@@ -1866,7 +1892,11 @@ function spaceMenu(space: SpaceInfo): string {
       <form method="post" action="/_archive-space">
         <input type="hidden" name="key" value="${escapeHtml(key)}" />
         <button type="submit">Archive</button>
-      </form>
+      </form>`;
+  return `<details class="space-menu">
+    <summary aria-label="Space actions">⋯</summary>
+    <div class="space-menu-pop">
+      ${middle}
       <a href="/_delete-space${slugPath(key)}">Delete</a>
     </div>
   </details>`;
@@ -6206,8 +6236,10 @@ body.dragging-page .space-current{
 }
 .space-menu-pop .menu-name-form button:hover{background:var(--surface-hover-2)}
 .space-confirm .confirm-actions{margin-top:12px}
-/* The Archive button sits down here, beside New Space, rather than in the
-   header, whose top-right corner .session-corner floats over (feedback #24). */
+/* Archived spaces wait below the rest, quieter, until restored. */
+.spaces-archived{margin-top:40px}
+.spaces-archived h2{margin:0 0 12px; color:var(--muted); font-size:13px; font-weight:700; letter-spacing:.06em; text-transform:uppercase}
+.space-card-wrap.is-archived .space-card{background:transparent; border-style:dashed; color:var(--fg-secondary)}
 .spaces-foot{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:28px}
 .new-space-form{display:flex; flex:1 1 auto; gap:8px}
 .new-space-form input{
