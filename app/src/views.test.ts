@@ -2274,6 +2274,7 @@ interface TabModel {
   tabsArrive(state: Tabs, here: string, title: string, navType: string, newId: () => string): Tabs;
   tabsOpen(state: Tabs, url: string, title: string, newId: () => string): Tab;
   tabsClose(state: Tabs, id: string): Tabs;
+  tabsCloseOthers(state: Tabs): Tabs;
   tabsMoved(state: Tabs, moves: unknown[]): Tabs;
   scrollFor(memory: unknown, here: string): number;
   scrollRemember(memory: unknown, here: string, y: number, keep: string[]): ScrollMemory;
@@ -2282,7 +2283,7 @@ interface TabModel {
 /** TAB_MODEL's functions, run the way the page runs them. */
 function tabModel(): TabModel {
   return new Function(
-    `${TAB_MODEL}\nreturn { tabsValid, tabsArrive, tabsOpen, tabsClose, tabsMoved, scrollFor, scrollRemember };`
+    `${TAB_MODEL}\nreturn { tabsValid, tabsArrive, tabsOpen, tabsClose, tabsCloseOthers, tabsMoved, scrollFor, scrollRemember };`
   )() as TabModel;
 }
 
@@ -2367,6 +2368,27 @@ test("tabs: closing the open tab opens the one after it, or else the one before"
   assert.deepEqual(urls(state), ["/kb25/a"]);
 });
 
+test("tabs: closing the others keeps only the open tab, and the strip slides off", () => {
+  const m = tabModel();
+  const state: Tabs = {
+    tabs: [
+      { id: "a", url: "/kb25/a", title: "A" },
+      { id: "b", url: "/kb25/b", title: "B" },
+      { id: "c", url: "/kb25/c", title: "C" },
+    ],
+    active: "b",
+  };
+  m.tabsCloseOthers(state);
+  assert.deepEqual(state, { tabs: [{ id: "b", url: "/kb25/b", title: "B" }], active: "b" });
+  // With no open tab to keep, nothing is closed rather than everything.
+  const stray: Tabs = { tabs: [{ id: "a", url: "/kb25/a", title: "A" }], active: "gone" };
+  assert.equal(m.tabsCloseOthers(stray).tabs.length, 1);
+
+  const html = layout(pageView());
+  assert.match(html, /tabsCloseOthers\(state\);\s*save\(\);\s*for \(const item of list\.querySelectorAll\("\.tab:not\(\.is-open\)"\)\) item\.classList\.add\("is-closing"\);\s*showStrip\(false, true\);/);
+  assert.match(html, /the button at its left end closes all but the one you are on/);
+});
+
 test("tabs: only paths on this site come back from storage", () => {
   const m = tabModel();
   assert.equal(m.tabsValid(null), null);
@@ -2444,7 +2466,7 @@ test("tabs: every view with the corner draws the strip first, hidden until there
     assert.ok(strip > html.indexOf('<div class="session-corner">'), `${name}: after the corner it measures`);
     const aside = html.indexOf('<aside class="sidebar">');
     if (aside >= 0) assert.ok(strip < aside, `${name}: before the sidebar it makes room above`);
-    assert.match(html, /<nav class="tab-strip"[^>]* aria-label="Open pages" hidden><div class="tab-list" data-tab-list><\/div><\/nav>\s*<script>/, name);
+    assert.match(html, /<nav class="tab-strip"[^>]* aria-label="Open pages" hidden><button type="button" class="tabs-close-others" data-tabs-close-others aria-label="Close other tabs" title="Close other tabs"><svg [^>]*>[\s\S]*?<\/svg><\/button><div class="tab-list" data-tab-list><\/div><\/nav>\s*<script>/, name);
   }
   assert.match(layout(pageView({ title: 'Q & "A"' })), /data-tab-title="Q &amp; &quot;A&quot;"/);
   assert.match(spacesLayout(spacesView()), /data-tab-title="Spaces"/);

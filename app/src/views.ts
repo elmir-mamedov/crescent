@@ -780,9 +780,15 @@ function tabStrip(title: string, options: { scrollMemory?: boolean } = {}): stri
   // outlast it; a browser can hold the site in several windows at once.
   const reopen = desktop ? " data-tabs-reopen" : "";
   const memory = options.scrollMemory === false ? " data-no-scroll-memory" : "";
-  return `<nav class="tab-strip" data-tabs data-tab-title="${escapeHtml(title)}"${reopen}${memory} aria-label="Open pages" hidden><div class="tab-list" data-tab-list></div></nav>
+  return `<nav class="tab-strip" data-tabs data-tab-title="${escapeHtml(title)}"${reopen}${memory} aria-label="Open pages" hidden>${CLOSE_OTHER_TABS}<div class="tab-list" data-tab-list></div></nav>
 <script>${TABS_SCRIPT}</script>`;
 }
+
+/**
+ * The strip's first control, at its left end: close every tab but the open
+ * one. The glyph is a tab with a cross on it, in front of another.
+ */
+const CLOSE_OTHER_TABS = `<button type="button" class="tabs-close-others" data-tabs-close-others aria-label="Close other tabs" title="Close other tabs"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 2.5h6.75a1.25 1.25 0 0 1 1.25 1.25v6.75"/><rect x="2.5" y="5.5" width="8" height="8" rx="1.25"/><path d="M5 8l3 3M8 8l-3 3"/></svg></button>`;
 
 /**
  * Holds the first paint until the sidebar has been parsed (Chromium; other
@@ -1957,7 +1963,7 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
   </form>
   <section class="help-section">
     <h3>About Crescent</h3>
-    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. To keep several pages open at once, <kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click a page in the sidebar, or any link to one: each opens in a <strong>tab</strong> along the top. A page in a tab, like each of the last few pages you read, opens again where you left it. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
+    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. To keep several pages open at once, <kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click a page in the sidebar, or any link to one: each opens in a <strong>tab</strong> along the top, and the button at its left end closes all but the one you are on. A page in a tab, like each of the last few pages you read, opens again where you left it. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
   </section>
   <section class="help-section">
     <h3>Keyboard shortcuts</h3>
@@ -3488,6 +3494,13 @@ export const TAB_MODEL = `
     return tab;
   }
 
+  /** Close every tab but the open one. */
+  function tabsCloseOthers(state) {
+    const open = state.tabs.filter((t) => t.id === state.active);
+    if (open.length) state.tabs = open;
+    return state;
+  }
+
   /** Close a tab; closing the open one opens its neighbour, the one after it first. */
   function tabsClose(state, id) {
     const at = state.tabs.findIndex((t) => t.id === id);
@@ -3813,6 +3826,17 @@ ${TAB_MODEL}
     if (known) draw("");
     else write("sessionStorage", ARRIVAL_KEY, { url: path, tab: tab.id, strip: before < 2 });
     location.href = path + url.hash;
+  }
+
+  // The others fold away as the strip slides off: one tab needs no strip.
+  const closeOthers = strip.querySelector("[data-tabs-close-others]");
+  if (closeOthers) {
+    closeOthers.addEventListener("click", () => {
+      tabsCloseOthers(state);
+      save();
+      for (const item of list.querySelectorAll(".tab:not(.is-open)")) item.classList.add("is-closing");
+      showStrip(false, true);
+    });
   }
 
   list.addEventListener("click", (event) => {
@@ -6433,6 +6457,19 @@ body.dragging-page .space-current{
   padding:4px 2px; overflow-x:auto; scrollbar-width:none;
 }
 .tab-list::-webkit-scrollbar{display:none}
+/* Close other tabs: an icon button, set off from the tabs by a hairline. */
+.tabs-close-others{
+  position:relative; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px; margin-right:12px; padding:0; border:0; border-radius:8px;
+  background:transparent; color:var(--muted); cursor:pointer;
+  transition:background-color .15s ease, color .15s ease;
+}
+.tabs-close-others::after{
+  content:""; position:absolute; right:-7px; top:7px; bottom:7px; width:1px; background:var(--line);
+}
+.tabs-close-others:hover{background:var(--tab-hover-bg); color:var(--fg)}
+.tabs-close-others:focus-visible{outline:2px solid var(--focus-ring); outline-offset:1px}
+.tabs-close-others svg{display:block}
 .tab{
   position:relative; flex:0 1 200px; min-width:88px; height:32px;
   display:flex; align-items:center; gap:7px; padding:0 5px 0 11px;
