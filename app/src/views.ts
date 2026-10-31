@@ -1957,7 +1957,7 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
   </form>
   <section class="help-section">
     <h3>About Crescent</h3>
-    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. To keep several pages open at once, <kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click them in the sidebar: each opens in a <strong>tab</strong> along the top. A page in a tab, like each of the last few pages you read, opens again where you left it. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
+    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. To keep several pages open at once, <kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click a page in the sidebar, or any link to one: each opens in a <strong>tab</strong> along the top. A page in a tab, like each of the last few pages you read, opens again where you left it. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
   </section>
   <section class="help-section">
     <h3>Keyboard shortcuts</h3>
@@ -1971,7 +1971,7 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
       <dt><kbd>&#8984;</kbd> / <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>L</kbd></dt>
       <dd>Copy this page's relative link (space/&hellip;/page)</dd>
       <dt><kbd>&#8984;</kbd> / <kbd>Ctrl</kbd> + click</dt>
-      <dd>Open a page from the sidebar in a new tab</dd>
+      <dd>Open a page in a new tab, from the sidebar or any link to it</dd>
       <dt><kbd>Shift</kbd> + click</dt>
       <dd>Select a page in the sidebar; Shift-click another to select both and every page between them, then drag them together</dd>
       <dt><kbd>Esc</kbd></dt>
@@ -3547,9 +3547,9 @@ export const TAB_MODEL = `
  * localStorage, and a new window opening on the home page goes back to the tab
  * the last one had open.
  *
- * Cmd/Ctrl-click or a middle click on a link in the sidebar opens it in a new
- * tab. Crescent's window would otherwise send that click to the browser, as it
- * does any link asked for in a new window, so the click never reaches it.
+ * Cmd/Ctrl-click or a middle click on a link to a Crescent page opens it in a
+ * new tab. Crescent's window would otherwise send that click to the browser,
+ * as it does any link asked for in a new window, so the click never reaches it.
  *
  * Scroll positions go in localStorage, for the pages in tabs and the last few
  * read in any (scrollRemember). One comes back only when a page is opened
@@ -3583,13 +3583,17 @@ ${TAB_MODEL}
   function newId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
-  function pathOf(href) {
+  function parse(href) {
     try {
       const url = new URL(href, location.href);
-      return url.origin === location.origin ? url.pathname + url.search : "";
+      return url.origin === location.origin ? url : null;
     } catch {
-      return "";
+      return null;
     }
+  }
+  function pathOf(href) {
+    const url = parse(href);
+    return url ? url.pathname + url.search : "";
   }
   function navType() {
     try {
@@ -3700,12 +3704,18 @@ ${TAB_MODEL}
   }
 
   function openTab(href, name) {
-    const url = pathOf(href);
+    const url = parse(href);
     if (!url) return;
-    tabsOpen(state, url, name || url, newId);
+    const path = url.pathname + url.search;
+    // A link into this same page is followed here.
+    if (path === here) {
+      if (url.hash) location.hash = url.hash;
+      return;
+    }
+    tabsOpen(state, path, name || path, newId);
     save();
     render();
-    if (url !== here) location.href = url;
+    location.href = path + url.hash;
   }
 
   list.addEventListener("click", (event) => {
@@ -3730,22 +3740,28 @@ ${TAB_MODEL}
     closeTab(item.getAttribute("data-tab") || "");
   });
 
-  // Delegated to the document, because the sidebar comes after this script.
-  function sidebarLink(event) {
-    const link = event.target instanceof Element ? event.target.closest(".sidebar a[href]") : null;
-    if (!link || link.hasAttribute("download") || !pathOf(link.href)) return null;
+  // A link to a Crescent page: not a file (a download, a space's asset), and
+  // not one a script on the page has already handled. On the window, so that
+  // every listener on the document has had its turn first.
+  function pageLink(event) {
+    if (event.defaultPrevented) return null;
+    const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!link || link.hasAttribute("download") || strip.contains(link)) return null;
+    const path = pathOf(link.href);
+    if (!path) return null;
+    if (path.split("?")[0].split("/")[2] === "_assets") return null;
     return link;
   }
-  document.addEventListener("click", (event) => {
+  window.addEventListener("click", (event) => {
     if (event.button !== 0 || !(event.metaKey || event.ctrlKey) || event.altKey) return;
-    const link = sidebarLink(event);
+    const link = pageLink(event);
     if (!link) return;
     event.preventDefault();
     openTab(link.href, (link.textContent || "").trim());
   });
-  document.addEventListener("auxclick", (event) => {
+  window.addEventListener("auxclick", (event) => {
     if (event.button !== 1) return;
-    const link = sidebarLink(event);
+    const link = pageLink(event);
     if (!link) return;
     event.preventDefault();
     openTab(link.href, (link.textContent || "").trim());

@@ -2467,7 +2467,7 @@ test("tabs: only Crescent's own window reopens what it had open", () => {
   assert.match(script, /const fresh = windowed && !state;/);
 });
 
-test("tabs: Cmd/Ctrl-click in the sidebar opens a tab, and shift-click starts a range at the page clicked", () => {
+test("tabs: Cmd/Ctrl-click on a link opens a tab, and shift-click starts a range at the page clicked", () => {
   const html = layout(pageView());
   const move = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
     .map((m) => m[1])
@@ -2486,12 +2486,16 @@ test("tabs: Cmd/Ctrl-click in the sidebar opens a tab, and shift-click starts a 
     .map((m) => m[1])
     .find((s) => s.includes('const TABS_KEY = "kb25.tabs"'));
   assert.ok(tabs);
-  assert.match(tabs, /if \(event\.button !== 0 \|\| !\(event\.metaKey \|\| event\.ctrlKey\) \|\| event\.altKey\) return;/);
-  assert.match(tabs, /closest\("\.sidebar a\[href\]"\)/);
+  assert.match(tabs, /window\.addEventListener\("click", \(event\) => \{\s*if \(event\.button !== 0 \|\| !\(event\.metaKey \|\| event\.ctrlKey\) \|\| event\.altKey\) return;/);
+  // Any link to a page, in the sidebar or not, once the document's own
+  // listeners have had their turn; never a file.
+  assert.match(tabs, /if \(event\.defaultPrevented\) return null;\s*const link = [^\n]*closest\("a\[href\]"\)/);
+  assert.match(tabs, /link\.hasAttribute\("download"\)/);
+  assert.match(tabs, /if \(path\.split\("\?"\)\[0\]\.split\("\/"\)\[2\] === "_assets"\) return null;/);
   // The window would hand a modified click on a tab to the browser.
   assert.match(tabs, /if \(!item\) return;\s*\/\/[^\n]*\n\s*event\.preventDefault\(\);/);
 
-  assert.match(html, /<dt><kbd>&#8984;<\/kbd> \/ <kbd>Ctrl<\/kbd> \+ click<\/dt>\s*<dd>Open a page from the sidebar in a new tab<\/dd>/);
+  assert.match(html, /<dt><kbd>&#8984;<\/kbd> \/ <kbd>Ctrl<\/kbd> \+ click<\/dt>\s*<dd>Open a page in a new tab, from the sidebar or any link to it<\/dd>/);
   assert.match(html, /<dt><kbd>Shift<\/kbd> \+ click<\/dt>/);
 });
 
