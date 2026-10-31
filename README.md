@@ -1,6 +1,6 @@
 # Crescent
 
-Crescent, formerly KB25, is a personal knowledge base that runs on your
+Crescent is a personal knowledge base that runs on your
 computer. Pages are Markdown files in a folder you own, organised into spaces,
 and you browse and edit them in your web browser. A built-in chat, driven by
 Claude Code or Codex, answers questions and writes pages, and the Claude app
