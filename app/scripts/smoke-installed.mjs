@@ -2,8 +2,8 @@
 // installed with KB25_YES=1 KB25_NO_BROWSER=1. The viewer must answer without
 // a login, the chat must report its engines, the MCP server must list its
 // tools, the launcher must exist, KB25's window must start the server, close
-// with the power button and stop the server when it quits, and removal must
-// clean up while leaving the pages alone.
+// with the power button, stop the server when it quits and restart on an
+// update, and removal must clean up while leaving the pages alone.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -143,6 +143,36 @@ if (isWindows) {
 await until(() => !running(pid), "the window quits");
 await until(async () => !(await answers()), "quitting the window stops the server");
 console.log("window: starts the server, and quitting it stops the server");
+
+// An update made while the window is open restarts it on the new version: the
+// installer closes it and opens Crescent again, which starts the server. The
+// same version stands in for a new one here, as in release.yml.
+/** The pid of an open window, or undefined. */
+function windowPid() {
+  try {
+    const out = isWindows
+      ? execFileSync("powershell.exe", ["-NoProfile", "-Command", "(Get-Process KB25 -ErrorAction SilentlyContinue).Id"], { encoding: "utf8" })
+      : execFileSync("pgrep", ["-f", `${launcher}/Contents/MacOS/KB25`], { encoding: "utf8" });
+    return out.split(/\s+/).filter(Boolean).map(Number).find((found) => found !== pid);
+  } catch {
+    return undefined;
+  }
+}
+pid = await openWindow();
+await until(answers, "the window starts the server for the update");
+await sleep(5000);
+execFileSync(node, [path.join(home, "app", "installer", "setup.mjs")], {
+  env: { ...process.env, KB25_UPDATE: "1" },
+  stdio: "inherit",
+});
+await until(() => !running(pid), "the update closes the old window");
+let restarted;
+await until(() => (restarted = windowPid()) !== undefined, "the update opens the window again");
+await until(answers, "the restarted window's server answers");
+await sleep(5000);
+await fetch(`${server}/_quit`, { method: "POST" });
+await until(() => !running(restarted), "the power button closes the restarted window");
+console.log("window: an update restarts it on the new version");
 
 // 6. Removal takes everything but the pages.
 execFileSync(node, [path.join(home, "app", "installer", "setup.mjs")], {

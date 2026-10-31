@@ -9,8 +9,9 @@
 // Closing the window, or Cmd+Q, asks the server to quit with POST
 // /_quit?when=idle, which waits for a chat reply still being written. The
 // page's power button stops the server itself, which says "quit" on GET
-// /_window, and the app quits with it. A restart, as an update does, ends that
-// stream without a word, and the app listens again.
+// /_window, and the app quits with it. A restart ends that stream without a
+// word, and the app listens again. An update quits the app (SIGTERM, as Cmd+Q)
+// and its installer opens the new version's.
 //
 // Links that leave KB25, and links asked for in a new window, open in the
 // default browser. Built by scripts/build-shell.mjs, which adds the loading

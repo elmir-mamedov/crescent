@@ -132,12 +132,12 @@ export function psEncode(script) {
   return Buffer.from(script, "utf16le").toString("base64");
 }
 
-/** Run a PowerShell script and wait for it. */
+/** Run a PowerShell script, wait for it, and return what it printed. */
 export function powershell(script) {
-  execFileSync(
+  return execFileSync(
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", psEncode(script)],
-    { stdio: ["ignore", "ignore", "pipe"], windowsHide: true }
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true }
   );
 }
 

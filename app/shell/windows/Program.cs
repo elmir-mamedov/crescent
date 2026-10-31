@@ -9,8 +9,9 @@
 // resource by KB25.csproj). Closing the window asks the server to quit
 // with POST /_quit?when=idle, which waits for a chat reply still being written.
 // The page's power button stops the server itself, which says "quit" on GET
-// /_window, and the window closes with it. A restart, as an update does, ends
-// that stream without a word, and the window listens again.
+// /_window, and the window closes with it. A restart ends that stream without
+// a word, and the window listens again. An update closes the window, as its
+// close button does, and its installer opens the new version's.
 //
 // Links that leave KB25, and links asked for in a new window, open in the
 // default browser. Opening KB25 again brings this window forward. Built by

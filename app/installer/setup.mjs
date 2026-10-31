@@ -8,7 +8,8 @@
 // opening KB25's window.
 // KB25_UPDATE=1 is the viewer's Update button: it answers no to every question,
 // because an update changes the app and never the choices made at install, and
-// it restarts the server in the background instead of opening a browser.
+// it restarts Crescent on the new version: an open window is closed and opened
+// again, and otherwise the server restarts in the background.
 import { execFileSync, execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
@@ -23,6 +24,7 @@ import {
   powershell,
   psQuote,
   readEnvFile,
+  sleep,
   stopServer,
   tildify,
 } from "./common.mjs";
@@ -101,9 +103,20 @@ async function main() {
   await connectClaudeCode();
 
   if (UPDATING) {
-    // The server was stopped before the app was swapped; start it again on the
-    // new version for the page that is waiting on it.
-    const { KB25_UPDATE, ...env } = process.env;
+    // KB25_NO_BROWSER comes from the window, by way of the server that ran this.
+    const { KB25_UPDATE, KB25_NO_BROWSER, ...env } = process.env;
+    // An open window would go on running the old version's window until it was
+    // quit. Restart it on the new one, as quitting and opening Crescent would:
+    // its server first, which an update to the same version left running.
+    if (window && openWindows().length) {
+      await stopServer(p);
+      await closeWindow();
+      openKb25(window, { ...env, ...moved }, { fresh: true });
+      console.log("Restarted Crescent on the new version.");
+      return;
+    }
+    // No window (a browser tab): the server was stopped before the app was
+    // swapped; start it again on the new version for the page waiting on it.
     launch({ ...env, ...moved, KB25_NO_BROWSER: "1" });
     console.log("Starting Crescent again in the background.");
     return;
@@ -122,8 +135,10 @@ function launch(env) {
  * Start the server, then open KB25's window, which finds it answering. Started
  * here rather than by the window so the server gets this wizard's environment
  * (KB25_MOVED_FROM), which an app opened through Finder would not pass on.
+ * `fresh` opens a new copy of the app on macOS, for a restart: the one just
+ * quit may not have left LaunchServices yet, and `open` would only wake it.
  */
-function openKb25(window, env) {
+function openKb25(window, env, { fresh = false } = {}) {
   try {
     execFileSync(p.node, [p.launcher], {
       env: { ...env, KB25_NO_BROWSER: "1" },
@@ -134,26 +149,76 @@ function openKb25(window, env) {
     return; // the launcher has already said why, in a dialog
   }
   if (env.KB25_NO_BROWSER || !window) return;
-  const [command, args] = isMac ? ["open", [window]] : [window, []];
+  const [command, args] = isMac ? ["open", fresh ? ["-n", window] : [window]] : [window, []];
   spawn(command, args, { detached: true, stdio: "ignore" }).unref();
 }
 
-/** Close KB25's window, if it is open, before its files go. */
-function closeWindow() {
-  // KB25.app's as well: a window opened from it keeps running through the
-  // update that replaces it with Crescent.app.
-  for (const bundle of isMac ? [MAC_APP, OLD_MAC_APP] : []) {
-    try {
-      execFileSync("pkill", ["-TERM", "-f", path.join(bundle, "Contents", "MacOS", "KB25")], { stdio: "ignore" });
-    } catch {} // none open
+/**
+ * The pids of KB25's windows now open. KB25.app's as well: a window opened
+ * from it keeps running through the update that replaces it with Crescent.app.
+ */
+function openWindows() {
+  if (isMac) {
+    return [MAC_APP, OLD_MAC_APP].flatMap((bundle) => {
+      try {
+        const out = execFileSync("pgrep", ["-f", path.join(bundle, "Contents", "MacOS", "KB25")], { encoding: "utf8" });
+        return out.split("\n").filter(Boolean).map(Number);
+      } catch {
+        return []; // none open
+      }
+    });
   }
-  try {
-    if (isWindows) {
-      powershell(
-        `Get-Process KB25 -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ${psQuote(`${p.shells}\\*`)} } | Stop-Process -Force`
+  if (isWindows) {
+    try {
+      const out = powershell(
+        `Get-Process KB25 -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ${psQuote(`${p.shells}\\*`)} } | ForEach-Object { $_.Id }`
       );
+      return out.split(/\s+/).filter(Boolean).map(Number);
+    } catch {
+      return [];
     }
-  } catch {} // none open
+  }
+  return [];
+}
+
+/**
+ * Close KB25's windows, if any are open, and wait until they have gone: their
+ * files are about to go, or a new version is to open in their place. Each is
+ * asked to quit the way a person quits it, so it saves where it was; one that
+ * has not gone within a few seconds is stopped.
+ */
+async function closeWindow() {
+  const pids = openWindows();
+  if (!pids.length) return;
+  const running = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (isMac) {
+    // KB25.swift quits on SIGTERM as it does on Cmd+Q.
+    for (const pid of pids) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {}
+    }
+  } else if (isWindows) {
+    try {
+      powershell(
+        `Get-Process -Id ${pids.join(",")} -ErrorAction SilentlyContinue | ForEach-Object { [void]$_.CloseMainWindow() }`
+      );
+    } catch {}
+  }
+  for (let waited = 0; waited < 5000 && pids.some(running); waited += 100) await sleep(100);
+  for (const pid of pids.filter(running)) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
+  }
+  for (let waited = 0; waited < 2000 && pids.some(running); waited += 100) await sleep(100);
 }
 
 async function ask(question, defaultYes = true) {
@@ -491,7 +556,7 @@ function disconnectClaudeCode() {
 /** Remove everything KB25 installed. The pages stay where they are. */
 async function uninstall() {
   const kbDir = readEnvFile(p.envFile).KB_DIR;
-  closeWindow();
+  await closeWindow();
   await stopServer(p);
   if (isMac) [MAC_APP, OLD_MAC_APP].forEach(removeMacApp);
   if (isWindows) [START_MENU_LINK, OLD_START_MENU_LINK].forEach((link) => fs.rmSync(link, { force: true }));

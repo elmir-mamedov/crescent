@@ -2618,9 +2618,9 @@ if (DESKTOP) {
     }
     return reply.code(202).send({ ok: true });
   });
-  // KB25's window listens here for "quit". A restart (an update's SIGTERM)
-  // ends the stream without it, and the window listens again once the new
-  // server answers.
+  // KB25's window listens here for "quit". A restart ends the stream without
+  // it, and the window listens again once the new server answers. An update
+  // restarts the window as well, from its installer (setup.mjs).
   app.get("/_window", async (_req, reply) => {
     reply.hijack();
     reply.raw.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
