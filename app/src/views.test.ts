@@ -2499,8 +2499,10 @@ test("tabs: Cmd/Ctrl-click on a link opens a tab, and shift-click starts a range
   assert.match(html, /<dt><kbd>Shift<\/kbd> \+ click<\/dt>/);
 });
 
+const pageHtml = () => layout(pageView());
+
 test("tabs: a place comes back only for a page opened afresh, without a #section", () => {
-  const tabs = [...layout(pageView()).matchAll(/<script>([\s\S]*?)<\/script>/g)]
+  const tabs = [...pageHtml().matchAll(/<script>([\s\S]*?)<\/script>/g)]
     .map((m) => m[1])
     .find((s) => s.includes('const SCROLL_KEY = "kb25.scroll"'));
   assert.ok(tabs);
@@ -2509,4 +2511,13 @@ test("tabs: a place comes back only for a page opened afresh, without a #section
   // Leaving before the page is back in place keeps the place, not the top.
   assert.match(tabs, /const y = placing \? target : Math\.round\(window\.scrollY\);/);
   assert.match(tabs, /window\.addEventListener\("pagehide", remember\);/);
+  // Out of sight until it is in place, so it never slides down from the top;
+  // and shown after two seconds whatever happens to the script.
+  assert.match(tabs, /root\.classList\.add\("kb-placing"\);/);
+  assert.match(tabs, /root\.classList\.remove\("kb-placing"\);/);
+  assert.match(pageHtml(), /html\.kb-placing main,html\.kb-placing \.toc\{visibility:hidden; animation:kb-show 0s 2s forwards\}/);
+  assert.match(pageHtml(), /@keyframes kb-show\{to\{visibility:visible\}\}/);
+  // Then held: what is at the top of the view stays there as the page grows.
+  assert.match(tabs, /const moved = anchor\.getBoundingClientRect\(\)\.top - anchorTop;\s*if \(Math\.abs\(moved\) >= 1\) window\.scrollBy\(0, moved\);/);
+  assert.doesNotMatch(pageHtml(), /scroll-behavior/);
 });

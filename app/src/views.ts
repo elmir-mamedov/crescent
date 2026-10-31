@@ -3554,7 +3554,10 @@ export const TAB_MODEL = `
  * Scroll positions go in localStorage, for the pages in tabs and the last few
  * read in any (scrollRemember). One comes back only when a page is opened
  * afresh: a #section link goes to its section, and Back, Forward and a reload
- * get the browser's own restore, which stays per history entry.
+ * get the browser's own restore, which stays per history entry. The page is
+ * kept out of sight until it is in place, then held there while late images
+ * and diagrams settle: put back after it had painted, it slid down from the
+ * top in a run of jumps.
  */
 const TABS_SCRIPT = `
 (() => {
@@ -3564,6 +3567,7 @@ const TABS_SCRIPT = `
 ${TAB_MODEL}
   const TABS_KEY = "kb25.tabs";
   const SCROLL_KEY = "kb25.scroll";
+  const root = document.documentElement;
   const here = location.pathname + location.search;
   const title = strip.getAttribute("data-tab-title") || document.title;
   const reopen = strip.hasAttribute("data-tabs-reopen");
@@ -3602,6 +3606,18 @@ ${TAB_MODEL}
     } catch {
       return "navigate";
     }
+  }
+  // Once the page and its images are in, or after a while if they never are.
+  function whenLoaded(run, wait) {
+    let done = false;
+    const once = () => {
+      if (done) return;
+      done = true;
+      requestAnimationFrame(run);
+    };
+    if (document.readyState === "complete") return once();
+    window.addEventListener("load", once, { once: true });
+    window.setTimeout(once, wait);
   }
 
   // Without a sessionStorage of its own, every page would look like the
@@ -3808,30 +3824,64 @@ ${TAB_MODEL}
   window.addEventListener("pagehide", remember);
 
   if (!placing) return;
-  // Images and diagrams arrive after the text and push it down, so the place
-  // is kept while the page grows, until the reader moves or it settles.
+  // Out of sight (kb-placing) until its images are in and it can be put
+  // where it was, then held there: whatever is at the top of the view stays
+  // put while a diagram renders above it or the strip slides in, until the
+  // reader scrolls or it has all settled.
+  root.classList.add("kb-placing");
   const STOP = ["wheel", "touchstart", "keydown", "mousedown"];
   let observer = null;
-  const place = () => {
-    if (placing) window.scrollTo(0, target);
+  let anchor = null;
+  let anchorTop = 0;
+  let reached = false;
+  const pickAnchor = () => {
+    const line = parseFloat(getComputedStyle(root).scrollPaddingTop) || 0;
+    anchor = null;
+    for (const el of document.querySelectorAll("main .prose > *, main > *")) {
+      const box = el.getBoundingClientRect();
+      if (box.height > 0 && box.bottom > line) {
+        anchor = el;
+        anchorTop = box.top;
+        return;
+      }
+    }
   };
-  const done = () => {
+  const hold = () => {
+    if (!placing) return;
+    if (!reached) {
+      // The page was too short to get there; it has grown, so try again.
+      window.scrollTo(0, target);
+      reached = window.scrollY >= target - 1;
+      pickAnchor();
+      return;
+    }
+    if (!anchor || !anchor.isConnected) return pickAnchor();
+    const moved = anchor.getBoundingClientRect().top - anchorTop;
+    if (Math.abs(moved) >= 1) window.scrollBy(0, moved);
+  };
+  const finish = () => {
     if (!placing) return;
     placing = false;
     if (observer) observer.disconnect();
-    for (const type of STOP) window.removeEventListener(type, done, true);
+    for (const type of STOP) window.removeEventListener(type, finish, true);
   };
-  for (const type of STOP) window.addEventListener(type, done, { capture: true, passive: true });
-  const start = () => {
-    place();
+  const place = () => {
+    window.scrollTo(0, target);
+    reached = window.scrollY >= target - 1;
+    root.classList.remove("kb-placing");
+    root.classList.add("kb-placed");
+    pickAnchor();
+    for (const type of STOP) window.addEventListener(type, finish, { capture: true, passive: true });
     if (typeof ResizeObserver === "function") {
-      observer = new ResizeObserver(place);
+      observer = new ResizeObserver(hold);
       observer.observe(document.body);
     }
-    window.setTimeout(done, 3000);
+    window.setTimeout(finish, 3000);
   };
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
-  else start();
+  // Not long after the text is in, even if an image never arrives.
+  const ready = () => whenLoaded(place, 600);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ready, { once: true });
+  else ready();
 })();
 `;
 
@@ -6321,6 +6371,16 @@ html.has-tabs .toc{top:var(--tabs-h); max-height:calc(100vh - var(--tabs-h)); pa
 @media (max-width:780px){
   html.has-tabs{--tabs-h:104px}
   .tab-strip{align-items:flex-end; padding:0 12px 10px}
+}
+/* A page put back where it was read stays out of sight until it is there
+   (TABS_SCRIPT), then fades in; should the script never get that far, it
+   shows anyway. */
+@keyframes kb-show{to{visibility:visible}}
+@keyframes kb-fade-in{from{opacity:0}}
+html.kb-placing main,html.kb-placing .toc{visibility:hidden; animation:kb-show 0s 2s forwards}
+html.kb-placed main,html.kb-placed .toc{animation:kb-fade-in .14s ease-out}
+@media (prefers-reduced-motion:reduce){
+  html.kb-placed main,html.kb-placed .toc{animation:none}
 }
 .help-dialog{
   width:min(520px,92vw); border:1px solid var(--line); border-radius:10px;
