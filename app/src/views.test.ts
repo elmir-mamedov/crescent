@@ -1709,6 +1709,19 @@ test("views: every page with the corner offers feedback, through /_feedback", ()
   }
 });
 
+test("feedback #25: the dialog waits for what the server adds, so it opens whole", () => {
+  const html = layout(pageView());
+  const script = html.slice(html.indexOf('<script type="module">'));
+  // Asked for before the click, as the pointer or the focus comes.
+  assert.match(script, /button\.addEventListener\("pointerenter", \(\) => void info\(\)\);/);
+  assert.match(script, /button\.addEventListener\("focus", \(\) => void info\(\)\);/);
+  // Opened once it is in, or after a moment whatever happens.
+  assert.match(script, /await Promise\.race\(\[info\(\), new Promise\(\(resolve\) => setTimeout\(resolve, WAIT\)\)\]\);\s*feedback\.open\(\);/);
+  assert.match(script, /const WAIT = 400;/);
+  // One request answers the wait and the dialog's own load.
+  assert.match(script, /pending \?\?= fetch\("\/_feedback"/);
+});
+
 /** Render with a launcher-started server's views, then put the default back. */
 function asDesktop<T>(render: () => T): T {
   configureViews({ desktop: true });

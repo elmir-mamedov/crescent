@@ -2686,8 +2686,20 @@ const feedback = mountFeedback({
     return { status: "refused", error: "That didn't go through (" + res.status + "). Try again." };
   },
 });
+// The dialog opens whole (feedback #25). Opened before GET /_feedback had
+// answered, it showed without the logs row and with half its details, then
+// grew as they came, and being centred, jumped up the screen; it did so on
+// the first opening on every page, since later ones keep what they loaded.
+// So the answer is asked for as the pointer comes to the button, and waited
+// for, a moment at most, on the click.
+const WAIT = 400;
 document.querySelectorAll("[data-feedback-open]").forEach((button) => {
-  button.addEventListener("click", () => feedback.open());
+  button.addEventListener("pointerenter", () => void info());
+  button.addEventListener("focus", () => void info());
+  button.addEventListener("click", async () => {
+    await Promise.race([info(), new Promise((resolve) => setTimeout(resolve, WAIT))]);
+    feedback.open();
+  });
 });
 `;
 
