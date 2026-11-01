@@ -1495,10 +1495,45 @@ test("space instructions: the hint states it is hidden and LLM-read-only", () =>
  * typecheck error, and no server-side symptom. Parsing each emitted script is
  * the cheapest guard that catches it.
  */
+const MERMAID_PAGE = '<p>Before.</p>\n<pre class="mermaid">flowchart LR\n  A --&gt; B</pre>\n';
+
+test("feedback #33: a page with a diagram gets the viewer that opens it large", () => {
+  const html = layout(pageView({ contentHtml: MERMAID_PAGE }));
+  assert.match(html, /<template data-diagram-expand-template><button type="button" class="diagram-expand" data-diagram-expand aria-label="Expand diagram" title="Expand diagram"><svg /);
+  assert.match(html, /<dialog class="diagram-viewer" data-diagram-viewer tabindex="-1" aria-label="Diagram">/);
+  assert.match(html, /<button type="button" class="diagram-tool diagram-level" data-diagram-fit title="Fit to the window \(0\)">100%<\/button>/);
+  assert.match(html, /<div class="diagram-viewer-stage" data-diagram-stage><div class="diagram-viewer-canvas" data-diagram-canvas><\/div><\/div>/);
+  // It frames the diagrams before Mermaid draws into them.
+  assert.ok(html.indexOf("data-diagram-viewer") < html.indexOf('<script src="/_vendor/mermaid/mermaid.min.js">'));
+
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('document.querySelector("[data-diagram-viewer]")'));
+  assert.ok(script);
+  // The button sits beside the <pre>, which Mermaid empties on a theme change.
+  assert.match(script, /frame\.className = "mermaid-frame";\s*pre\.before\(frame\);\s*frame\.append\(pre, template\.content\.firstElementChild\.cloneNode\(true\)\);/);
+  // A copy at the diagram's own size, fitted to the window.
+  assert.match(script, /const copy = svg\.cloneNode\(true\);/);
+  assert.match(script, /viewer\.showModal\(\);\s*\/\/[^\n]*\n\s*viewer\.focus\(\);\s*fit\(\);/);
+  // Scrolling, a pinch from either engine, and a drag are all its own.
+  assert.match(script, /stage\.addEventListener\(\s*"wheel",[\s\S]*?event\.preventDefault\(\);[\s\S]*?\{ passive: false \}/);
+  for (const name of ["gesturestart", "gesturechange", "gestureend"]) {
+    assert.match(script, new RegExp(`stage\\.addEventListener\\("${name}", \\(event\\) => \\{\\s*event\\.preventDefault\\(\\);`), name);
+  }
+  assert.match(script, /stage\.setPointerCapture\(event\.pointerId\);/);
+  assert.match(html, /\.mermaid-frame > pre\.mermaid:not\(\[data-processed\]\) \+ \.diagram-expand\{display:none\}/);
+
+  // No diagram, no viewer.
+  const plain = layout(pageView());
+  assert.doesNotMatch(plain, /data-diagram-viewer/);
+  assert.doesNotMatch(plain, /data-diagram-expand-template/);
+});
+
 test("views: every inline script in every layout parses as JavaScript", () => {
   const pages: Array<[string, string]> = [
     ["page", layout(pageView())],
     ["page-toc", layout(pageView({ sections: sections() }))],
+    ["page-mermaid", layout(pageView({ contentHtml: MERMAID_PAGE }))],
     ["folder", folderLayout({ ...pageView(), children: [] } as unknown as FolderView)],
     ["dashboard", dashboardLayout(dashboardView())],
     ["dashboards", dashboardsLayout(dashboardsView())],
