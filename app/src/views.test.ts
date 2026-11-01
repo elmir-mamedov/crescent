@@ -2081,6 +2081,29 @@ test("manage labels: a create form, then one row per label with rename, colour a
   assert.match(draft, /from every page carrying it — 2 pages here, plus any archived ones\./);
 });
 
+test("feedback #35: a label's row folds its palette behind one dot of its colour", () => {
+  const html = labelsDashboardLayout(labelsView());
+  const rows = html.match(/<li class="label-manage-row">[\s\S]*?<\/li>/g) ?? [];
+  const draft = rows[0] ?? "";
+  // Closed, it shows only the colour the label has.
+  assert.match(draft, /<details class="label-color-pick" data-label-color-pick>\s*<summary class="label-color-current" title="Change colour"><span class="label-dot" data-label-color="yellow" data-label-color-dot><\/span><span class="sr-only">Colour: <span data-label-color-name>yellow<\/span><\/span>/);
+  // The palette is inside it, still a field of the row's form.
+  const form = draft.match(/<form class="label-manage-form" method="post" action="\/_labels\/update">[\s\S]*?<\/form>/)?.[0] ?? "";
+  assert.match(form, /<div class="label-color-pop"><div class="label-swatches" role="radiogroup" aria-label="Colour for Draft">/);
+  assert.match(form, /name="newColor" value="yellow" checked/);
+  assert.doesNotMatch(draft, /<details open/);
+
+  // The new label's palette stays out in the open.
+  const create = html.match(/<form class="label-manage-form label-create"[\s\S]*?<\/form>/)?.[0] ?? "";
+  assert.match(create, /<div class="label-swatches" role="radiogroup"/);
+  assert.doesNotMatch(create, /label-color-pick/);
+
+  const script = html.match(/const picks = Array\.from\(document\.querySelectorAll\("\[data-label-color-pick\]"\)\);[\s\S]*?\}\)\(\);/)?.[0] ?? "";
+  assert.ok(script, "the picker script ships with the view");
+  assert.match(script, /if \(dot\) dot\.setAttribute\("data-label-color", input\.value\);/);
+  assert.match(script, /if \(pointer\) pick\.open = false;/, "a click folds it, the arrow keys do not");
+});
+
 test("manage labels: names are escaped in every form field", () => {
   const html = labelsDashboardLayout(
     labelsView({ known: [{ name: '"><b>x', color: "gray", defined: false, count: 1 }] })

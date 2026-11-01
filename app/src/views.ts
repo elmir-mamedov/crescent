@@ -583,6 +583,20 @@ function labelSwatches(name: string, checked: LabelColor, label = "Colour"): str
 }
 
 /**
+ * A label's colour on its row in Manage labels: the colour it has, as one dot
+ * that opens the palette beneath it (feedback #35). A whole palette on every
+ * row made the list a wall of dots. It is a <details>, so it opens with
+ * scripts off, and its radios go with the row's form whether it is open or
+ * not; LABEL_MANAGE_SCRIPT shows a picked colour on the dot and folds it away.
+ */
+function labelColorPicker(name: string, color: LabelColor): string {
+  return `<details class="label-color-pick" data-label-color-pick>
+            <summary class="label-color-current" title="Change colour"><span class="label-dot" data-label-color="${color}" data-label-color-dot></span><span class="sr-only">Colour: <span data-label-color-name>${color}</span></span><svg class="label-color-chevron" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></summary>
+            <div class="label-color-pop">${labelSwatches("newColor", color, `Colour for ${name}`)}</div>
+          </details>`;
+}
+
+/**
  * The one label dialog a sidebar shares across all its rows. Each row's
  * "Labels" item carries its page and current labels; LABELS_SCRIPT fills the
  * checkbox list from those and from the palette here, then the dialog posts a
@@ -1511,7 +1525,7 @@ export function labelsDashboardLayout(v: LabelsDashboardView): string {
           ${spaceField}
           <input type="hidden" name="name" value="${name}" />
           <input type="text" name="newName" value="${name}" maxlength="40" required aria-label="Name for ${name}" />
-          ${labelSwatches("newColor", label.color, `Colour for ${label.name}`)}
+          ${labelColorPicker(label.name, label.color)}
           <button class="button secondary" type="submit">Save</button>
         </form>
         <details class="label-delete">
@@ -1557,7 +1571,8 @@ export function labelsDashboardLayout(v: LabelsDashboardView): string {
   ${results}
   ${manage}
 </div>
-<script>${LABEL_FILTER_SCRIPT}</script>`,
+<script>${LABEL_FILTER_SCRIPT}</script>
+<script>${LABEL_MANAGE_SCRIPT}</script>`,
     canEdit: false,
     username: v.username,
   });
@@ -5982,6 +5997,52 @@ const LABEL_FILTER_SCRIPT = `
 `;
 
 /**
+ * The colour pickers in Manage labels (labelColorPicker). A colour picked
+ * shows on the row's dot at once and is saved with the row's Save. A click
+ * folds the palette away; the arrow keys leave it open, since they step
+ * through it. One palette is open at a time, and a click elsewhere or Esc
+ * folds it.
+ */
+const LABEL_MANAGE_SCRIPT = `
+(() => {
+  const picks = Array.from(document.querySelectorAll("[data-label-color-pick]"));
+  if (!picks.length) return;
+  for (const pick of picks) {
+    let pointer = false;
+    pick.addEventListener("toggle", () => {
+      if (!pick.open) return;
+      for (const other of picks) if (other !== pick) other.open = false;
+    });
+    pick.addEventListener("pointerdown", () => {
+      pointer = true;
+    });
+    pick.addEventListener("change", (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || input.type !== "radio") return;
+      const dot = pick.querySelector("[data-label-color-dot]");
+      const name = pick.querySelector("[data-label-color-name]");
+      if (dot) dot.setAttribute("data-label-color", input.value);
+      if (name) name.textContent = input.value;
+      if (pointer) pick.open = false;
+      pointer = false;
+    });
+  }
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Node ? event.target : null;
+    for (const pick of picks) if (pick.open && !(target && pick.contains(target))) pick.open = false;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const open = picks.find((pick) => pick.open);
+    if (!open) return;
+    open.open = false;
+    const summary = open.querySelector("summary");
+    if (summary) summary.focus();
+  });
+})();
+`;
+
+/**
  * Label swatches: chip background, chip ink, and a solid dot, per theme. The
  * light pairs are a pale tint under dark ink; the dark ones a deep tint under
  * pale ink — each clears 4.5:1, so a chip stays readable whichever theme is on.
@@ -7222,6 +7283,25 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
 .label-manage-form input[type="text"]:focus{outline:2px solid var(--focus-ring-soft); border-color:var(--focus-ring)}
 .label-manage-row > .label-manage-form{flex:1 1 auto}
 .label-manage-form .label-swatches{margin-top:0}
+/* A row's colour (labelColorPicker): its dot, as tall as the name beside it,
+   with the palette dropping below it. */
+.label-color-pick{position:relative; flex:0 0 auto}
+.label-color-pick > summary{
+  display:flex; align-items:center; gap:6px; height:34px; padding:0 8px; list-style:none;
+  border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--muted); cursor:pointer;
+}
+.label-color-pick > summary::-webkit-details-marker{display:none}
+.label-color-pick > summary::marker{content:""}
+.label-color-pick > summary:hover,.label-color-pick[open] > summary{background:var(--surface-hover-2); color:var(--fg)}
+.label-color-pick > summary:focus-visible{outline:2px solid var(--focus-ring); outline-offset:2px}
+.label-color-pick > summary .label-dot{width:18px; height:18px; box-shadow:0 0 0 1px var(--line)}
+.label-color-chevron{transition:transform .12s ease}
+.label-color-pick[open] .label-color-chevron{transform:rotate(180deg)}
+.label-color-pop{
+  position:absolute; z-index:30; top:calc(100% + 6px); left:0;
+  width:max-content; max-width:min(320px, calc(100vw - 48px)); padding:10px 12px;
+  border:1px solid var(--line); border-radius:8px; background:var(--surface); box-shadow:var(--shadow-lg);
+}
 .label-delete{margin-left:auto}
 /* Open, the confirmation takes a line of its own instead of squeezing the form. */
 .label-delete[open]{flex-basis:100%; margin-left:0}
