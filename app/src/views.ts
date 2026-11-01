@@ -1993,6 +1993,8 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
       <dd>Copy this page's relative link (space/&hellip;/page)</dd>
       <dt><kbd>&#8984;</kbd> / <kbd>Ctrl</kbd> + click</dt>
       <dd>Open a page in a new tab, from the sidebar or any link to it</dd>
+      <dt><kbd>&#8984;</kbd> / <kbd>Ctrl</kbd> + <kbd>W</kbd></dt>
+      <dd>Close the tab you are on, when more than one is open</dd>
       <dt><kbd>Shift</kbd> + click</dt>
       <dd>Select a page in the sidebar; Shift-click another to select both and every page between them, then drag them together</dd>
       <dt><kbd>Esc</kbd></dt>
@@ -3874,6 +3876,17 @@ ${TAB_MODEL}
     if (!item) return;
     event.preventDefault();
     closeTab(item.getAttribute("data-tab") || "");
+  });
+
+  // Cmd/Ctrl+W closes the open tab, as in a browser, but never the last one,
+  // which would leave nothing to show (feedback #29). Crescent's window has
+  // no Close item of its own, so the keys reach the page; a browser keeps
+  // them for its own tabs.
+  document.addEventListener("keydown", (event) => {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+    if (event.key.toLowerCase() !== "w") return;
+    event.preventDefault();
+    if (state.tabs.length > 1) closeTab(state.active);
   });
 
   // A link to a Crescent page: not a file (a download, a space's asset), and

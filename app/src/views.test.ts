@@ -2412,6 +2412,19 @@ test("tabs: closing the others keeps only the open tab, and the strip slides off
   assert.match(html, /the button at its left end closes all but the one you are on/);
 });
 
+test("feedback #29: Cmd/Ctrl+W closes the open tab, but never the last one", () => {
+  for (const html of [layout(pageView()), editLayout(editView())]) {
+    const tabs = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+      .map((m) => m[1])
+      .find((s) => s.includes('const TABS_KEY = "kb25.tabs"'));
+    assert.ok(tabs);
+    assert.match(tabs, /if \(event\.key\.toLowerCase\(\) !== "w"\) return;\s*event\.preventDefault\(\);\s*if \(state\.tabs\.length > 1\) closeTab\(state\.active\);/);
+    // Before the editor's early return, so it closes the editor's tab too.
+    assert.ok(tabs.indexOf('!== "w"') < tabs.indexOf('if (strip.hasAttribute("data-no-scroll-memory")) return;'));
+  }
+  assert.match(layout(pageView()), /<dt><kbd>&#8984;<\/kbd> \/ <kbd>Ctrl<\/kbd> \+ <kbd>W<\/kbd><\/dt>\s*<dd>Close the tab you are on, when more than one is open<\/dd>/);
+});
+
 test("tabs: only paths on this site come back from storage", () => {
   const m = tabModel();
   assert.equal(m.tabsValid(null), null);
