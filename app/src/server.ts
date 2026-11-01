@@ -2642,6 +2642,9 @@ if (DESKTOP) {
     reply.raw.write(": KB25\n\n");
     windows.add(reply.raw);
     reply.raw.on("close", () => windows.delete(reply.raw));
+    // From here the power button reaches it. The release smoke test waits for
+    // this line before pressing it (scripts/smoke-installed.mjs).
+    console.log("KB25 window connected");
   });
 }
 

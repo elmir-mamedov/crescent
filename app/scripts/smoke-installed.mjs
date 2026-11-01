@@ -124,10 +124,34 @@ const running = (pid) => {
     return false;
   }
 };
+// The power button reaches only a window already listening on GET /_window,
+// which the server logs. A window that misses it stays open for good, so wait
+// for that line rather than a fixed pause: the server is often up before the
+// window (the installer started it), and a window's web view can take longer
+// than any pause to start on a fresh runner.
+const logFile = path.join(home, "kb25.log");
+const logSize = () => {
+  try {
+    return fs.statSync(logFile).size;
+  } catch {
+    return 0;
+  }
+};
+/** Whether a window has started listening since the log was `from` bytes long. */
+const listening = (from) => () => {
+  let log;
+  try {
+    log = fs.readFileSync(logFile);
+  } catch {
+    return false;
+  }
+  return log.subarray(log.length >= from ? from : 0).toString("utf8").includes("KB25 window connected");
+};
 
+let mark = logSize();
 let pid = await openWindow();
 await until(answers, "the server answers");
-await sleep(5000); // time to load the page and start listening on /_window
+await until(listening(mark), "the window listens for the power button", 60_000);
 await fetch(`${server}/_quit`, { method: "POST" });
 await until(() => !running(pid), "the power button closes the window");
 console.log("window: opens, and closes with the power button");
@@ -158,9 +182,14 @@ function windowPid() {
     return undefined;
   }
 }
+mark = logSize();
 pid = await openWindow();
 await until(answers, "the window starts the server for the update");
+await until(listening(mark), "the window listens before the update", 60_000);
 await sleep(5000);
+// The update stops the server, closes this window, then starts the server and
+// the new window, so only the new one can log that it listens after this.
+mark = logSize();
 execFileSync(node, [path.join(home, "app", "installer", "setup.mjs")], {
   env: { ...process.env, KB25_UPDATE: "1" },
   stdio: "inherit",
@@ -169,7 +198,7 @@ await until(() => !running(pid), "the update closes the old window");
 let restarted;
 await until(() => (restarted = windowPid()) !== undefined, "the update opens the window again");
 await until(answers, "the restarted window's server answers");
-await sleep(5000);
+await until(listening(mark), "the restarted window listens for the power button", 60_000);
 await fetch(`${server}/_quit`, { method: "POST" });
 await until(() => !running(restarted), "the power button closes the restarted window");
 console.log("window: an update restarts it on the new version");
