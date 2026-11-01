@@ -1744,6 +1744,142 @@ test("views: every page with the corner offers feedback, through /_feedback", ()
   }
 });
 
+/** SWIPE_SCRIPT, as every view's <head> carries it. */
+function swipeScript(): string {
+  const html = layout(pageView());
+  const head = html.slice(0, html.indexOf("</head>"));
+  const script = [...head.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes("window.kbWindow"));
+  assert.ok(script, "the swipe script is in <head>");
+  return script;
+}
+
+/**
+ * Runs SWIPE_SCRIPT against a stand-in window: a clock moved by hand, a page
+ * that scrolls sideways only where `scrollable` says, and a history that
+ * records where it was sent.
+ */
+function swipeRig(shell: unknown) {
+  let now = 0;
+  let nextId = 1;
+  const timers = new Map<number, { at: number; run: () => void }>();
+  const listeners = new Map<string, (event: object) => void>();
+  const went: string[] = [];
+  class FakeElement {
+    parentElement: FakeElement | null = null;
+    scrollWidth = 100;
+    clientWidth = 100;
+    scrollLeft = 0;
+    closest() {
+      return null;
+    }
+  }
+  const root = new FakeElement();
+  const page = new FakeElement();
+  page.parentElement = root;
+  const wide = new FakeElement();
+  wide.parentElement = page;
+  wide.scrollWidth = 400;
+  const style: Record<string, string> = {};
+  const win = {
+    kbWindow: shell,
+    setTimeout(run: () => void, ms: number) {
+      timers.set(nextId, { at: now + ms, run });
+      return nextId++;
+    },
+    clearTimeout(id: number) {
+      timers.delete(id);
+    },
+    addEventListener(type: string, fn: (event: object) => void) {
+      listeners.set(type, fn);
+    },
+  };
+  const doc = {
+    documentElement: { style },
+    scrollingElement: root,
+    querySelector: () => null,
+  };
+  const history = { back: () => went.push("back"), forward: () => went.push("forward") };
+  new Function(
+    "window", "document", "history", "Element", "HTMLInputElement", "HTMLTextAreaElement", "getComputedStyle",
+    swipeScript()
+  )(win, doc, history, FakeElement, class {}, class {}, (el: FakeElement) => ({ overflowX: el === wide ? "auto" : "visible" }));
+
+  const tick = (ms: number) => {
+    now += ms;
+    for (const [id, timer] of [...timers]) {
+      if (timer.at <= now) {
+        timers.delete(id);
+        timer.run();
+      }
+    }
+  };
+  /** One run of wheel events, 16 ms apart, each moving (dx, dy). */
+  const run = (count: number, dx: number, dy: number, over: FakeElement = page, inverted = true) => {
+    for (let i = 0; i < count; i++) {
+      listeners.get("wheel")?.({ deltaX: dx, deltaY: dy, target: over, ctrlKey: false, defaultPrevented: false, webkitDirectionInvertedFromDevice: inverted });
+      tick(16);
+    }
+  };
+  return { went, style, wide, tick, run, listeners };
+}
+
+test("feedback #26, #27: in the window, a sideways swipe goes back or forward at once, once", () => {
+  const rig = swipeRig({ swipe: true });
+  assert.equal(rig.style.overscrollBehaviorX, "none", "the root no longer bounces sideways");
+  rig.tick(300);
+  // Natural scrolling: fingers to the right scroll left, and go back.
+  rig.run(30, -8, 0);
+  assert.deepEqual(rig.went, ["back"], "once, however long the run goes on");
+  rig.tick(300);
+  rig.run(30, 8, 0);
+  assert.deepEqual(rig.went, ["back", "forward"]);
+  // Without natural scrolling the same fingers scroll the other way.
+  rig.tick(300);
+  rig.run(30, 8, 0, undefined, false);
+  assert.deepEqual(rig.went, ["back", "forward", "back"]);
+});
+
+test("feedback #26, #27: a scroll, a short swipe or one over something wide goes nowhere", () => {
+  const rig = swipeRig({ swipe: true });
+  rig.tick(300);
+  rig.run(30, -3, 10);
+  rig.tick(300);
+  rig.run(3, -8, 0);
+  rig.tick(300);
+  // A code block at its left edge scrolls right, rather than going forward.
+  rig.run(30, 8, 0, rig.wide);
+  assert.deepEqual(rig.went, []);
+  // At its left edge it cannot scroll left, so that way still goes back.
+  rig.tick(300);
+  rig.run(30, -8, 0, rig.wide);
+  assert.deepEqual(rig.went, ["back"]);
+});
+
+test("feedback #26, #27: a page opening on the tail of a swipe waits for it to end", () => {
+  const rig = swipeRig({ swipe: true });
+  rig.run(40, -8, 0);
+  assert.deepEqual(rig.went, []);
+  rig.tick(300);
+  rig.run(30, -8, 0);
+  assert.deepEqual(rig.went, ["back"]);
+});
+
+test("feedback #26, #27: only Crescent's window, swiping with two fingers, gets the swipe", () => {
+  for (const shell of [undefined, { swipe: false }]) {
+    const rig = swipeRig(shell);
+    assert.equal(rig.listeners.size, 0);
+    assert.equal(rig.style.overscrollBehaviorX, undefined);
+  }
+  for (const html of [layout(pageView()), loginLayout({ siteTitle: "KB", next: "/" } as LoginView)]) {
+    const head = html.slice(0, html.indexOf("</head>"));
+    assert.match(head, /const shell = window\.kbWindow;\s*if \(!shell \|\| !shell\.swipe\) return;/);
+  }
+  // Nor over a dialog, the feedback dialog's shadow root included.
+  assert.match(swipeScript(), /document\.querySelector\("dialog\[open\]"\) \|\| \(over && over\.closest\("dialog, feedback-widget"\)\)/);
+});
+
 test("feedback #25: the dialog waits for what the server adds, so it opens whole", () => {
   const html = layout(pageView());
   const script = html.slice(html.indexOf('<script type="module">'));

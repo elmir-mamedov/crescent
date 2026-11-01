@@ -179,10 +179,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   // MARK: The window
 
   private func makeWindow() {
-    webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+    // Swiping between pages goes Back or Forward at once. WebKit's own swipe
+    // slid the page aside under the fingers first, and has no way to drop the
+    // slide, so it is off: the page takes the two-finger swipe itself
+    // (SWIPE_SCRIPT in views.ts), told here, before its scripts run, whether
+    // System Settings swipes between pages with two fingers; PageView takes
+    // the three-finger one.
+    let configuration = WKWebViewConfiguration()
+    let swipe = NSEvent.isSwipeTrackingFromScrollEventsEnabled
+    configuration.userContentController.addUserScript(WKUserScript(
+      source: "window.kbWindow = Object.freeze({ swipe: \(swipe) });",
+      injectionTime: .atDocumentStart,
+      forMainFrameOnly: true
+    ))
+    webView = PageView(frame: .zero, configuration: configuration)
     webView.navigationDelegate = self
     webView.uiDelegate = self
-    webView.allowsBackForwardNavigationGestures = true
+    webView.allowsBackForwardNavigationGestures = false
     webView.allowsMagnification = true
     if #available(macOS 13.3, *) { webView.isInspectable = true }
     webView.loadHTMLString(Self.page("Starting Crescent…"), baseURL: nil)
@@ -534,6 +547,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))),
     ])
     return main
+  }
+}
+
+/// The main window's web view. With WebKit's swipe off (makeWindow), a
+/// three-finger swipe, when System Settings swipes between pages that way,
+/// would do nothing; this goes Back or Forward on one at once, the way WebKit
+/// itself does: a positive deltaX is Back.
+final class PageView: WKWebView {
+  override func swipe(with event: NSEvent) {
+    if event.deltaX > 0 {
+      goBack()
+    } else if event.deltaX < 0 {
+      goForward()
+    } else {
+      super.swipe(with: event)
+    }
   }
 }
 
