@@ -14,6 +14,7 @@ import {
   loginLayout,
   spacesLayout,
   updateGateLayout,
+  FIND_MODEL,
   TAB_MODEL,
   type ArchiveView,
   type DashboardView,
@@ -1974,6 +1975,91 @@ test("views: every page of a launcher-started server hears that KB25 quit, sign-
   // Signing in is still needed to quit.
   const login = asDesktop(() => loginLayout({ siteTitle: "KB", next: "/" } as LoginView));
   assert.doesNotMatch(login, /class="quit-button"/);
+});
+
+// --- find on the page (feedback #44) ----------------------------------------
+
+interface FindFold {
+  text: string;
+  from: number[];
+  to: number[];
+}
+
+interface FindModel {
+  findFold(text: string): FindFold;
+  findQuery(raw: string): string;
+  findIn(fold: FindFold, query: string): [number, number][];
+}
+
+/** FIND_MODEL's functions, run the way the page runs them. */
+function findModel(): FindModel {
+  return new Function(`${FIND_MODEL}\nreturn { findFold, findQuery, findIn };`)() as FindModel;
+}
+
+/** What a query finds in some text, as the stretches of the text it covers. */
+function found(text: string, raw: string): string[] {
+  const { findFold, findQuery, findIn } = findModel();
+  return findIn(findFold(text), findQuery(raw)).map(([start, end]) => text.slice(start, end));
+}
+
+test("find ignores case and accents, and covers the text as written", () => {
+  assert.deepEqual(found("Práce a PRACE a prace", "prace"), ["Práce", "PRACE", "prace"]);
+  assert.deepEqual(found("Žluťoučký kůň", "zlutoucky kun"), ["Žluťoučký kůň"]);
+  // An accent typed is dropped too, as in a browser's find.
+  assert.deepEqual(found("prace", "práce"), ["prace"]);
+});
+
+test("find keeps a decomposed accent with its letter", () => {
+  // é written as e and U+0301: the match takes the accent along.
+  assert.deepEqual(found("café au lait", "cafe"), ["café"]);
+});
+
+test("find takes a run of white space for one space", () => {
+  assert.deepEqual(found("one\n  two", "one two"), ["one\n  two"]);
+  assert.deepEqual(found("one two", "one   two"), ["one two"]);
+});
+
+test("find matches typed quotes and dashes with the typographer's", () => {
+  assert.deepEqual(found("don’t say “yes” – ever", `don't say "yes" - ever`), ["don’t say “yes” – ever"]);
+  assert.deepEqual(found("„Ano“", '"ano"'), ["„Ano“"]);
+});
+
+test("find finds nothing for an empty or blank query", () => {
+  assert.deepEqual(found("some text", ""), []);
+  assert.deepEqual(found("some text", "   "), []);
+});
+
+test("find counts each match once, left to right", () => {
+  assert.deepEqual(found("aaaa", "aa"), ["aa", "aa"]);
+  assert.equal(found("ab ab ab", "ab").length, 3);
+});
+
+test("find maps characters outside the basic plane back whole", () => {
+  assert.deepEqual(found("a 😀 b 😀", "😀 b"), ["😀 b"]);
+});
+
+test("a page carries the find bar, hidden until it is asked for", () => {
+  const html = layout(pageView());
+  assert.match(html, /<div class="find-bar" data-find role="search" aria-label="Find on this page" hidden>/);
+  assert.match(html, /CSS\.highlights\.set\("kb25-find", all\);/);
+  assert.match(html, /window\.kb25Find = /);
+});
+
+test("find reads the page's title, text and rail, not the sidebar or controls", () => {
+  const html = layout(pageView({ sections: sections() }));
+  assert.match(html, /const SCOPE = "\.page-head h1, article\.prose, \.toc-list";/);
+  assert.match(html, /const SKIP = "button, input, textarea, select, script, style, template, svg, \.mermaid, \.katex-mathml";/);
+});
+
+test("find leaves Ctrl+F to a Mac's text fields", () => {
+  assert.match(layout(pageView()), /const held = \(mac \? event\.metaKey : event\.ctrlKey\) && !event\.altKey;/);
+});
+
+test("views with no page to read leave Cmd/Ctrl+F alone", () => {
+  for (const html of [folderLayout(folderView()), editLayout(editView())]) {
+    assert.doesNotMatch(html, /data-find/);
+    assert.doesNotMatch(html, /kb25Find/);
+  }
 });
 
 // --- labels ---------------------------------------------------------------
