@@ -476,8 +476,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   /// Edit ▸ Find, Find Next and Find Previous: the page's own find bar
   /// (FIND_SCRIPT in views.ts), which looks in the page and its "On this page"
   /// list but not the sidebar. The page takes Cmd+F and Cmd+G itself; this is
-  /// the same from the menu. A view without that bar, such as the editor, keeps
-  /// what WebKit does.
+  /// the same from the menu. A view without that bar, such as a folder or the
+  /// editor, keeps what the menu did before: the action goes down the responder
+  /// chain, and nothing happens when no view there finds text. Sending it to the
+  /// web view directly would abort the app, since WKWebView does not implement
+  /// performTextFinderAction(_:), which NSResponder only declares.
   @objc func findInPage(_ sender: NSMenuItem) {
     let action: String
     switch NSTextFinder.Action(rawValue: sender.tag) {
@@ -486,7 +489,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     default: action = "open"
     }
     webView.evaluateJavaScript("typeof kb25Find === \"function\" && kb25Find(\"\(action)\") === true") { result, _ in
-      if (result as? Bool) != true { self.webView.performTextFinderAction(sender) }
+      if (result as? Bool) == true { return }
+      NSApp.sendAction(#selector(NSResponder.performTextFinderAction(_:)), to: nil, from: sender)
     }
   }
 
