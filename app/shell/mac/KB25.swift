@@ -473,6 +473,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
   }
 
+  /// Edit ▸ Find, Find Next and Find Previous: the page's own find bar
+  /// (FIND_SCRIPT in views.ts), which looks in the page and its "On this page"
+  /// list but not the sidebar. The page takes Cmd+F and Cmd+G itself; this is
+  /// the same from the menu. A view without that bar, such as the editor, keeps
+  /// what WebKit does.
+  @objc func findInPage(_ sender: NSMenuItem) {
+    let action: String
+    switch NSTextFinder.Action(rawValue: sender.tag) {
+    case .nextMatch?: action = "next"
+    case .previousMatch?: action = "previous"
+    default: action = "open"
+    }
+    webView.evaluateJavaScript("typeof kb25Find === \"function\" && kb25Find(\"\(action)\") === true") { result, _ in
+      if (result as? Bool) != true { self.webView.performTextFinderAction(sender) }
+    }
+  }
+
   @objc func goBack(_ sender: Any?) { webView.goBack() }
   @objc func goForward(_ sender: Any?) { webView.goForward() }
   @objc func actualSize(_ sender: Any?) { webView.pageZoom = 1 }
@@ -502,7 +519,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       main.addItem(holder)
       return menu
     }
-    let find = #selector(NSResponder.performTextFinderAction(_:))
+    let find = #selector(findInPage(_:))
     submenu("Crescent", [
       item("About Crescent", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
       .separator(),
