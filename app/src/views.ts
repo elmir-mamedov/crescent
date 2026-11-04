@@ -6144,6 +6144,22 @@ const NOTES_SCRIPT = `
     popover.className = "note-popover";
     popover.setAttribute("role", "dialog");
     for (const note of shown) popover.appendChild(noteCard(note));
+    // An agent's note offers to take down all of the agent's notes on the page
+    // at once (feedback #46), when there is more than the one.
+    const agentIds = notes.filter((note) => note.kind === "agent").map((note) => note.id);
+    if (agentIds.length > 1 && shown.some((note) => note.kind === "agent")) {
+      const foot = document.createElement("div");
+      foot.className = "note-popover-foot";
+      const all = actionButton("Resolve all " + agentIds.length + " agent notes", "secondary");
+      all.setAttribute("data-note-resolve-agents", "");
+      all.title = "Take down every note the agent left on this page";
+      all.addEventListener("click", () => {
+        all.disabled = true;
+        send({ op: "resolve-agent", noteIds: agentIds.join(" ") }, all);
+      });
+      foot.appendChild(all);
+      popover.appendChild(foot);
+    }
     popoverAnchor = anchor;
     document.body.appendChild(popover);
     place(popover, anchor.getBoundingClientRect());
@@ -7658,6 +7674,8 @@ html.has-find.has-tabs .toc{padding-top:58px}
 }
 .note-card{display:flex; flex-direction:column; gap:6px}
 .note-card + .note-card{border-top:1px solid var(--line); padding-top:10px}
+/* Below the cards, what takes down every agent note on the page at once. */
+.note-popover-foot{border-top:1px solid var(--line); padding-top:10px}
 .note-card-head{display:flex; align-items:center; gap:8px}
 .note-kind{
   font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;

@@ -45,6 +45,7 @@ import {
   normalizeQuote,
   noteStamp,
   parseNotes,
+  removeAgentNotes,
   removeNote,
   updateNote,
   type NoteKind,
@@ -1727,6 +1728,19 @@ app.post("/_notes/*", async (req, reply) => {
     }
     nextBody = removed;
     message = `Resolve note on ${relPath} via web`;
+  } else if (op === "resolve-agent") {
+    // Every agent note the reader could see on the page (feedback #46), in one
+    // commit. The ids are the ones their page showed, so a note an agent left
+    // since then stays up until it has been seen.
+    const ids = (formString(req.body, "noteIds") ?? "").split(/\s+/).filter(Boolean);
+    const result = removeAgentNotes(body, ids);
+    if (!result.removed) {
+      return reply
+        .code(409)
+        .send({ ok: false, error: "Those notes are already gone. Reload the page." });
+    }
+    nextBody = result.body;
+    message = `Resolve ${result.removed === 1 ? "agent note" : "agent notes"} on ${relPath} via web`;
   } else if (op === "edit") {
     const noteId = formString(req.body, "noteId") ?? "";
     const current = parseNotes(body).find((note) => note.id === noteId);

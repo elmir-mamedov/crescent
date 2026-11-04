@@ -1059,6 +1059,16 @@ test("feedback #45: a note's card copies its ID, as the tasks dashboard does", (
   assert.ok(html.indexOf("<script>" + "\n(() => {\n  function fallbackCopy") >= 0, "the copy handler ships with the page");
 });
 
+test("feedback #46: an agent's note offers to take down all of its notes on the page", () => {
+  const html = layout(pageView());
+  // Only beside an agent's note, and only when the page has more than one.
+  assert.match(html, /const agentIds = notes\.filter\(\(note\) => note\.kind === "agent"\)\.map\(\(note\) => note\.id\);\s*if \(agentIds\.length > 1 && shown\.some\(\(note\) => note\.kind === "agent"\)\) \{/);
+  assert.match(html, /actionButton\("Resolve all " \+ agentIds\.length \+ " agent notes", "secondary"\)/);
+  // The ids the page showed, so a note left since then is not taken down unseen.
+  assert.match(html, /send\(\{ op: "resolve-agent", noteIds: agentIds\.join\(" "\) \}, all\);/);
+  assert.match(html, /\.note-popover-foot\{border-top:1px solid var\(--line\); padding-top:10px\}/);
+});
+
 test("notes: the kind switch gets its own row, so no kind is clipped", () => {
   const html = layout(pageView());
   // Three kinds beside Cancel and Save overflow the 320px panel, and .note-kinds

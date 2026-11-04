@@ -8,6 +8,7 @@ import {
   normalizeQuote,
   noteStamp,
   parseNotes,
+  removeAgentNotes,
   removeNote,
   stripNotes,
   updateNote,
@@ -467,6 +468,47 @@ test("an agent note is removed and rewritten like any other", () => {
   assert.equal(parseNotes(edited!)[0].kind, "agent");
   assert.equal(parseNotes(edited!)[0].text, "Reworded.");
   assert.deepEqual(parseNotes(removeNote(body, "n7k2m4x8")!), []);
+});
+
+test("removeAgentNotes takes down the agent notes named, and only those", () => {
+  const agent = (id: string, text: string) =>
+    formatNote(note({ id, kind: "agent", by: "agent", text }));
+  const body = [
+    "Intro.",
+    "",
+    agent("aaa", "Why the intro reads so."),
+    "First.",
+    "",
+    agent("bbb", "Renamed."),
+    formatNote(note({ id: "ccc", kind: "task", text: "Shorten this." })),
+    "Second.",
+    "",
+    agent("ddd", "Not seen yet."),
+    "Third.",
+    "",
+  ].join("\n");
+
+  // The task among them stays, and so does the agent note the reader never saw.
+  const { body: next, removed } = removeAgentNotes(body, ["aaa", "bbb", "ccc", "gone"]);
+  assert.equal(removed, 2);
+  assert.deepEqual(
+    parseNotes(next).map((n) => n.id),
+    ["ccc", "ddd"]
+  );
+  assert.match(next, /^Intro\.\n\nFirst\.\n\n<!-- kb25:note id=ccc kind=task/);
+
+  // All of them out leaves the prose as it was before any were left.
+  const prose = "Intro.\n\nFirst.\n\nSecond.\n\nThird.\n";
+  const onlyAgents = removeAgentNotes(
+    ["Intro.", "", agent("aaa", "One."), "First.", "", agent("bbb", "Two."), agent("eee", "Three."), "Second.", "", "Third.", ""].join("\n"),
+    ["aaa", "bbb", "eee"]
+  );
+  assert.equal(onlyAgents.removed, 3);
+  assert.equal(onlyAgents.body, prose);
+
+  // Nothing to take down leaves the body alone.
+  assert.deepEqual(removeAgentNotes(body, ["ccc", "gone"]), { body, removed: 0 });
+  assert.deepEqual(removeAgentNotes(body, []), { body, removed: 0 });
 });
 
 test("noteStamp drops sub-second precision and keeps the Z", () => {

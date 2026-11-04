@@ -343,6 +343,28 @@ export function removeNote(body: string, id: string): string | null {
 }
 
 /**
+ * Remove the agent notes among `ids` in one pass, for a reader taking down
+ * every one on a page at once. Ids that name no note, or a person's note, are
+ * passed over: the reader asked for the agent's notes they could see, and a
+ * task or remark sharing the list is not one of them. Returns the new body and
+ * how many notes came out of it.
+ */
+export function removeAgentNotes(
+  body: string,
+  ids: readonly string[]
+): { body: string; removed: number } {
+  const wanted = new Set(ids);
+  const found = scanNotes(body).filter((s) => wanted.has(s.note.id) && isAgentNote(s.note));
+  if (!found.length) return { body, removed: 0 };
+  const lines = body.split("\n");
+  // Last first, so the lines of the ones still to go stay where they were found.
+  for (let i = found.length - 1; i >= 0; i -= 1) {
+    spliceLines(lines, found[i].start, found[i].end);
+  }
+  return { body: lines.join("\n"), removed: found.length };
+}
+
+/**
  * The body with every note comment removed. Used for search indexing, so note
  * text never turns up as a page match or leaks into an excerpt.
  */
