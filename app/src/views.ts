@@ -6105,6 +6105,15 @@ const NOTES_SCRIPT = `
       });
       actions.appendChild(resolve);
 
+      // The note's handle for a chat (feedback #45), the same one the tasks
+      // dashboard copies: COPY_LINK_SCRIPT copies it and says so.
+      const ref = slug + "#" + note.id;
+      const copy = actionButton("Copy ID", "secondary");
+      copy.setAttribute("data-copy-slug", ref);
+      copy.setAttribute("data-copy-label", "Note ID");
+      copy.title = "Copy note ID \\u2014 " + ref;
+      actions.appendChild(copy);
+
       card.appendChild(actions);
     };
 

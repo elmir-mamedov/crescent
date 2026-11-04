@@ -1052,6 +1052,13 @@ test("notes: an agent's note is pink, and a reader can only resolve it", () => {
   assert.match(html, /const by = note\.kind === "agent" \? "" : note\.by;/);
 });
 
+test("feedback #45: a note's card copies its ID, as the tasks dashboard does", () => {
+  const html = layout(pageView());
+  // After Resolve, on every kind, and handed to the page's one copy handler.
+  assert.match(html, /actions\.appendChild\(resolve\);[\s\S]*?const ref = slug \+ "#" \+ note\.id;\s*const copy = actionButton\("Copy ID", "secondary"\);\s*copy\.setAttribute\("data-copy-slug", ref\);\s*copy\.setAttribute\("data-copy-label", "Note ID"\);/);
+  assert.ok(html.indexOf("<script>" + "\n(() => {\n  function fallbackCopy") >= 0, "the copy handler ships with the page");
+});
+
 test("notes: the kind switch gets its own row, so no kind is clipped", () => {
   const html = layout(pageView());
   // Three kinds beside Cancel and Save overflow the 320px panel, and .note-kinds
