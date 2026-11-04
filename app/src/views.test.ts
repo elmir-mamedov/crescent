@@ -2371,8 +2371,33 @@ test("manage labels: a create form, then one row per label with rename, colour a
   // The current colour is the checked swatch.
   assert.match(draft, /name="newColor" value="yellow" checked/);
   assert.equal(draft.match(/ checked/g)?.length, 1);
-  assert.match(draft, /<form method="post" action="\/_labels\/delete">/);
-  assert.match(draft, /from every page carrying it — 2 pages here, plus any archived ones\./);
+  assert.match(draft, /<button type="button" class="button danger label-delete" data-label-delete data-label-name="Draft" data-label-pages="2 pages">Delete<\/button>/);
+});
+
+test("feedback #36: a label's Delete asks in a dialog, which then deletes it", () => {
+  const html = labelsDashboardLayout(labelsView());
+  const rows = html.match(/<li class="label-manage-row">[\s\S]*?<\/li>/g) ?? [];
+  // No second Delete folded into the row any more.
+  for (const row of rows) {
+    assert.doesNotMatch(row, /<details class="label-delete"|\/_labels\/delete|Delete label/);
+  }
+
+  const dialogs = html.match(/<dialog class="label-dialog label-delete-dialog"[\s\S]*?<\/dialog>/g) ?? [];
+  assert.equal(dialogs.length, 1, "one dialog serves every row");
+  const dialog = dialogs[0];
+  assert.match(dialog, /<form class="label-dialog-form" method="post" action="\/_labels\/delete">/);
+  assert.match(dialog, /<input type="hidden" name="space" value="kb25" \/>/);
+  assert.match(dialog, /<input type="hidden" name="name" value="" data-label-delete-name \/>/);
+  assert.match(dialog, /<button type="button" class="button secondary" data-label-delete-close>Cancel<\/button>\s*<button type="submit" class="button danger">Delete<\/button>/);
+
+  const script = html.match(/const confirmDelete = document\.querySelector\("\[data-label-delete-dialog\]"\);[\s\S]*?\}\)\(\);/)?.[0] ?? "";
+  assert.ok(script, "the dialog's script ships with the view");
+  assert.match(script, /field\.value = name;/);
+  assert.match(script, /text\.textContent =/);
+  assert.match(script, /confirmDelete\.showModal\(\);/);
+
+  // No labels, nothing to delete.
+  assert.doesNotMatch(labelsDashboardLayout(labelsView({ known: [] })), /<dialog class="label-dialog label-delete-dialog"/);
 });
 
 test("feedback #35: a label's row folds its palette behind one dot of its colour", () => {

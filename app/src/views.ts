@@ -1543,18 +1543,31 @@ export function labelsDashboardLayout(v: LabelsDashboardView): string {
           ${labelColorPicker(label.name, label.color)}
           <button class="button secondary" type="submit">Save</button>
         </form>
-        <details class="label-delete">
-          <summary class="button danger">Delete</summary>
-          <form method="post" action="/_labels/delete">
-            ${spaceField}
-            <input type="hidden" name="name" value="${name}" />
-            <p>Removes “${name}” from the palette and from every page carrying it — ${pages} here, plus any archived ones.</p>
-            <button class="button danger" type="submit">Delete label</button>
-          </form>
-        </details>
+        <button type="button" class="button danger label-delete" data-label-delete data-label-name="${name}" data-label-pages="${pages}">Delete</button>
       </li>`;
     })
     .join("\n      ");
+  // One dialog for every row's Delete (feedback #36): it asks, and deletes.
+  // LABEL_MANAGE_SCRIPT puts the row's label in it before it opens.
+  const deleteDialog = v.known.length
+    ? `<dialog class="label-dialog label-delete-dialog" data-label-delete-dialog tabindex="-1" aria-labelledby="label-delete-title">
+    <form class="label-dialog-form" method="post" action="/_labels/delete">
+      <div class="help-head">
+        <h2 id="label-delete-title">Delete label?</h2>
+        <button type="button" class="help-close" data-label-delete-close aria-label="Close">&times;</button>
+      </div>
+      <div class="label-delete-body">
+        <p data-label-delete-text></p>
+      </div>
+      ${spaceField}
+      <input type="hidden" name="name" value="" data-label-delete-name />
+      <div class="label-dialog-actions">
+        <button type="button" class="button secondary" data-label-delete-close>Cancel</button>
+        <button type="submit" class="button danger">Delete</button>
+      </div>
+    </form>
+  </dialog>`
+    : "";
   const manage = `<section class="label-manage" id="manage-labels">
     <h2>Manage labels</h2>
     <p class="dash-lede">Renaming or deleting a label rewrites every page that carries it, in one commit.</p>
@@ -1567,7 +1580,8 @@ export function labelsDashboardLayout(v: LabelsDashboardView): string {
     ${v.known.length ? `<ul class="label-manage-list">
       ${manageRows}
     </ul>` : ""}
-  </section>`;
+  </section>
+  ${deleteDialog}`;
 
   return layout({
     siteTitle: v.siteTitle,
@@ -6736,6 +6750,33 @@ const LABEL_FILTER_SCRIPT = `
  */
 const LABEL_MANAGE_SCRIPT = `
 (() => {
+  // A row's Delete asks first, in a dialog naming the label and the pages it
+  // comes off; the dialog's Delete posts the delete.
+  const confirmDelete = document.querySelector("[data-label-delete-dialog]");
+  if (confirmDelete && typeof confirmDelete.showModal === "function") {
+    const field = confirmDelete.querySelector("[data-label-delete-name]");
+    const text = confirmDelete.querySelector("[data-label-delete-text]");
+    document.addEventListener("click", (event) => {
+      const button = event.target instanceof Element ? event.target.closest("[data-label-delete]") : null;
+      if (!button) return;
+      const name = button.getAttribute("data-label-name") || "";
+      field.value = name;
+      text.textContent =
+        "\\u201c" + name + "\\u201d comes off the palette and off every page carrying it \\u2014 " +
+        (button.getAttribute("data-label-pages") || "") + " here, plus any archived ones.";
+      confirmDelete.showModal();
+      // Not its close button, which would wear a focus ring until clicked away.
+      confirmDelete.focus();
+    });
+    for (const close of confirmDelete.querySelectorAll("[data-label-delete-close]")) {
+      close.addEventListener("click", () => confirmDelete.close());
+    }
+    // A click on the backdrop lands on the dialog itself.
+    confirmDelete.addEventListener("click", (event) => {
+      if (event.target === confirmDelete) confirmDelete.close();
+    });
+  }
+
   const picks = Array.from(document.querySelectorAll("[data-label-color-pick]"));
   if (!picks.length) return;
   for (const pick of picks) {
@@ -8113,13 +8154,9 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
   border:1px solid var(--line); border-radius:8px; background:var(--surface); box-shadow:var(--shadow-lg);
 }
 .label-delete{margin-left:auto}
-/* Open, the confirmation takes a line of its own instead of squeezing the form. */
-.label-delete[open]{flex-basis:100%; margin-left:0}
-.label-delete summary{list-style:none}
-.label-delete summary::-webkit-details-marker{display:none}
-.label-delete[open] summary{margin-bottom:8px}
-.label-delete form{margin:0; max-width:360px}
-.label-delete p{margin:0 0 8px; color:var(--fg-secondary); font-size:13px; line-height:1.45}
+.label-delete-dialog:focus{outline:none}
+.label-delete-body{padding:16px 20px}
+.label-delete-body p{margin:0; color:var(--fg-secondary); font-size:14px; line-height:1.55; overflow-wrap:anywhere}
 @media(max-width:780px){
   body{flex-direction:column}
   .sidebar{width:auto; flex:none; height:auto; position:static; border-right:none;
