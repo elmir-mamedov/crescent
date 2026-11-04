@@ -8182,6 +8182,8 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
 }
 .label-delete{margin-left:auto}
 .label-delete-dialog:focus{outline:none}
+/* It sits inside .prose, whose h2 is underlined like a page's section. */
+.label-delete-dialog .help-head h2{margin:0; padding:0; border:0; overflow-wrap:anywhere}
 .label-delete-body{padding:16px 20px}
 .label-delete-body p{margin:0; color:var(--fg-secondary); font-size:14px; line-height:1.55; overflow-wrap:anywhere}
 @media(max-width:780px){
