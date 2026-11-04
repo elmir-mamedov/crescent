@@ -3877,6 +3877,27 @@ const MERMAID_SCRIPT = `<script src="/_vendor/mermaid/mermaid.min.js"></script>
 </script>`;
 
 /**
+ * The diagram viewer's limits, as functions of plain numbers so the tests can
+ * run them. diagramScale holds a zoom level between MIN and MAX. diagramBound
+ * places one axis of the diagram, `size` long, in a stage `room` long: one
+ * that fits stays wholly in view, at least ROOM from either side, and a bigger
+ * one can be moved until its edge is ROOM inside the stage's, and no further,
+ * so the reader is never left looking at empty space.
+ */
+export const DIAGRAM_MODEL = `
+  const MIN = 0.3;
+  const MAX = 1.5;
+  const ROOM = 32;
+  function diagramScale(level) {
+    return Math.min(MAX, Math.max(MIN, level));
+  }
+  function diagramBound(at, size, room) {
+    const far = room - size - ROOM;
+    return Math.min(Math.max(ROOM, far), Math.max(Math.min(ROOM, far), at));
+  }
+`;
+
+/**
  * The diagram viewer (DIAGRAM_VIEWER). Each diagram is put in a frame that
  * carries its expand button, outside the <pre> Mermaid draws into and empties
  * again on every theme change. Expanding copies the drawn SVG onto the stage
@@ -3888,6 +3909,9 @@ const MERMAID_SCRIPT = `<script src="/_vendor/mermaid/mermaid.min.js"></script>
  * macOS window from zooming the whole page. The buttons and + − 0 zoom about
  * the middle, and 0 or the level between them fits it again. Until the reader
  * zooms or drags, the diagram keeps fitting the window as it resizes.
+ *
+ * Zoom stays between 30% and 150% (feedback #37), and the view stays on the
+ * diagram (DIAGRAM_MODEL): dragging past its edge stops there.
  */
 const DIAGRAM_VIEWER_SCRIPT = `
 (() => {
@@ -3897,10 +3921,8 @@ const DIAGRAM_VIEWER_SCRIPT = `
   const stage = viewer.querySelector("[data-diagram-stage]");
   const canvas = viewer.querySelector("[data-diagram-canvas]");
   const level = viewer.querySelector("[data-diagram-fit]");
-  const MIN = 0.05;
-  const MAX = 10;
+${DIAGRAM_MODEL}
   const STEP = 1.25;
-  const ROOM = 32;
 
   for (const pre of document.querySelectorAll("pre.mermaid")) {
     const frame = document.createElement("div");
@@ -3917,13 +3939,15 @@ const DIAGRAM_VIEWER_SCRIPT = `
   let fitted = true;
 
   function draw() {
+    x = diagramBound(x, width * scale, stage.clientWidth);
+    y = diagramBound(y, height * scale, stage.clientHeight);
     canvas.style.transform = "translate(" + x + "px, " + y + "px) scale(" + scale + ")";
     level.textContent = Math.round(scale * 100) + "%";
   }
   function fit() {
     const box = stage.getBoundingClientRect();
     const fits = Math.min((box.width - ROOM * 2) / width, (box.height - ROOM * 2) / height);
-    scale = Math.min(MAX, Math.max(MIN, fits));
+    scale = diagramScale(fits);
     x = (box.width - width * scale) / 2;
     y = (box.height - height * scale) / 2;
     fitted = true;
@@ -3931,7 +3955,7 @@ const DIAGRAM_VIEWER_SCRIPT = `
   }
   // Zoom to next, keeping the point (px, py) of the stage where it is.
   function zoom(next, px, py) {
-    next = Math.min(MAX, Math.max(MIN, next));
+    next = diagramScale(next);
     x = px - (px - x) * (next / scale);
     y = py - (py - y) * (next / scale);
     scale = next;
@@ -3993,7 +4017,9 @@ const DIAGRAM_VIEWER_SCRIPT = `
     event.preventDefault();
   });
   window.addEventListener("resize", () => {
-    if (viewer.open && fitted) fit();
+    if (!viewer.open) return;
+    if (fitted) fit();
+    else draw();
   });
 
   let drag = null;
@@ -4010,6 +4036,9 @@ const DIAGRAM_VIEWER_SCRIPT = `
     y = event.clientY - drag.dy;
     fitted = false;
     draw();
+    // Held at an edge, the diagram follows the pointer back at once.
+    drag.dx = event.clientX - x;
+    drag.dy = event.clientY - y;
   });
   const release = (event) => {
     if (!drag || event.pointerId !== drag.id) return;

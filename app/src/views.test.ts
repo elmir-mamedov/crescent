@@ -14,6 +14,7 @@ import {
   loginLayout,
   spacesLayout,
   updateGateLayout,
+  DIAGRAM_MODEL,
   FIND_MODEL,
   TAB_MODEL,
   type ArchiveView,
@@ -1528,6 +1529,29 @@ test("feedback #33: a page with a diagram gets the viewer that opens it large", 
   const plain = layout(pageView());
   assert.doesNotMatch(plain, /data-diagram-viewer/);
   assert.doesNotMatch(plain, /data-diagram-expand-template/);
+});
+
+test("feedback #37: the diagram viewer zooms from 30% to 150% and stays on the diagram", () => {
+  const { diagramScale, diagramBound } = new Function(
+    `${DIAGRAM_MODEL}\nreturn { diagramScale, diagramBound };`
+  )() as { diagramScale(level: number): number; diagramBound(at: number, size: number, room: number): number };
+  assert.equal(diagramScale(0.05), 0.3);
+  assert.equal(diagramScale(0.8), 0.8);
+  assert.equal(diagramScale(10), 1.5);
+
+  // A diagram that fits stays wholly in view, 32px clear of either side.
+  assert.equal(diagramBound(100, 200, 1000), 100);
+  assert.equal(diagramBound(-500, 200, 1000), 32);
+  assert.equal(diagramBound(5000, 200, 1000), 768);
+  // A bigger one moves until its edge is 32px inside the stage's.
+  assert.equal(diagramBound(-300, 2000, 1000), -300);
+  assert.equal(diagramBound(500, 2000, 1000), 32);
+  assert.equal(diagramBound(-5000, 2000, 1000), -1032);
+
+  const html = layout(pageView({ contentHtml: MERMAID_PAGE }));
+  assert.match(html, /x = diagramBound\(x, width \* scale, stage\.clientWidth\);\s*y = diagramBound\(y, height \* scale, stage\.clientHeight\);/);
+  assert.match(html, /scale = diagramScale\(fits\);/);
+  assert.match(html, /next = diagramScale\(next\);/);
 });
 
 test("views: every inline script in every layout parses as JavaScript", () => {
