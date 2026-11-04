@@ -464,7 +464,7 @@ function sidebarHtml(
           .join("")}</ul>`
       : "";
     return `<aside class="sidebar">
-  <a class="brand" href="/">${escapeHtml(siteTitle)}</a>
+  <div class="sidebar-top">${PAGE_NAV}<a class="brand" href="/">${escapeHtml(siteTitle)}</a></div>
   <nav class="tree">${list}</nav>
   ${SIDEBAR_PLACED_MARKER}
 </aside>`;
@@ -501,7 +501,7 @@ function sidebarHtml(
   }));
 
   return `<aside class="sidebar">
-  <a class="brand" href="/">${escapeHtml(siteTitle)}</a>
+  <div class="sidebar-top">${PAGE_NAV}<a class="brand" href="/">${escapeHtml(siteTitle)}</a></div>
   ${switcher}
   ${sidebarSearch(spaceKey, offered)}
   <details class="create-menu">
@@ -794,9 +794,46 @@ function tabStrip(title: string, options: { scrollMemory?: boolean } = {}): stri
   // outlast it; a browser can hold the site in several windows at once.
   const reopen = desktop ? " data-tabs-reopen" : "";
   const memory = options.scrollMemory === false ? " data-no-scroll-memory" : "";
-  return `<nav class="tab-strip" data-tabs data-tab-title="${escapeHtml(title)}"${reopen}${memory} aria-label="Open pages" hidden>${CLOSE_OTHER_TABS}<div class="tab-list" data-tab-list></div></nav>
-<script>${TABS_SCRIPT}</script>`;
+  return `<nav class="tab-strip" data-tabs data-tab-title="${escapeHtml(title)}"${reopen}${memory} aria-label="Open pages" hidden>${PAGE_NAV}${CLOSE_OTHER_TABS}<div class="tab-list" data-tab-list></div></nav>
+<script>${TABS_SCRIPT}</script>
+<script>${PAGE_NAV_SCRIPT}</script>`;
 }
+
+/**
+ * Back and Forward, as in a browser (feedback #38): what a swipe between
+ * pages does, for a click. Crescent's window has no toolbar of its own to
+ * hold them. They lead the tab strip, before Close other tabs; with no strip
+ * showing, the same pair leads the sidebar, beside the site's name, and
+ * gives way to the strip's when it slides in (has-tabs).
+ */
+const PAGE_NAV = `<div class="page-nav" role="group" aria-label="History"><button type="button" class="page-nav-button" data-page-back aria-label="Back" title="Back"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button><button type="button" class="page-nav-button" data-page-forward aria-label="Forward" title="Forward"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></div>`;
+
+/**
+ * Drives every PAGE_NAV on the view, the sidebar's included, which is parsed
+ * after this runs: clicks are taken on the document, and the buttons are found
+ * again each time they are brought up to date. Where the browser says whether
+ * there is anywhere to go (the Navigation API), a button with nowhere to go
+ * is disabled; elsewhere both stay on, and history ignores a step past its end.
+ */
+const PAGE_NAV_SCRIPT = `
+(() => {
+  const nav = window.navigation;
+  function update() {
+    if (!nav || typeof nav.canGoBack !== "boolean") return;
+    for (const button of document.querySelectorAll("[data-page-back]")) button.disabled = !nav.canGoBack;
+    for (const button of document.querySelectorAll("[data-page-forward]")) button.disabled = !nav.canGoForward;
+  }
+  document.addEventListener("DOMContentLoaded", update);
+  window.addEventListener("pageshow", update);
+  if (nav && typeof nav.addEventListener === "function") nav.addEventListener("currententrychange", update);
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (target.closest("[data-page-back]")) history.back();
+    else if (target.closest("[data-page-forward]")) history.forward();
+  });
+})();
+`;
 
 /**
  * The strip's first control, at its left end: close every tab but the open
@@ -2007,7 +2044,7 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
   </form>
   <section class="help-section">
     <h3>About Crescent</h3>
-    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. To keep several pages open at once, <kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click a page in the sidebar, or any link to one: each opens in a <strong>tab</strong> along the top, and the button at its left end closes all but the one you are on. A page in a tab, like each of the last few pages you read, opens again where you left it. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
+    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. To keep several pages open at once, <kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click a page in the sidebar, or any link to one: each opens in a <strong>tab</strong> along the top, and the button at its left end closes all but the one you are on. The arrows at the top left go back and forward between the pages you have opened, as in a browser. A page in a tab, like each of the last few pages you read, opens again where you left it. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
   </section>
   <section class="help-section">
     <h3>Keyboard shortcuts</h3>
@@ -7018,6 +7055,13 @@ a:hover{text-decoration:underline}
 .brand{display:block; font-weight:700; font-size:15px; color:var(--fg);
   margin-bottom:16px; letter-spacing:.2px}
 .brand:hover{text-decoration:none}
+/* Back and Forward (PAGE_NAV) lead the sidebar's top row, beside the name. */
+/* Its 30px buttons stand a little taller than the name, so the row is pulled
+   up and left to leave the name and everything under it where they were. */
+.sidebar-top{display:flex; align-items:center; gap:8px; margin:-3px 0 14px -6px}
+.sidebar-top .brand{margin:0; min-width:0; overflow-wrap:anywhere}
+html.has-tabs .sidebar-top{margin:0 0 16px}
+html.has-tabs .sidebar-top .page-nav{display:none}
 .sidebar-link{
   display:block; margin:0 0 14px; padding:4px 6px; border-radius:6px;
   color:var(--fg-secondary); font-size:14px; font-weight:600;
@@ -7328,6 +7372,19 @@ body.dragging-page .space-current{
 .tabs-close-others:hover{background:var(--tab-hover-bg); color:var(--fg)}
 .tabs-close-others:focus-visible{outline:2px solid var(--focus-ring); outline-offset:1px}
 .tabs-close-others svg{display:block}
+/* Back and Forward (PAGE_NAV): icon buttons like Close other tabs, before it. */
+.page-nav{flex:0 0 auto; display:flex; align-items:center; gap:2px}
+.tab-strip .page-nav{margin-right:4px}
+.page-nav-button{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px; padding:0; border:0; border-radius:8px;
+  background:transparent; color:var(--muted); cursor:pointer;
+  transition:background-color .15s ease, color .15s ease;
+}
+.page-nav-button:hover:not(:disabled){background:var(--tab-hover-bg); color:var(--fg)}
+.page-nav-button:focus-visible{outline:2px solid var(--focus-ring); outline-offset:1px}
+.page-nav-button:disabled{opacity:.35; cursor:default}
+.page-nav-button svg{display:block}
 .tab{
   position:relative; flex:0 1 200px; min-width:88px; height:32px;
   display:flex; align-items:center; gap:7px; padding:0 5px 0 11px;

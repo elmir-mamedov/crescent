@@ -2824,6 +2824,33 @@ test("scroll memory: the page being read and the three before it, plus every pag
   assert.equal(m.scrollFor({ at: "junk" }, "/kb25/c"), 0);
 });
 
+test("feedback #38: Back and Forward lead the tab strip, and the sidebar without one", () => {
+  const views: Array<[string, string]> = [
+    ["page", layout(pageView())],
+    ["folder", folderLayout(folderView())],
+    ["edit", editLayout(editView())],
+    ["dashboard", dashboardLayout(dashboardView())],
+    ["spaces", spacesLayout(spacesView())],
+  ];
+  for (const [name, html] of views) {
+    // In the strip, before Close other tabs.
+    const strip = html.match(/<nav class="tab-strip"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    assert.match(strip, /hidden><div class="page-nav" role="group" aria-label="History"><button type="button" class="page-nav-button" data-page-back aria-label="Back" title="Back"><svg [^>]*><path [^>]*\/><\/svg><\/button><button type="button" class="page-nav-button" data-page-forward aria-label="Forward" title="Forward"><svg [^>]*><path [^>]*\/><\/svg><\/button><\/div><button type="button" class="tabs-close-others"/, name);
+    // And beside the site's name, wherever there is a sidebar.
+    if (html.includes('<aside class="sidebar">')) {
+      assert.match(html, /<aside class="sidebar">\s*<div class="sidebar-top"><div class="page-nav" role="group" aria-label="History">[\s\S]*?<\/div><a class="brand" href="\/">KB<\/a><\/div>/, name);
+    }
+    assert.match(html, /<script>\s*\(\(\) => \{\s*const nav = window\.navigation;/, name);
+  }
+  const html = layout(pageView());
+  assert.match(html, /if \(target\.closest\("\[data-page-back\]"\)\) history\.back\(\);\s*else if \(target\.closest\("\[data-page-forward\]"\)\) history\.forward\(\);/);
+  assert.match(html, /button\.disabled = !nav\.canGoBack;/);
+  assert.match(html, /button\.disabled = !nav\.canGoForward;/);
+  // One pair at a time: the strip's takes over when it slides in.
+  assert.match(html, /html\.has-tabs \.sidebar-top \.page-nav\{display:none\}/);
+  assert.match(html, /The arrows at the top left go back and forward between the pages you have opened/);
+});
+
 test("tabs: every view with the corner draws the strip first, hidden until there are two", () => {
   const views: Array<[string, string]> = [
     ["page", layout(pageView())],
@@ -2838,7 +2865,7 @@ test("tabs: every view with the corner draws the strip first, hidden until there
     assert.ok(strip > html.indexOf('<div class="session-corner">'), `${name}: after the corner it measures`);
     const aside = html.indexOf('<aside class="sidebar">');
     if (aside >= 0) assert.ok(strip < aside, `${name}: before the sidebar it makes room above`);
-    assert.match(html, /<nav class="tab-strip"[^>]* aria-label="Open pages" hidden><button type="button" class="tabs-close-others" data-tabs-close-others aria-label="Close other tabs" title="Close other tabs"><svg [^>]*>[\s\S]*?<\/svg><\/button><div class="tab-list" data-tab-list><\/div><\/nav>\s*<script>/, name);
+    assert.match(html, /<nav class="tab-strip"[^>]* aria-label="Open pages" hidden><div class="page-nav" role="group" aria-label="History">[\s\S]*?<\/div><button type="button" class="tabs-close-others" data-tabs-close-others aria-label="Close other tabs" title="Close other tabs"><svg [^>]*>[\s\S]*?<\/svg><\/button><div class="tab-list" data-tab-list><\/div><\/nav>\s*<script>/, name);
   }
   assert.match(layout(pageView({ title: 'Q & "A"' })), /data-tab-title="Q &amp; &quot;A&quot;"/);
   assert.match(spacesLayout(spacesView()), /data-tab-title="Spaces"/);
