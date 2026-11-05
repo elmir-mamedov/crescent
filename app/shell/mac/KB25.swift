@@ -30,9 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var serverQuit = false
   private var downloads: [ObjectIdentifier: URL] = [:]
   private var signalSource: DispatchSourceSignal?
-  /// KB25's dark background (--bg in views.ts), its default theme.
+  /// KB25's dark background (--bg in views/styles.ts), its default theme.
   private static let background = NSColor(srgbRed: 13 / 255, green: 17 / 255, blue: 23 / 255, alpha: 1)
-  /// The loading window's border (--line in views.ts).
+  /// The loading window's border (--line in views/styles.ts).
   private static let line = NSColor(srgbRed: 48 / 255, green: 54 / 255, blue: 61 / 255, alpha: 1)
   /// The small loading window, shown until the first page has loaded behind it.
   private var splash: NSWindow?
@@ -182,9 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     // Swiping between pages goes Back or Forward at once. WebKit's own swipe
     // slid the page aside under the fingers first, and has no way to drop the
     // slide, so it is off: the page takes the two-finger swipe itself
-    // (SWIPE_SCRIPT in views.ts), told here, before its scripts run, whether
-    // System Settings swipes between pages with two fingers; PageView takes
-    // the three-finger one.
+    // (SWIPE_SCRIPT in views/head.ts), told here, before its scripts run,
+    // whether System Settings swipes between pages with two fingers; PageView
+    // takes the three-finger one.
     let configuration = WKWebViewConfiguration()
     let swipe = NSEvent.isSwipeTrackingFromScrollEventsEnabled
     configuration.userContentController.addUserScript(WKUserScript(
@@ -474,9 +474,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   }
 
   /// Edit ▸ Find, Find Next and Find Previous: the page's own find bar
-  /// (FIND_SCRIPT in views.ts), which looks in the page and its "On this page"
-  /// list but not the sidebar. The page takes Cmd+F and Cmd+G itself; this is
-  /// the same from the menu. A view without that bar, such as a folder or the
+  /// (FIND_SCRIPT in views/find.ts), which looks in the page and its "On this
+  /// page" list but not the sidebar. The page takes Cmd+F and Cmd+G itself; this
+  /// is the same from the menu. A view without that bar, such as a folder or the
   /// editor, keeps what the menu did before: the action goes down the responder
   /// chain, and nothing happens when no view there finds text. Sending it to the
   /// web view directly would abort the app, since WKWebView does not implement

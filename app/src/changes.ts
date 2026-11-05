@@ -8,7 +8,7 @@ import path from "node:path";
  * through MCP, or one a pull brought in, stayed out of the open page and its
  * sidebar until the reader clicked something. The feed watches the KB folder
  * and hands each batch of changed pages to the open pages (`GET /_changes`),
- * which reload or offer to (CHANGES_SCRIPT in views.ts).
+ * which reload or offer to (CHANGES_SCRIPT in views/corner.ts).
  *
  * Batches are numbered and the recent ones kept, so a page that was rendered,
  * hidden or disconnected at some point asks for what came after it rather than

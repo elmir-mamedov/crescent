@@ -459,8 +459,8 @@ app.get("/_vendor/katex/*", async (req, reply) => {
 });
 
 // The feedback dialog's browser modules (@elmir-mamedov/feedback, imported by
-// views.ts), served like Mermaid's bundle: from node_modules, so the dialog
-// needs no CDN.
+// views/corner.ts), served like Mermaid's bundle: from node_modules, so the
+// dialog needs no CDN.
 const FEEDBACK_DIST = path.join(__dirname, "..", "node_modules", "@elmir-mamedov", "feedback", "dist");
 app.get("/_vendor/feedback/*", async (req, reply) => {
   const rel = (req.params as { "*": string })["*"];

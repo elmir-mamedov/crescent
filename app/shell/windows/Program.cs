@@ -60,8 +60,8 @@ namespace KB25
     sealed class KB25Window : Form
     {
         readonly string home;
-        // KB25's dark background (--bg in views.ts), its default theme, so the
-        // window is never white before the first page paints.
+        // KB25's dark background (--bg in views/styles.ts), its default theme, so
+        // the window is never white before the first page paints.
         internal static readonly Color Background = Color.FromArgb(0x0d, 0x11, 0x17);
         readonly WebView2 web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Background };
         readonly HttpClient http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
@@ -384,7 +384,7 @@ namespace KB25
         [DllImport("dwmapi.dll")]
         static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
         const int DwmwaWindowCornerPreference = 33, DwmwaBorderColor = 34, DwmwcpRound = 2;
-        // --line in views.ts (#30363d), as a COLORREF.
+        // --line in views/styles.ts (#30363d), as a COLORREF.
         const int BorderColor = 0x3d3630;
 
         readonly WebView2 web = new WebView2

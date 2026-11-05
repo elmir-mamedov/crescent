@@ -1508,7 +1508,7 @@ test("space instructions: the hint states it is hidden and LLM-read-only", () =>
 /**
  * Every inline script must at least parse.
  *
- * The client-side code in views.ts lives inside template literals and never
+ * The client-side code under views/ lives inside template literals and never
  * executes under `npm test`, so a lone `\n` in a regex or comment silently
  * collapses into a real newline and breaks the whole script — with no test, no
  * typecheck error, and no server-side symptom. Parsing each emitted script is

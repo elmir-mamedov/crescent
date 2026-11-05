@@ -5,7 +5,7 @@ import { createOutbox, describeOs, logTail } from "@elmir-mamedov/feedback/node"
 
 /**
  * Feedback to the developer, through @elmir-mamedov/feedback. The viewer's
- * dialog (views.ts) asks GET /_feedback for what only the server knows
+ * dialog (views/corner.ts) asks GET /_feedback for what only the server knows
  * (KB25's version, the OS, Node, and the log tail) and shows it before
  * sending. POST /_feedback takes the report the dialog builds, sets those
  * facts as the server knows them, and hands it to the outbox, which sends it

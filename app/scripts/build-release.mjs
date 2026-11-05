@@ -53,12 +53,12 @@ await build({
 
 const copy = (from, to) => fs.cpSync(from, path.join(out, to), { recursive: true });
 copy(path.join(appDir, "public"), "public");
-// The only Mermaid file the viewer serves (views.ts loads /_vendor/mermaid/mermaid.min.js).
+// The only Mermaid file the viewer serves (views/diagrams.ts loads /_vendor/mermaid/mermaid.min.js).
 copy(
   path.join(appDir, "node_modules", "mermaid", "dist", "mermaid.min.js"),
   path.join("node_modules", "mermaid", "dist", "mermaid.min.js")
 );
-// KaTeX's stylesheet and fonts (views.ts links /_vendor/katex/katex.min.css).
+// KaTeX's stylesheet and fonts (views/page.ts links /_vendor/katex/katex.min.css).
 // woff2 only: every browser the viewer supports reads it, and it is the first
 // source the stylesheet lists, so the woff and ttf copies would never load.
 copy(
@@ -72,7 +72,7 @@ for (const font of fs.readdirSync(path.join(appDir, "node_modules", "katex", "di
     path.join("node_modules", "katex", "dist", "fonts", font)
   );
 }
-// The feedback dialog's browser modules (views.ts loads /_vendor/feedback/...).
+// The feedback dialog's browser modules (views/corner.ts loads /_vendor/feedback/...).
 copy(
   path.join(appDir, "node_modules", "@elmir-mamedov", "feedback", "dist"),
   path.join("node_modules", "@elmir-mamedov", "feedback", "dist")
