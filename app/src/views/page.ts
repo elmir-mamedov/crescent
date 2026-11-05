@@ -617,7 +617,7 @@ const TOC_SCRIPT = `
 `;
 
 /**
- * KaTeX's stylesheet, from the app's own copy (see `/_vendor/katex` in server.ts).
+ * KaTeX's stylesheet, from the app's own copy (see `/_vendor/katex` in server/static.ts).
  * The formulas are already typeset into the page's HTML by markdown.ts; this and
  * the fonts it names are all a page needs to draw them.
  */

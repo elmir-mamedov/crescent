@@ -8,9 +8,10 @@
 // built on macOS with swiftc and the .NET SDK (DOTNET names one elsewhere).
 //
 // The zip needs nothing but Node to run: the server and the MCP server are
-// each bundled into one file, laid out so the paths server.ts already uses
-// (../public, ../node_modules/mermaid/dist, ../node_modules/katex/dist,
-// ../node_modules/@elmir-mamedov/feedback/dist, ../../.env) resolve unchanged.
+// each bundled into one file, laid out so the paths the server resolves from
+// its entry's folder (../public, ../node_modules/mermaid/dist,
+// ../node_modules/katex/dist, ../node_modules/@elmir-mamedov/feedback/dist,
+// ../../.env) resolve unchanged.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

@@ -22,9 +22,10 @@ import { parsePage, stringifyPage } from "./frontmatter.js";
  * and per-space auto-commit all work on it untouched.
  *
  * Both surfaces share this module: `mcp.ts` delivers the text to the model and
- * enforces the read-before-write token; `server.ts` scaffolds and edits it. It
- * is its own module rather than living in `mcp.ts` because `mcp.ts` builds an
- * `McpServer` at import time and so can never be imported by the web server.
+ * enforces the read-before-write token; `server/spaces.ts` scaffolds and edits
+ * it. It is its own module rather than living in `mcp.ts` because `mcp.ts`
+ * builds an `McpServer` at import time and so can never be imported by the web
+ * server.
  */
 
 /** Filename stem, without the `.md`. Underscored so the tree walk skips it. */

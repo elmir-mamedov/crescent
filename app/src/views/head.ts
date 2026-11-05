@@ -29,7 +29,7 @@ ${FAVICON_TAGS}
 
 /**
  * Site icon links, shared by every page head. The files live in app/public and
- * are served from the site root (see server.ts). The .ico covers legacy
+ * are served from the site root (see server/static.ts). The .ico covers legacy
  * browsers and the automatic /favicon.ico request; the SVG and sized PNGs cover
  * modern tabs, bookmarks, and iOS home-screen shortcuts.
  */

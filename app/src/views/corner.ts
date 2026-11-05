@@ -182,7 +182,7 @@ const FEEDBACK_BUTTON = `<button type="button" class="feedback-button" data-feed
 
 /**
  * The feedback dialog, from @elmir-mamedov/feedback (served at /_vendor/feedback
- * by server.ts). It draws itself in a shadow root in KB25's colours (see the
+ * by server/static.ts). It draws itself in a shadow root in KB25's colours (see the
  * --feedback-* properties in STYLES) and opens from the corner's speech bubble.
  * GET /_feedback supplies what only the server knows, asked once per opening;
  * POST /_feedback takes the report (feedback.ts).
