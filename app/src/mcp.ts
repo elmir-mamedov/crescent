@@ -193,6 +193,20 @@ function errorResult(message: string) {
   };
 }
 
+/**
+ * The commit half of a write's result. A write that landed on disk but could
+ * not be committed still happened, so it is reported as done, with `commit:
+ * null` and a `commitError` that says so, rather than as an error a model
+ * would read as "nothing changed" and repeat, writing the page a second time.
+ */
+function commitFields({ commit, commitError }: { commit: string | null; commitError?: string }) {
+  if (!commitError) return { commit };
+  return {
+    commit: null,
+    commitError: `Saved, but not committed to git. The change is in place; do not repeat it. Git said: ${commitError.trim()}`,
+  };
+}
+
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -364,6 +378,7 @@ const server = new McpServer(
     instructions:
       "Read and write access to the Markdown knowledge base. The KB is organized into spaces: top-level containers, each its own git repo, and the first segment of every page slug — so every page must live inside a space. " +
       `Every write is auto-committed to its space's repo as \`... via ${COMMIT_VIA}\`.` +
+      " A write whose result carries `commitError` was saved but not committed: the change is in place, so do not repeat it." +
       " SPACE INSTRUCTIONS: a space may carry standing instructions written by its owner — language, register, formatting, standing domain context — that govern everything you write there and how you answer questions about it. They arrive as a `spaceInstructions` block on the first tool result scoped to that space, and they are binding: follow them in preference to your own defaults, and do not restate or negotiate them. Later results in the same space carry a short block marked `unchanged` with the token but no text — the instructions delivered earlier still apply in full, and if you can no longer see them, call `kb_get_space_instructions` to get them back. Where a space has them, writing into it also requires passing that block's `token` back as the write tool's `spaceInstructionsToken` — so read a space before you write to it. The token changes whenever a person edits the instructions; a refused write returns the current text and a fresh token, so retry once with those. `kb_get_space_instructions` fetches them directly, and `kb_list_spaces` reports which spaces have them. LINKING: every page has a stable `id`, returned by the read and create tools. Prefer a wiki-link by id — `[[id:<id>]]` or `[[id:<id>|Link text]]` — which keeps resolving even after the target is moved or renamed; a slug-based link like `[[space/some/slug]]` or `[text](/space/some/slug)` breaks when the target moves. To point at one section of a page rather than the whole thing, append its anchor: `[[id:<id>#<anchor>]]` or `[[space/some/slug#<anchor>]]`. Anchors come back in `kb_get_page`'s `sections` and on each `kb_search` match — read them, do not guess them from the heading text.",
   }
 );
@@ -661,14 +676,13 @@ server.registerTool(
 
     try {
       const written = await writes.createPage(parent ?? "", title, body ?? "", { tags, summary });
-      if (written.commitError) return errorResult(written.commitError);
-      const { mutation, commit } = written;
+      const { mutation } = written;
       return textResult({
         created: true,
         slug: mutation.slug,
         id: mutation.id,
         path: git.kbRelPath(mutation.fsPath),
-        commit,
+        ...commitFields(written),
         ...(await writeToken(spaceKey)),
       });
     } catch (err) {
@@ -705,14 +719,13 @@ server.registerTool(
 
     try {
       const written = await writes.createFolder(parent ?? "", title);
-      if (written.commitError) return errorResult(written.commitError);
-      const { mutation, commit } = written;
+      const { mutation } = written;
       return textResult({
         created: true,
         slug: mutation.slug,
         id: mutation.id,
         path: git.kbRelPath(mutation.fsPath),
-        commit,
+        ...commitFields(written),
         ...(await writeToken(spaceKey)),
       });
     } catch (err) {
@@ -748,13 +761,12 @@ server.registerTool(
     try {
       const written = await writes.renameFolder(slug, name);
       if (!written) return errorResult(`Folder not found: ${cleanSlug(slug)}`);
-      if (written.commitError) return errorResult(written.commitError);
-      const { mutation, commit } = written;
+      const { mutation } = written;
       return textResult({
         renamed: true,
         slug: mutation.slug,
         path: git.kbRelPath(mutation.fsPath),
-        commit,
+        ...commitFields(written),
         ...(await writeToken(spaceKey)),
       });
     } catch (err) {
@@ -790,13 +802,12 @@ server.registerTool(
     try {
       const written = await writes.updatePage(slug, markdown);
       if (!written) return errorResult(`Page not found: ${cleanSlug(slug) || "(home)"}`);
-      if (written.commitError) return errorResult(written.commitError);
-      const { mutation, commit } = written;
+      const { mutation } = written;
       return textResult({
         updated: true,
         slug: mutation.slug,
         path: git.kbRelPath(mutation.fsPath),
-        commit,
+        ...commitFields(written),
         // Flagged when the submitted frontmatter dropped or altered the page's
         // stable id and the on-disk one was restored — read before you rewrite.
         ...(mutation.idPreserved && { idPreserved: true }),
@@ -813,15 +824,13 @@ server.registerTool(
  *
  * The header's bytes are carried across untouched: leaving a note is not an
  * edit to the YAML, and reformatting someone's frontmatter as a side effect of
- * one would be a surprise in the diff. A commit that fails is thrown, so the
- * tool reports it as its error.
+ * one would be a surprise in the diff.
  */
 async function commitNoteWrite(slug: string, header: string, body: string, action: string) {
   const written = await writes.writeNotes(slug, header + body, action);
   if (!written) return null;
-  if (written.commitError) throw new Error(written.commitError);
-  const { mutation, commit } = written;
-  return { slug: mutation.slug, path: git.kbRelPath(mutation.fsPath), commit };
+  const { mutation } = written;
+  return { slug: mutation.slug, path: git.kbRelPath(mutation.fsPath), ...commitFields(written) };
 }
 
 server.registerTool(
@@ -966,14 +975,13 @@ server.registerTool(
     try {
       const written = await writes.setArchived(slug, true);
       if (!written) return errorResult(`Page not found: ${cleanSlug(slug)}`);
-      if (written.commitError) return errorResult(written.commitError);
-      const { mutation, commit } = written;
+      const { mutation } = written;
       return textResult({
         archived: true,
         slug: mutation.slug,
         isSection: mutation.isSection,
         changed: mutation.changedFsPaths.map(git.kbRelPath),
-        commit,
+        ...commitFields(written),
         ...(await writeToken(spaceKey)),
       });
     } catch (err) {
@@ -1007,14 +1015,13 @@ server.registerTool(
     try {
       const written = await writes.setArchived(slug, false);
       if (!written) return errorResult(`Page not found: ${cleanSlug(slug)}`);
-      if (written.commitError) return errorResult(written.commitError);
-      const { mutation, commit } = written;
+      const { mutation } = written;
       return textResult({
         restored: true,
         slug: mutation.slug,
         isSection: mutation.isSection,
         changed: mutation.changedFsPaths.map(git.kbRelPath),
-        commit,
+        ...commitFields(written),
         ...(await writeToken(spaceKey)),
       });
     } catch (err) {
@@ -1055,13 +1062,12 @@ server.registerTool(
     try {
       const written = await writes.movePage(sourceSlug, targetParent || null);
       if (!written) return errorResult(`Page not found: ${cleanSlug(sourceSlug)}`);
-      if (written.commitError) return errorResult(written.commitError);
-      const { mutation, commit } = written;
+      const { mutation } = written;
       return textResult({
         moved: true,
         oldSlug: mutation.oldSlug,
         newSlug: mutation.newSlug,
-        commit,
+        ...commitFields(written),
         ...(await writeToken(spaceKey)),
       });
     } catch (err) {
@@ -1097,8 +1103,7 @@ server.registerTool(
     try {
       const written = await writes.renamePage(slug, newName);
       if (!written) return errorResult(`Page not found: ${cleanSlug(slug)}`);
-      if (written.commitError) return errorResult(written.commitError);
-      const { mutation, commit } = written;
+      const { mutation } = written;
       if (mutation.newSlug === mutation.oldSlug) {
         return textResult({ renamed: false, slug: mutation.oldSlug, note: "Slug unchanged." });
       }
@@ -1106,7 +1111,7 @@ server.registerTool(
         renamed: true,
         oldSlug: mutation.oldSlug,
         newSlug: mutation.newSlug,
-        commit,
+        ...commitFields(written),
         ...(await writeToken(spaceKey)),
       });
     } catch (err) {
@@ -1142,14 +1147,13 @@ server.registerTool(
     try {
       const written = await writes.deletePage(slug);
       if (!written) return errorResult(`Page not found: ${cleanSlug(slug)}`);
-      if (written.commitError) return errorResult(written.commitError);
-      const { mutation, commit } = written;
+      const { mutation } = written;
       return textResult({
         deleted: true,
         slug: mutation.slug,
         isSection: mutation.isSection,
         deletedPaths: mutation.deletedFsPaths.map(git.kbRelPath),
-        commit,
+        ...commitFields(written),
         ...(await writeToken(spaceKey)),
       });
     } catch (err) {
@@ -1175,9 +1179,8 @@ server.registerTool(
   async ({ title }) => {
     try {
       const written = await writes.createSpace(title);
-      if (written.commitError) return errorResult(written.commitError);
-      const { mutation, commit } = written;
-      return textResult({ created: true, slug: mutation.slug, id: mutation.id, path: git.kbRelPath(mutation.fsPath), commit });
+      const { mutation } = written;
+      return textResult({ created: true, slug: mutation.slug, id: mutation.id, path: git.kbRelPath(mutation.fsPath), ...commitFields(written) });
     } catch (err) {
       return errorResult(errorMessage(err));
     }
