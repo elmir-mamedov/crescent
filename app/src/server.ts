@@ -16,8 +16,9 @@ import {
   type BatchMoveMutation,
   type CreatePageMutation,
   type DeleteMutation,
-  type MoveMutation,
   type PageNode,
+  type RawPage,
+  type RenameSpaceMutation,
   type ReorderMutation,
   type SpaceInfo,
   type TreeFilter,
@@ -25,13 +26,14 @@ import {
 import { assetHeaders } from "./assets.js";
 import { ChangeFeed, type ChangeBatch } from "./changes.js";
 import { makeGit } from "./git.js";
+import { makeKbWrites, type PageSave, type Written } from "./kb-writes.js";
 import { makeSeenPages } from "./seen.js";
 import { makeLoginThrottle, retryAfterWords } from "./login-throttle.js";
 import { crossSiteRefusal, isLoopbackHost } from "./loopback.js";
 import { envFlag, envNumber, syncFromEnv } from "./sync.js";
 import { parseWordDiff } from "./diff.js";
 import { DEFAULT_FEEDBACK_RELAY, FEEDBACK_BODY_LIMIT, checkoutVersion, makeFeedback } from "./feedback.js";
-import { GALLERY_BODY_LIMIT, listImages, saveImage, uploadRefusal, type SavedImage } from "./gallery.js";
+import { GALLERY_BODY_LIMIT, listImages, uploadRefusal } from "./gallery.js";
 import { createRenderer, noteSegments, sourceBlocks, type Section } from "./markdown.js";
 import { claudeEngine } from "./claude-cli.js";
 import { codexEngine } from "./codex-cli.js";
@@ -54,22 +56,16 @@ import { mapWithConcurrency, searchPages, searchTokens, type SearchHit } from ".
 import { DEFAULT_RELEASES_URL, findInstall, makeUpdater } from "./update.js";
 import { cleanLabelNames, labelKey, splitFrontmatter } from "./frontmatter.js";
 import {
-  applyPageLabels,
-  colorOf,
-  createLabel,
-  deleteLabel,
   filterLabelled,
   knownLabels,
   labelledPages,
   loadLabelSet,
   spaceNodes,
-  updateLabel,
   type LabelDef,
   type LabelMutation,
 } from "./labels.js";
 import {
   CHAR_CAP,
-  ensureSpaceInstructions,
   instructionsSlug,
   isInstructionsSlug,
 } from "./space-instructions.js";
@@ -195,6 +191,8 @@ const git: typeof kbGit = {
     return kbGit.commitMovedPaths(fsPaths, message);
   },
 };
+// Every write the viewer makes goes through here, which commits it.
+const writes = makeKbWrites({ content, git, via: "web" });
 // TRUST_PROXY only when the viewer really does sit behind one: it makes Fastify
 // believe `x-forwarded-*`, which is what lets `req.protocol` and `req.ip` report
 // the client rather than the proxy. Believing those headers unproxied would let
@@ -488,50 +486,6 @@ async function gitUpdated(fsPath: string): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-async function gitCommitPage(fsPath: string): Promise<string | null> {
-  const rel = git.kbRelPath(fsPath);
-  return git.commitFiles([fsPath], `Update ${rel} via web`);
-}
-
-function archiveCommitMessage(action: "Archive" | "Restore", mutation: ArchiveMutation): string {
-  const target = mutation.isSection ? mutation.slug : git.kbRelPath(mutation.fsPath);
-  return `${action} ${target} via web`;
-}
-
-function createCommitMessage(mutation: CreatePageMutation): string {
-  return `Create ${git.kbRelPath(mutation.fsPath)} via web`;
-}
-
-function deleteCommitMessage(mutation: DeleteMutation): string {
-  const target = mutation.isSection ? mutation.slug : git.kbRelPath(mutation.fsPath);
-  return `Delete ${target} via web`;
-}
-
-function moveCommitMessage(mutation: MoveMutation): string {
-  return `Move ${mutation.oldSlug} to ${mutation.newSlug} via web`;
-}
-
-function moveBatchCommitMessage(moves: MoveMutation[]): string {
-  if (moves.length === 1) return moveCommitMessage(moves[0]);
-  const parent = moves[0].newSlug.split("/").slice(0, -1).join("/") || "root";
-  return `Move ${moves.length} pages to ${parent} via web`;
-}
-
-/**
- * One drag onto an insertion line can both re-parent and renumber, so the message
- * names whichever half is the point: a plain arrangement inside one group, or the
- * move that carried the page there (the renumbering rides along in the same commit).
- */
-function reorderCommitMessage(mutation: ReorderMutation): string {
-  if (mutation.moves.length === 0) {
-    return `Reorder pages in ${mutation.parentSlug} via web`;
-  }
-  if (mutation.moves.length === 1) {
-    return `Move ${mutation.moves[0].oldSlug} to ${mutation.moves[0].newSlug} via web`;
-  }
-  return `Move ${mutation.moves.length} pages to ${mutation.parentSlug} via web`;
 }
 
 function errorMessage(err: unknown): string {
@@ -1122,9 +1076,9 @@ app.post("/_logout", async (req, reply) => {
 
 app.post("/_create", async (req, reply) => {
   const parentSlug = formString(req.body, "parentSlug") ?? "";
-  let mutation: CreatePageMutation;
+  let written: Written<CreatePageMutation>;
   try {
-    mutation = await content.createDraft(parentSlug);
+    written = await writes.createDraft(parentSlug);
   } catch (err) {
     const notice = { tone: "error", text: errorMessage(err) } satisfies ViewNotice;
     return reply
@@ -1133,15 +1087,10 @@ app.post("/_create", async (req, reply) => {
       .send(await renderSystemNotice("Create failed", notice));
   }
 
-  try {
-    if (mutation.changedFsPaths) {
-      await git.commitMovedPaths(mutation.changedFsPaths, createCommitMessage(mutation));
-    } else {
-      await git.commitFiles([mutation.fsPath], createCommitMessage(mutation));
-    }
-  } catch (err) {
+  const { mutation, commitError } = written;
+  if (commitError) {
     const { html } = await renderEditPage(mutation.slug, {
-      error: `Created, but Git commit failed: ${errorMessage(err)}`,
+      error: `Created, but Git commit failed: ${commitError}`,
     });
     return reply.code(500).type("text/html").send(html);
   }
@@ -1152,11 +1101,11 @@ app.post("/_create", async (req, reply) => {
 app.post("/_create-folder", async (req, reply) => {
   const parentSlug = formString(req.body, "parentSlug") ?? "";
   const name = formString(req.body, "name") ?? "";
-  let mutation: CreatePageMutation;
+  let written: Written<CreatePageMutation>;
   try {
     // A folder is created with its name up front; there is nothing to edit
     // afterwards, so we land on its listing rather than the markdown editor.
-    mutation = await content.createFolder(parentSlug, name);
+    written = await writes.createFolder(parentSlug, name);
   } catch (err) {
     const notice = { tone: "error", text: errorMessage(err) } satisfies ViewNotice;
     return reply
@@ -1165,16 +1114,11 @@ app.post("/_create-folder", async (req, reply) => {
       .send(await renderSystemNotice("Create failed", notice));
   }
 
-  try {
-    if (mutation.changedFsPaths) {
-      await git.commitMovedPaths(mutation.changedFsPaths, createCommitMessage(mutation));
-    } else {
-      await git.commitFiles([mutation.fsPath], createCommitMessage(mutation));
-    }
-  } catch (err) {
+  const { mutation, commitError } = written;
+  if (commitError) {
     const notice = {
       tone: "error",
-      text: `Created, but Git commit failed: ${errorMessage(err)}`,
+      text: `Created, but Git commit failed: ${commitError}`,
     } satisfies ViewNotice;
     const { html } = await renderPage(mutation.slug, { notice });
     return reply.code(500).type("text/html").send(html);
@@ -1188,15 +1132,15 @@ app.post("/_rename-folder", async (req, reply) => {
   const slug = formString(req.body, "slug") ?? "";
   const name = formString(req.body, "name") ?? "";
 
-  let mutation: Awaited<ReturnType<typeof content.renameFolder>>;
+  let written: Awaited<ReturnType<typeof writes.renameFolder>>;
   try {
-    mutation = await content.renameFolder(slug, name);
+    written = await writes.renameFolder(slug, name);
   } catch (err) {
     const notice = { tone: "error", text: errorMessage(err) } satisfies ViewNotice;
     const { html } = await renderPage(slug, { notice });
     return reply.code(400).type("text/html").send(html);
   }
-  if (!mutation) {
+  if (!written) {
     const spaces = await content.spaces();
     return reply
       .code(404)
@@ -1204,15 +1148,11 @@ app.post("/_rename-folder", async (req, reply) => {
       .send(notFound(SITE_TITLE, slug.replace(/^\/+/, ""), spaces, AUTH_USERNAME));
   }
 
-  try {
-    // Empty changedFsPaths means the name was unchanged — skip the commit.
-    if (mutation.changedFsPaths.length) {
-      await git.commitFiles(mutation.changedFsPaths, `Rename folder ${mutation.slug} via web`);
-    }
-  } catch (err) {
+  const { mutation, commitError } = written;
+  if (commitError) {
     const notice = {
       tone: "error",
-      text: `Renamed, but Git commit failed: ${errorMessage(err)}`,
+      text: `Renamed, but Git commit failed: ${commitError}`,
     } satisfies ViewNotice;
     const { html } = await renderPage(mutation.slug, { notice });
     return reply.code(500).type("text/html").send(html);
@@ -1234,10 +1174,9 @@ app.post("/_labels/page", async (req, reply) => {
   const returnTo = formString(req.body, "returnTo");
   const back = returnTo ? safeRedirectPath(returnTo) : pagePath(slug);
 
-  let mutation: Awaited<ReturnType<typeof applyPageLabels>>;
+  let written: Written<LabelMutation> | null;
   try {
-    mutation = await applyPageLabels(
-      content,
+    written = await writes.labelPage(
       slug,
       names,
       newName.trim() ? { name: newName, color: newColor } : undefined
@@ -1247,7 +1186,7 @@ app.post("/_labels/page", async (req, reply) => {
     const { status, html } = await renderPage(slug, { notice });
     return reply.code(status === 404 ? 404 : 400).type("text/html").send(html);
   }
-  if (!mutation) {
+  if (!written) {
     const spaces = await content.spaces();
     return reply
       .code(404)
@@ -1255,16 +1194,10 @@ app.post("/_labels/page", async (req, reply) => {
       .send(notFound(SITE_TITLE, slug.replace(/^\/+/, ""), spaces, AUTH_USERNAME));
   }
 
-  try {
-    if (mutation.changedFsPaths.length) {
-      const fsPath = await content.resolve(slug);
-      const target = fsPath ? git.kbRelPath(fsPath) : slug;
-      await git.commitFiles(mutation.changedFsPaths, `Label ${target} via web`);
-    }
-  } catch (err) {
+  if (written.commitError) {
     const notice = {
       tone: "error",
-      text: `Labels saved, but Git commit failed: ${errorMessage(err)}`,
+      text: `Labels saved, but Git commit failed: ${written.commitError}`,
     } satisfies ViewNotice;
     const { html } = await renderPage(slug, { notice });
     return reply.code(500).type("text/html").send(html);
@@ -1273,21 +1206,15 @@ app.post("/_labels/page", async (req, reply) => {
   return reply.redirect(back, 303);
 });
 
-/** A label name as it may appear in a commit subject: one line, whatever was hand-written. */
-function subjectSafe(name: string): string {
-  return name.replace(/\p{Cc}/gu, " ").trim();
-}
-
 /**
- * The shared tail of the label-management posts: run the mutation, commit
- * everything it touched in one go, and return to the management section. A
- * refusal re-renders the Labels view with the reason, as the folder rename
- * does for its page.
+ * The shared tail of the label-management posts: run the write and return to
+ * the management section. A refusal re-renders the Labels view with the
+ * reason, as the folder rename does for its page.
  */
 async function labelManagementPost(
   req: FastifyRequest,
   reply: FastifyReply,
-  run: (space: SpaceInfo) => Promise<{ mutation: LabelMutation; subject: string }>
+  run: (space: SpaceInfo) => Promise<Written<LabelMutation>>
 ): Promise<FastifyReply> {
   const space = await findSpace(formString(req.body, "space") ?? "");
   if (!space) {
@@ -1298,9 +1225,9 @@ async function labelManagementPost(
       .send(notFound(SITE_TITLE, formString(req.body, "space") ?? "", spaces, AUTH_USERNAME));
   }
 
-  let outcome: { mutation: LabelMutation; subject: string };
+  let written: Written<LabelMutation>;
   try {
-    outcome = await run(space);
+    written = await run(space);
   } catch (err) {
     const notice = { tone: "error", text: errorMessage(err) } satisfies ViewNotice;
     return reply
@@ -1309,14 +1236,10 @@ async function labelManagementPost(
       .send(await renderLabelsDashboard(space, [], "", notice));
   }
 
-  try {
-    if (outcome.mutation.changedFsPaths.length) {
-      await git.commitFiles(outcome.mutation.changedFsPaths, `${outcome.subject} in ${space.key} via web`);
-    }
-  } catch (err) {
+  if (written.commitError) {
     const notice = {
       tone: "error",
-      text: `Saved, but Git commit failed: ${errorMessage(err)}`,
+      text: `Saved, but Git commit failed: ${written.commitError}`,
     } satisfies ViewNotice;
     return reply
       .code(500)
@@ -1328,47 +1251,29 @@ async function labelManagementPost(
 }
 
 app.post("/_labels/create", async (req, reply) =>
-  labelManagementPost(req, reply, async (space) => {
-    const mutation = await createLabel(
-      content,
-      space.key,
-      formString(req.body, "name") ?? "",
-      formString(req.body, "color") ?? "gray"
-    );
-    return { mutation, subject: `Create label ${subjectSafe(mutation.name)}` };
-  })
+  labelManagementPost(req, reply, (space) =>
+    writes.createLabel(space.key, formString(req.body, "name") ?? "", formString(req.body, "color") ?? "gray")
+  )
 );
 
 app.post("/_labels/update", async (req, reply) =>
-  labelManagementPost(req, reply, async (space) => {
-    const name = formString(req.body, "name") ?? "";
-    const before = colorOf(await loadLabelSet(content, space.key), name);
-    const color = formString(req.body, "newColor") ?? undefined;
-    const mutation = await updateLabel(content, space.key, name, {
+  labelManagementPost(req, reply, (space) =>
+    writes.updateLabel(space.key, formString(req.body, "name") ?? "", {
       name: formString(req.body, "newName") ?? undefined,
-      color,
-    });
-    const renamed = mutation.name !== name.trim();
-    const recoloured = color !== undefined && color !== before;
-    const subject = renamed
-      ? `${recoloured ? "Rename and recolor" : "Rename"} label ${subjectSafe(name)} to ${subjectSafe(mutation.name)}`
-      : `Recolor label ${subjectSafe(mutation.name)}`;
-    return { mutation, subject };
-  })
+      color: formString(req.body, "newColor") ?? undefined,
+    })
+  )
 );
 
 app.post("/_labels/delete", async (req, reply) =>
-  labelManagementPost(req, reply, async (space) => {
-    const mutation = await deleteLabel(content, space.key, formString(req.body, "name") ?? "");
-    return { mutation, subject: `Delete label ${subjectSafe(mutation.name)}` };
-  })
+  labelManagementPost(req, reply, (space) => writes.deleteLabel(space.key, formString(req.body, "name") ?? ""))
 );
 
 app.post("/_create-space", async (req, reply) => {
   const title = formString(req.body, "title") ?? "";
-  let mutation: CreatePageMutation;
+  let written: Written<CreatePageMutation>;
   try {
-    mutation = await content.createSpace(title);
+    written = await writes.createSpace(title);
   } catch (err) {
     const notice = { tone: "error", text: errorMessage(err) } satisfies ViewNotice;
     return reply
@@ -1384,17 +1289,10 @@ app.post("/_create-space", async (req, reply) => {
       );
   }
 
-  try {
-    // A new space is its own git repo: initialize it before committing the
-    // scaffolding (index.md, _assets/.gitkeep, .gitignore) into it.
-    await git.initSpaceRepo(mutation.slug);
-    await git.commitFiles(
-      mutation.changedFsPaths ?? [mutation.fsPath],
-      createCommitMessage(mutation)
-    );
-  } catch (err) {
+  const { mutation, commitError } = written;
+  if (commitError) {
     const { html } = await renderEditPage(mutation.slug, {
-      error: `Created, but Git commit failed: ${errorMessage(err)}`,
+      error: `Created, but Git commit failed: ${commitError}`,
     });
     return reply.code(500).type("text/html").send(html);
   }
@@ -1430,28 +1328,23 @@ app.post("/_rename-space", async (req, reply) => {
   const key = formString(req.body, "key") ?? "";
   const title = formString(req.body, "title") ?? "";
 
-  let mutation: Awaited<ReturnType<typeof content.renameSpace>>;
+  let written: Written<RenameSpaceMutation> | null;
   try {
-    mutation = await content.renameSpace(key, title);
+    written = await writes.renameSpace(key, title);
   } catch (err) {
     return renderSpacesPage(reply, 400, {
       notice: { tone: "error", text: errorMessage(err) },
     });
   }
-  if (!mutation) {
+  if (!written) {
     return renderSpacesPage(reply, 404, {
       notice: { tone: "error", text: `No space named "${key}".` },
     });
   }
 
-  try {
-    // Empty changedFsPaths means the name was unchanged — skip the commit.
-    if (mutation.changedFsPaths.length) {
-      await git.commitFiles(mutation.changedFsPaths, `Rename space ${mutation.key} via web`);
-    }
-  } catch (err) {
+  if (written.commitError) {
     return renderSpacesPage(reply, 500, {
-      notice: { tone: "error", text: `Renamed, but Git commit failed: ${errorMessage(err)}` },
+      notice: { tone: "error", text: `Renamed, but Git commit failed: ${written.commitError}` },
     });
   }
 
@@ -1468,25 +1361,23 @@ app.post("/_archive-space", async (req, reply) => {
     });
   }
 
-  let mutation: ArchiveMutation | null;
+  let written: Written<ArchiveMutation> | null;
   try {
-    mutation = await content.updateArchive(key, true);
+    written = await writes.setArchived(key, true);
   } catch (err) {
     return renderSpacesPage(reply, 400, {
       notice: { tone: "error", text: errorMessage(err) },
     });
   }
-  if (!mutation) {
+  if (!written) {
     return renderSpacesPage(reply, 404, {
       notice: { tone: "error", text: `No space named "${key}".` },
     });
   }
 
-  try {
-    await git.commitFiles(mutation.changedFsPaths, archiveCommitMessage("Archive", mutation));
-  } catch (err) {
+  if (written.commitError) {
     return renderSpacesPage(reply, 500, {
-      notice: { tone: "error", text: `Archived, but Git commit failed: ${errorMessage(err)}` },
+      notice: { tone: "error", text: `Archived, but Git commit failed: ${written.commitError}` },
     });
   }
 
@@ -1511,9 +1402,9 @@ app.get("/_delete-space/*", async (req, reply) => {
 app.post("/_delete-space/*", async (req, reply) => {
   const key = (req.params as { "*": string })["*"] ?? "";
 
-  let mutation: Awaited<ReturnType<typeof content.deleteSpace>>;
+  let mutation: Awaited<ReturnType<typeof writes.deleteSpace>>;
   try {
-    mutation = await content.deleteSpace(key);
+    mutation = await writes.deleteSpace(key);
   } catch (err) {
     return renderSpacesPage(reply, 400, {
       notice: { tone: "error", text: errorMessage(err) },
@@ -1567,9 +1458,9 @@ app.post("/_move", async (req, reply) => {
     return reply.code(400).send({ ok: false, error: "Missing destination page." });
   }
 
-  let result: BatchMoveMutation;
+  let written: Written<BatchMoveMutation>;
   try {
-    result = await content.movePages(
+    written = await writes.movePages(
       sourceSlugs,
       targetKind === "root" ? null : targetSlug
     );
@@ -1577,17 +1468,16 @@ app.post("/_move", async (req, reply) => {
     return reply.code(400).send({ ok: false, error: errorMessage(err) });
   }
 
+  const { mutation: result, commitError } = written;
   if (result.moves.length === 0) {
     const error = result.failures[0]?.error ?? "Source page not found.";
     return reply.code(result.failures.length ? 400 : 404).send({ ok: false, error });
   }
 
-  try {
-    await git.commitMovedPaths(result.changedFsPaths, moveBatchCommitMessage(result.moves));
-  } catch (err) {
+  if (commitError) {
     return reply.code(500).send({
       ok: false,
-      error: `Moved, but Git commit failed: ${errorMessage(err)}`,
+      error: `Moved, but Git commit failed: ${commitError}`,
       url: pagePath(result.moves[0].newSlug),
     });
   }
@@ -1635,24 +1525,23 @@ app.post("/_reorder", async (req, reply) => {
     return reply.code(400).send({ ok: false, error: "Missing destination group." });
   }
 
-  let result: ReorderMutation;
+  let written: Written<ReorderMutation>;
   try {
-    result = await content.reorderPages(sourceSlugs, parentSlug, beforeSlug);
+    written = await writes.reorderPages(sourceSlugs, parentSlug, beforeSlug);
   } catch (err) {
     return reply.code(400).send({ ok: false, error: errorMessage(err) });
   }
 
+  const { mutation: result, commitError } = written;
   if (result.orderedSlugs.length === 0) {
     const error = result.failures[0]?.error ?? "Source page not found.";
     return reply.code(result.failures.length ? 400 : 404).send({ ok: false, error });
   }
 
-  try {
-    await git.commitMovedPaths(result.changedFsPaths, reorderCommitMessage(result));
-  } catch (err) {
+  if (commitError) {
     return reply.code(500).send({
       ok: false,
-      error: `Reordered, but Git commit failed: ${errorMessage(err)}`,
+      error: `Reordered, but Git commit failed: ${commitError}`,
     });
   }
 
@@ -1714,10 +1603,10 @@ app.post("/_notes/*", async (req, reply) => {
   if (!page) return reply.code(404).send({ ok: false, error: "Page not found." });
 
   const { header, body } = splitFrontmatter(page.raw);
-  const relPath = git.kbRelPath(page.fsPath);
   const op = formString(req.body, "op");
   let nextBody: string;
-  let message: string;
+  // How the commit subject opens; the page's path follows it.
+  let action: string;
 
   if (op === "resolve") {
     const removed = removeNote(body, formString(req.body, "noteId") ?? "");
@@ -1727,7 +1616,7 @@ app.post("/_notes/*", async (req, reply) => {
         .send({ ok: false, error: "That note is already gone. Reload the page." });
     }
     nextBody = removed;
-    message = `Resolve note on ${relPath} via web`;
+    action = "Resolve note on";
   } else if (op === "resolve-agent") {
     // Every agent note the reader could see on the page (feedback #46), in one
     // commit. The ids are the ones their page showed, so a note an agent left
@@ -1740,7 +1629,7 @@ app.post("/_notes/*", async (req, reply) => {
         .send({ ok: false, error: "Those notes are already gone. Reload the page." });
     }
     nextBody = result.body;
-    message = `Resolve ${result.removed === 1 ? "agent note" : "agent notes"} on ${relPath} via web`;
+    action = `Resolve ${result.removed === 1 ? "agent note" : "agent notes"} on`;
   } else if (op === "edit") {
     const noteId = formString(req.body, "noteId") ?? "";
     const current = parseNotes(body).find((note) => note.id === noteId);
@@ -1778,7 +1667,7 @@ app.post("/_notes/*", async (req, reply) => {
         .send({ ok: false, error: "That note is already gone. Reload the page." });
     }
     nextBody = edited;
-    message = `Edit note on ${relPath} via web`;
+    action = "Edit note on";
   } else {
     // An absent or unrecognised kind reads as a task, the same way the parser
     // reads a hand-written note that names none.
@@ -1811,23 +1700,21 @@ app.post("/_notes/*", async (req, reply) => {
       quote: quote || undefined,
       text,
     });
-    message = `Add note to ${relPath} via web`;
+    action = "Add note to";
   }
 
+  let written: Written<RawPage> | null;
   try {
-    // Through updateRaw, so a note write is held to the same frontmatter
-    // validation and folder rules as any other edit.
-    await content.updateRaw(slug, header + nextBody);
+    written = await writes.writeNotes(slug, header + nextBody, action);
   } catch (err) {
     return reply.code(400).send({ ok: false, error: errorMessage(err) });
   }
+  if (!written) return reply.code(404).send({ ok: false, error: "Page not found." });
 
-  try {
-    await git.commitFiles([page.fsPath], message);
-  } catch (err) {
+  if (written.commitError) {
     return reply
       .code(500)
-      .send({ ok: false, error: `Saved, but Git commit failed: ${errorMessage(err)}` });
+      .send({ ok: false, error: `Saved, but Git commit failed: ${written.commitError}` });
   }
 
   return reply.send({ ok: true });
@@ -1940,13 +1827,10 @@ app.get("/_instructions", async (req, reply) => {
   }
 
   try {
-    const ensured = await ensureSpaceInstructions(content, space.key);
-    if (ensured.created) {
-      const commit = await git.commitFiles(
-        ensured.changedFsPaths,
-        `Create ${git.kbRelPath(ensured.fsPath)} via web`
-      );
-      if (!commit) req.log?.warn?.("space instructions scaffolded but nothing to commit");
+    const ensured = await writes.ensureInstructions(space.key);
+    if (ensured.commitError) throw new Error(ensured.commitError);
+    if (ensured.mutation.created && !ensured.commit) {
+      req.log?.warn?.("space instructions scaffolded but nothing to commit");
     }
   } catch (err) {
     const { status, html } = await renderEditPage(instructionsSlug(space.key), {
@@ -2041,11 +1925,6 @@ async function renderGallery(
   });
 }
 
-function galleryCommitMessage(spaceKey: string, saved: SavedImage[]): string {
-  if (saved.length === 1) return `Add ${git.kbRelPath(saved[0].fsPath)} via web`;
-  return `Add ${saved.length} images to ${spaceKey}/_assets via web`;
-}
-
 /** A space's image gallery — what the corner button beside the chat opens. */
 app.get("/_gallery", async (req, reply) => {
   const space = await dashboardSpace(req, reply);
@@ -2095,23 +1974,10 @@ await app.register(async (scope) => {
 
     // Everything was checked above, so a failure here is the disk's. What was
     // saved before it is still committed and shown.
-    const saved: SavedImage[] = [];
-    let failure = "";
-    for (const file of files) {
-      try {
-        saved.push(await saveImage(content, space.key, file, new Uint8Array(await file.arrayBuffer())));
-      } catch (err) {
-        failure = `Could not save ${file.name}: ${errorMessage(err)}`;
-        break;
-      }
-    }
-    if (saved.length) {
-      try {
-        await git.commitFiles(saved.map((image) => image.fsPath), galleryCommitMessage(space.key, saved));
-      } catch (err) {
-        failure ||= `Uploaded, but Git commit failed: ${errorMessage(err)}`;
-      }
-    }
+    const { mutation, commitError } = await writes.addImages(space.key, files);
+    const { saved } = mutation;
+    const failure =
+      mutation.saveError ?? (commitError ? `Uploaded, but Git commit failed: ${commitError}` : "");
     if (failure) {
       const html = await renderGallery(space, {
         added: saved.map((image) => image.path),
@@ -2131,9 +1997,9 @@ async function handleArchiveMutation(
   archived: boolean,
   reply: FastifyReply
 ) {
-  let mutation: ArchiveMutation | null;
+  let written: Written<ArchiveMutation> | null;
   try {
-    mutation = await content.updateArchive(slug, archived);
+    written = await writes.setArchived(slug, archived);
   } catch (err) {
     const notice = { tone: "error", text: errorMessage(err) } satisfies ViewNotice;
     if (slug.replace(/^\/+|\/+$/g, "") === "") {
@@ -2155,7 +2021,7 @@ async function handleArchiveMutation(
     return reply.code(400).type("text/html").send(html);
   }
 
-  if (!mutation) {
+  if (!written) {
     const spaces = await content.spaces();
     return reply
       .code(404)
@@ -2163,17 +2029,13 @@ async function handleArchiveMutation(
       .send(notFound(SITE_TITLE, slug.replace(/^\/+/, ""), spaces, AUTH_USERNAME));
   }
 
-  try {
-    await git.commitFiles(
-      mutation.changedFsPaths,
-      archiveCommitMessage(archived ? "Archive" : "Restore", mutation)
-    );
-  } catch (err) {
+  const { mutation, commitError } = written;
+  if (commitError) {
     const verb = archived ? "Archived" : "Restored";
     const { html } = await renderPage(mutation.slug, {
       notice: {
         tone: "error",
-        text: `${verb}, but Git commit failed: ${errorMessage(err)}`,
+        text: `${verb}, but Git commit failed: ${commitError}`,
       },
     });
     return reply.code(500).type("text/html").send(html);
@@ -2238,10 +2100,10 @@ app.post("/_delete", async (_req, reply) => {
 
 app.post("/_delete/*", async (req, reply) => {
   const slug = (req.params as { "*": string })["*"] ?? "";
-  let mutation: DeleteMutation | null;
+  let written: Written<DeleteMutation> | null;
 
   try {
-    mutation = await content.deletePage(slug);
+    written = await writes.deletePage(slug);
   } catch (err) {
     const notice = { tone: "error", text: errorMessage(err) } satisfies ViewNotice;
     return reply
@@ -2250,7 +2112,7 @@ app.post("/_delete/*", async (req, reply) => {
       .send(await renderSystemNotice("Delete blocked", notice));
   }
 
-  if (!mutation) {
+  if (!written) {
     const spaces = await content.spaces();
     return reply
       .code(404)
@@ -2258,12 +2120,11 @@ app.post("/_delete/*", async (req, reply) => {
       .send(notFound(SITE_TITLE, slug.replace(/^\/+/, ""), spaces, AUTH_USERNAME));
   }
 
-  try {
-    await git.commitFiles(mutation.deletedFsPaths, deleteCommitMessage(mutation));
-  } catch (err) {
+  const { mutation, commitError } = written;
+  if (commitError) {
     const notice = {
       tone: "error",
-      text: `Deleted, but Git commit failed: ${errorMessage(err)}`,
+      text: `Deleted, but Git commit failed: ${commitError}`,
     } satisfies ViewNotice;
     return reply
       .code(500)
@@ -2317,9 +2178,11 @@ app.post("/_edit/*", async (req, reply) => {
     return reply.code(status).type("text/html").send(html);
   }
 
-  let page;
+  // An optional URL-slug change, made once the content is saved.
+  const newLeaf = formString(req.body, "slug")?.trim();
+  let written: Written<PageSave> | null;
   try {
-    page = await content.updateRaw(slug, markdown);
+    written = await writes.savePage(slug, markdown, newLeaf);
   } catch (err) {
     const { html } = await renderEditPage(slug, {
       raw: markdown,
@@ -2328,7 +2191,7 @@ app.post("/_edit/*", async (req, reply) => {
     return reply.code(400).type("text/html").send(html);
   }
 
-  if (!page) {
+  if (!written) {
     const spaces = await content.spaces();
     return reply
       .code(404)
@@ -2336,40 +2199,25 @@ app.post("/_edit/*", async (req, reply) => {
       .send(notFound(SITE_TITLE, slug.replace(/^\/+/, ""), spaces, AUTH_USERNAME));
   }
 
-  // Optional URL-slug change: rename the file/folder after the content is saved.
-  let renamed: Awaited<ReturnType<typeof content.renamePage>> = null;
-  const newLeaf = formString(req.body, "slug")?.trim();
-  if (newLeaf) {
-    try {
-      renamed = await content.renamePage(page.slug, newLeaf);
-    } catch (err) {
-      const { html } = await renderEditPage(page.slug, {
-        raw: markdown,
-        error: `Saved the content, but could not change the URL: ${errorMessage(err)}`,
-      });
-      return reply.code(400).type("text/html").send(html);
-    }
+  const { page, renamed, renameError } = written.mutation;
+  if (renameError) {
+    const { html } = await renderEditPage(page.slug, {
+      raw: markdown,
+      error: `Saved the content, but could not change the URL: ${renameError}`,
+    });
+    return reply.code(400).type("text/html").send(html);
   }
 
-  const didRename = renamed !== null && renamed.newSlug !== renamed.oldSlug;
-  try {
-    if (didRename) {
-      await git.commitMovedPaths(
-        renamed!.changedFsPaths,
-        `Rename ${renamed!.oldSlug} to ${renamed!.newSlug} via web`
-      );
-    } else {
-      await gitCommitPage(page.fsPath);
-    }
-  } catch (err) {
-    const { html } = await renderEditPage(didRename ? renamed!.newSlug : page.slug, {
+  const savedSlug = renamed ? renamed.newSlug : page.slug;
+  if (written.commitError) {
+    const { html } = await renderEditPage(savedSlug, {
       raw: markdown,
-      error: `Saved, but Git commit failed: ${errorMessage(err)}`,
+      error: `Saved, but Git commit failed: ${written.commitError}`,
     });
     return reply.code(500).type("text/html").send(html);
   }
 
-  return reply.redirect(pagePath(didRename ? renamed!.newSlug : page.slug));
+  return reply.redirect(pagePath(savedSlug));
 });
 
 // Download a page's raw Markdown (frontmatter included) as an attachment.

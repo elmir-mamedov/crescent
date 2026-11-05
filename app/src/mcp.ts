@@ -9,6 +9,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import * as z from "zod/v4";
 import { Content, flatten, isFolderPage, type PageNode, type TreeFilter } from "./content.js";
 import { makeGit } from "./git.js";
+import { makeKbWrites } from "./kb-writes.js";
 import { collectNotes } from "./note-index.js";
 import { splitFrontmatter } from "./frontmatter.js";
 import { parseNotes, type Note, type NoteKind } from "./notes.js";
@@ -74,6 +75,8 @@ const content = new Content(KB_DIR);
 // repos as the web server, so it hooks the same commit callback.
 const sync = syncFromEnv(KB_DIR);
 const git = makeGit(KB_DIR, sync ? (repoRoot) => sync.notifyCommit(repoRoot) : undefined);
+// Every write a tool makes goes through here, which commits it.
+const writes = makeKbWrites({ content, git, via: COMMIT_VIA });
 
 interface ListedPage {
   slug: string;
@@ -627,10 +630,6 @@ server.registerTool(
   }
 );
 
-function commitTarget(mutation: { isSection: boolean; slug: string; fsPath: string }): string {
-  return mutation.isSection ? mutation.slug : git.kbRelPath(mutation.fsPath);
-}
-
 server.registerTool(
   "kb_create_page",
   {
@@ -661,11 +660,9 @@ server.registerTool(
     if (gate) return gate;
 
     try {
-      const mutation = await content.createPage(parent ?? "", title, body ?? "", { tags, summary });
-      const message = `Create ${git.kbRelPath(mutation.fsPath)} via ${COMMIT_VIA}`;
-      const commit = mutation.changedFsPaths
-        ? await git.commitMovedPaths(mutation.changedFsPaths, message)
-        : await git.commitFiles([mutation.fsPath], message);
+      const written = await writes.createPage(parent ?? "", title, body ?? "", { tags, summary });
+      if (written.commitError) return errorResult(written.commitError);
+      const { mutation, commit } = written;
       return textResult({
         created: true,
         slug: mutation.slug,
@@ -707,11 +704,9 @@ server.registerTool(
     if (gate) return gate;
 
     try {
-      const mutation = await content.createFolder(parent ?? "", title);
-      const message = `Create ${git.kbRelPath(mutation.fsPath)} via ${COMMIT_VIA}`;
-      const commit = mutation.changedFsPaths
-        ? await git.commitMovedPaths(mutation.changedFsPaths, message)
-        : await git.commitFiles([mutation.fsPath], message);
+      const written = await writes.createFolder(parent ?? "", title);
+      if (written.commitError) return errorResult(written.commitError);
+      const { mutation, commit } = written;
       return textResult({
         created: true,
         slug: mutation.slug,
@@ -751,11 +746,10 @@ server.registerTool(
     if (gate) return gate;
 
     try {
-      const mutation = await content.renameFolder(slug, name);
-      if (!mutation) return errorResult(`Folder not found: ${cleanSlug(slug)}`);
-      const commit = mutation.changedFsPaths.length
-        ? await git.commitFiles(mutation.changedFsPaths, `Rename folder ${mutation.slug} via ${COMMIT_VIA}`)
-        : null;
+      const written = await writes.renameFolder(slug, name);
+      if (!written) return errorResult(`Folder not found: ${cleanSlug(slug)}`);
+      if (written.commitError) return errorResult(written.commitError);
+      const { mutation, commit } = written;
       return textResult({
         renamed: true,
         slug: mutation.slug,
@@ -794,12 +788,10 @@ server.registerTool(
     if (gate) return gate;
 
     try {
-      const mutation = await content.updateRaw(slug, markdown);
-      if (!mutation) return errorResult(`Page not found: ${cleanSlug(slug) || "(home)"}`);
-      const commit = await git.commitFiles(
-        [mutation.fsPath],
-        `Update ${git.kbRelPath(mutation.fsPath)} via ${COMMIT_VIA}`
-      );
+      const written = await writes.updatePage(slug, markdown);
+      if (!written) return errorResult(`Page not found: ${cleanSlug(slug) || "(home)"}`);
+      if (written.commitError) return errorResult(written.commitError);
+      const { mutation, commit } = written;
       return textResult({
         updated: true,
         slug: mutation.slug,
@@ -819,21 +811,17 @@ server.registerTool(
 /**
  * Write a page body back and commit it, for the two note tools below.
  *
- * Through `updateRaw`, so a note write is held to the same frontmatter
- * validation and folder rules as any other edit, and with the header's bytes
- * carried across untouched: leaving a note is not an edit to the YAML, and
- * reformatting someone's frontmatter as a side effect of one would be a surprise
- * in the diff.
+ * The header's bytes are carried across untouched: leaving a note is not an
+ * edit to the YAML, and reformatting someone's frontmatter as a side effect of
+ * one would be a surprise in the diff. A commit that fails is thrown, so the
+ * tool reports it as its error.
  */
-async function commitNoteWrite(slug: string, header: string, body: string, verb: string) {
-  const mutation = await content.updateRaw(slug, header + body);
-  if (!mutation) return null;
-  const relPath = git.kbRelPath(mutation.fsPath);
-  return {
-    slug: mutation.slug,
-    path: relPath,
-    commit: await git.commitFiles([mutation.fsPath], `${verb} ${relPath} via ${COMMIT_VIA}`),
-  };
+async function commitNoteWrite(slug: string, header: string, body: string, action: string) {
+  const written = await writes.writeNotes(slug, header + body, action);
+  if (!written) return null;
+  if (written.commitError) throw new Error(written.commitError);
+  const { mutation, commit } = written;
+  return { slug: mutation.slug, path: git.kbRelPath(mutation.fsPath), commit };
 }
 
 server.registerTool(
@@ -976,12 +964,10 @@ server.registerTool(
     if (gate) return gate;
 
     try {
-      const mutation = await content.updateArchive(slug, true);
-      if (!mutation) return errorResult(`Page not found: ${cleanSlug(slug)}`);
-      const commit = await git.commitFiles(
-        mutation.changedFsPaths,
-        `Archive ${commitTarget(mutation)} via ${COMMIT_VIA}`
-      );
+      const written = await writes.setArchived(slug, true);
+      if (!written) return errorResult(`Page not found: ${cleanSlug(slug)}`);
+      if (written.commitError) return errorResult(written.commitError);
+      const { mutation, commit } = written;
       return textResult({
         archived: true,
         slug: mutation.slug,
@@ -1019,12 +1005,10 @@ server.registerTool(
     if (gate) return gate;
 
     try {
-      const mutation = await content.updateArchive(slug, false);
-      if (!mutation) return errorResult(`Page not found: ${cleanSlug(slug)}`);
-      const commit = await git.commitFiles(
-        mutation.changedFsPaths,
-        `Restore ${commitTarget(mutation)} via ${COMMIT_VIA}`
-      );
+      const written = await writes.setArchived(slug, false);
+      if (!written) return errorResult(`Page not found: ${cleanSlug(slug)}`);
+      if (written.commitError) return errorResult(written.commitError);
+      const { mutation, commit } = written;
       return textResult({
         restored: true,
         slug: mutation.slug,
@@ -1069,12 +1053,10 @@ server.registerTool(
     if (gate) return gate;
 
     try {
-      const mutation = await content.movePage(sourceSlug, targetParent || null);
-      if (!mutation) return errorResult(`Page not found: ${cleanSlug(sourceSlug)}`);
-      const commit = await git.commitMovedPaths(
-        mutation.changedFsPaths,
-        `Move ${mutation.oldSlug} to ${mutation.newSlug} via ${COMMIT_VIA}`
-      );
+      const written = await writes.movePage(sourceSlug, targetParent || null);
+      if (!written) return errorResult(`Page not found: ${cleanSlug(sourceSlug)}`);
+      if (written.commitError) return errorResult(written.commitError);
+      const { mutation, commit } = written;
       return textResult({
         moved: true,
         oldSlug: mutation.oldSlug,
@@ -1113,15 +1095,13 @@ server.registerTool(
     if (gate) return gate;
 
     try {
-      const mutation = await content.renamePage(slug, newName);
-      if (!mutation) return errorResult(`Page not found: ${cleanSlug(slug)}`);
+      const written = await writes.renamePage(slug, newName);
+      if (!written) return errorResult(`Page not found: ${cleanSlug(slug)}`);
+      if (written.commitError) return errorResult(written.commitError);
+      const { mutation, commit } = written;
       if (mutation.newSlug === mutation.oldSlug) {
         return textResult({ renamed: false, slug: mutation.oldSlug, note: "Slug unchanged." });
       }
-      const commit = await git.commitMovedPaths(
-        mutation.changedFsPaths,
-        `Rename ${mutation.oldSlug} to ${mutation.newSlug} via ${COMMIT_VIA}`
-      );
       return textResult({
         renamed: true,
         oldSlug: mutation.oldSlug,
@@ -1160,12 +1140,10 @@ server.registerTool(
     if (gate) return gate;
 
     try {
-      const mutation = await content.deletePage(slug);
-      if (!mutation) return errorResult(`Page not found: ${cleanSlug(slug)}`);
-      const commit = await git.commitFiles(
-        mutation.deletedFsPaths,
-        `Delete ${commitTarget(mutation)} via ${COMMIT_VIA}`
-      );
+      const written = await writes.deletePage(slug);
+      if (!written) return errorResult(`Page not found: ${cleanSlug(slug)}`);
+      if (written.commitError) return errorResult(written.commitError);
+      const { mutation, commit } = written;
       return textResult({
         deleted: true,
         slug: mutation.slug,
@@ -1196,14 +1174,9 @@ server.registerTool(
   },
   async ({ title }) => {
     try {
-      const mutation = await content.createSpace(title);
-      // A new space is its own git repo: initialize it before committing the
-      // scaffolding (index.md, _assets/.gitkeep, .gitignore) into it.
-      await git.initSpaceRepo(mutation.slug);
-      const commit = await git.commitFiles(
-        mutation.changedFsPaths ?? [mutation.fsPath],
-        `Create ${git.kbRelPath(mutation.fsPath)} via ${COMMIT_VIA}`
-      );
+      const written = await writes.createSpace(title);
+      if (written.commitError) return errorResult(written.commitError);
+      const { mutation, commit } = written;
       return textResult({ created: true, slug: mutation.slug, id: mutation.id, path: git.kbRelPath(mutation.fsPath), commit });
     } catch (err) {
       return errorResult(errorMessage(err));
