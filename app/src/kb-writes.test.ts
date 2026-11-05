@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Content } from "./content.js";
+import { readImageFile } from "./gallery.js";
 import { makeGit } from "./git.js";
 import { makeKbWrites, type KbWrites } from "./kb-writes.js";
 import { git, isGitRepo, makeTempKb, type TempKb } from "./test-helpers.js";
@@ -170,4 +172,22 @@ test("a commit that fails leaves the write in place and reports why", async () =
   } finally {
     await kb.cleanup();
   }
+});
+
+test("addImages commits an image read from disk, and a second copy under a name of its own", async () => {
+  await withSpace(async ({ kb, writes, repo }) => {
+    const source = path.join(kb.dir, "plot.png");
+    await fs.writeFile(source, new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    const first = await writes.addImages("docs", [await readImageFile(source)]);
+    const second = await writes.addImages("docs", [await readImageFile(source)]);
+    assert.deepEqual(
+      [...first.mutation.saved, ...second.mutation.saved].map((image) => image.path),
+      ["plot.png", "plot-2.png"]
+    );
+    assert.deepEqual((await subjects(repo)).slice(0, 2), [
+      "Add docs/_assets/plot-2.png via test",
+      "Add docs/_assets/plot.png via test",
+    ]);
+    assert.equal(await git(repo, "status", "--porcelain"), "");
+  });
 });

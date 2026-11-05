@@ -3,7 +3,15 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Content } from "./content.js";
-import { imageFileName, isImageName, listImages, saveImage, uploadRefusal } from "./gallery.js";
+import {
+  GALLERY_BODY_LIMIT,
+  imageFileName,
+  isImageName,
+  listImages,
+  readImageFile,
+  saveImage,
+  uploadRefusal,
+} from "./gallery.js";
 import { makeTempKb, trySymlink, type TempKb } from "./test-helpers.js";
 
 async function withSpace(
@@ -200,5 +208,51 @@ test("saveImage: a link where the name would go is passed over, not written thro
     } finally {
       await fs.rm(outside, { force: true });
     }
+  });
+});
+
+test("readImageFile: reads an image on disk under its own name, ready to save", async () => {
+  await withSpace(async ({ kb, content }) => {
+    const source = path.join(kb.dir, "Box Area 308K.png");
+    await fs.writeFile(source, PNG);
+    const file = await readImageFile(source);
+    assert.equal(file.name, "Box Area 308K.png");
+    assert.deepEqual(new Uint8Array(await file.arrayBuffer()), PNG);
+    const saved = await saveImage(content, "docs", file, new Uint8Array(await file.arrayBuffer()));
+    assert.equal(saved.path, "box-area-308k.png");
+  });
+});
+
+test("readImageFile: refuses a relative path, a missing file, a folder, a non-image and an empty file", async () => {
+  await withSpace(async ({ kb }) => {
+    await assert.rejects(readImageFile("analysis/plot.png"), /not an absolute path/);
+    await assert.rejects(readImageFile(path.join(kb.dir, "missing.png")), /no file at/);
+    await assert.rejects(readImageFile(path.join(kb.dir, "missing", "deeper.png")), /no file at/);
+    await fs.mkdir(path.join(kb.dir, "folder.png"));
+    await assert.rejects(readImageFile(path.join(kb.dir, "folder.png")), /not a plain file/);
+    await fs.writeFile(path.join(kb.dir, "notes.txt"), "text");
+    await assert.rejects(readImageFile(path.join(kb.dir, "notes.txt")), /notes\.txt is not one/);
+    await fs.writeFile(path.join(kb.dir, "empty.png"), "");
+    await assert.rejects(readImageFile(path.join(kb.dir, "empty.png")), /empty\.png is empty/);
+  });
+});
+
+test("readImageFile: refuses an image bigger than a whole upload may be, without reading it", async () => {
+  await withSpace(async ({ kb }) => {
+    const source = path.join(kb.dir, "huge.png");
+    // Truncating up makes a sparse file: its size, with nothing written.
+    await fs.writeFile(source, "");
+    await fs.truncate(source, GALLERY_BODY_LIMIT + 1);
+    await assert.rejects(readImageFile(source), /huge\.png is over 50 MB/);
+  });
+});
+
+test("readImageFile: refuses a symbolic link, even to an image", async (t) => {
+  await withSpace(async ({ kb }) => {
+    const target = path.join(kb.dir, "real.png");
+    await fs.writeFile(target, PNG);
+    const link = path.join(kb.dir, "link.png");
+    if (!(await trySymlink(target, link, "file"))) return t.skip("this system makes no file links");
+    await assert.rejects(readImageFile(link), /not a plain file/);
   });
 });

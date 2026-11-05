@@ -145,6 +145,34 @@ export function uploadRefusal(files: readonly { name: string; type: string; size
 }
 
 /**
+ * An image file on this machine, read so it can be saved into a space's
+ * `_assets` the way an upload is: what the MCP server's `kb_add_image` copies
+ * in. It is held to an upload's rules (an image by its name, not empty, no
+ * bigger than a whole upload may be), and a symbolic link is refused, so the
+ * path is the file that gets read.
+ */
+export async function readImageFile(filePath: string): Promise<File> {
+  if (!path.isAbsolute(filePath)) throw new Error(`${filePath} is not an absolute path.`);
+  let stat: import("node:fs").Stats;
+  try {
+    stat = await fs.lstat(filePath);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") throw new Error(`There is no file at ${filePath}.`);
+    throw err;
+  }
+  if (!stat.isFile()) throw new Error(`${filePath} is not a plain file.`);
+
+  const name = path.basename(filePath);
+  const refusal = uploadRefusal([{ name, type: "", size: stat.size }]);
+  if (refusal) throw new Error(refusal);
+  if (stat.size > GALLERY_BODY_LIMIT) {
+    throw new Error(`${name} is over ${GALLERY_BODY_LIMIT / 1024 / 1024} MB, too big to add.`);
+  }
+  return new File([await fs.readFile(filePath)], name);
+}
+
+/**
  * Save one upload into the space's `_assets`, under a name of its own. An
  * image already there is never replaced: a second `photo.png` becomes
  * `photo-2.png`. The caller commits the returned `fsPath`.

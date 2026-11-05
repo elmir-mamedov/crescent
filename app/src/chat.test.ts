@@ -196,6 +196,7 @@ test("the activity line says what the turn is doing", () => {
   assert.equal(activityText("mcp__kb25__kb_create_page", { title: "Incentive model" }), "Writing “Incentive model”…");
   assert.equal(activityText("mcp__kb25__kb_get_page", { slug: "demo/a" }), "Reading demo/a…");
   assert.equal(activityText("mcp__kb25__kb_move_page", { sourceSlug: "demo/a" }), "Moving demo/a…");
+  assert.equal(activityText("mcp__kb25__kb_add_image", { file: "/Users/me/analysis/plot.png" }), "Adding the image “plot.png”…");
   assert.equal(activityText("Unknown", {}), "Working…");
 });
 

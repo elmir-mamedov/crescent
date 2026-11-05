@@ -9,6 +9,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import * as z from "zod/v4";
 import { Content, flatten, isFolderPage, type PageNode, type TreeFilter } from "./content.js";
 import { makeGit } from "./git.js";
+import { readImageFile } from "./gallery.js";
 import { makeKbWrites } from "./kb-writes.js";
 import { collectNotes } from "./note-index.js";
 import { splitFrontmatter } from "./frontmatter.js";
@@ -725,6 +726,48 @@ server.registerTool(
         slug: mutation.slug,
         id: mutation.id,
         path: git.kbRelPath(mutation.fsPath),
+        ...commitFields(written),
+        ...(await writeToken(spaceKey)),
+      });
+    } catch (err) {
+      return errorResult(errorMessage(err));
+    }
+  }
+);
+
+server.registerTool(
+  "kb_add_image",
+  {
+    title: "Add KB Image",
+    description:
+      "Copy an image file from this machine into a space's `_assets` folder, where the space's gallery shows it, and return the `link` a page shows it by: `![alt text](<link>)`, written into the page with kb_create_page or kb_update_page. The link works on pages of that space only, so add the image to the space of the page that shows it. The file is saved under a lowercase, hyphenated form of its own name, and an image already there is never replaced (a second `plot.png` is saved as `plot-2.png`), so use the `link` this returns rather than one made from the file name. Takes PNG, JPEG, GIF, WebP, AVIF and SVG.",
+    inputSchema: {
+      space: z.string().min(1).describe("Key of the space to add the image to, e.g. kb25."),
+      file: z
+        .string()
+        .min(1)
+        .describe("Absolute path of the image file on this machine, e.g. /Users/me/analysis/plot.png. A leading `~/` is the home folder."),
+      spaceInstructionsToken: instructionTokenSchema,
+    },
+    annotations: {
+      readOnlyHint: false,
+      openWorldHint: false,
+    },
+  },
+  async ({ space, file, spaceInstructionsToken }) => {
+    const spaceKey = content.spaceKeyOf(space);
+    const gate = await gateWrite(spaceKey, spaceInstructionsToken);
+    if (gate) return gate;
+
+    try {
+      const image = await readImageFile(expandHome(file));
+      const written = await writes.addImages(spaceKey, [image]);
+      const [saved] = written.mutation.saved;
+      if (!saved) return errorResult(written.mutation.saveError ?? `Could not save ${image.name}.`);
+      return textResult({
+        added: true,
+        link: `_assets/${saved.path}`,
+        path: git.kbRelPath(saved.fsPath),
         ...commitFields(written),
         ...(await writeToken(spaceKey)),
       });
