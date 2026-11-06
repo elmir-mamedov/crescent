@@ -993,13 +993,14 @@ test("notes: the switch offers highlight, remark, task — highlight first", () 
 test("notes: tasks are purple, highlights underline yellow, remarks stay teal", () => {
   const html = layout(pageView());
   // Every theme block defines both palettes; one missing them renders unstyled.
-  assert.equal(html.split("--task-bg:").length - 1, 3);
-  assert.equal(html.split("--highlight-bg:").length - 1, 3);
+  // Four: light, dark, the OS's dark, and the chat drawer, which is always dark.
+  assert.equal(html.split("--task-bg:").length - 1, 4);
+  assert.equal(html.split("--highlight-bg:").length - 1, 4);
   assert.match(html, /--task-pin:#a855f7/);
   // The highlight pin is the one token that cannot be shared across themes: a
   // yellow dark enough to be seen on white disappears on the dark page.
   assert.equal(html.split("--highlight-pin:#9aa300").length - 1, 1);
-  assert.equal(html.split("--highlight-pin:#e2e800").length - 1, 2);
+  assert.equal(html.split("--highlight-pin:#e2e800").length - 1, 3);
   // The kind's palette rides on the element, so the rules that draw a note are
   // shared and a remark keeps the teal it always had.
   assert.match(html, /\.note-mark\.is-task,[^{]+\{\s*--note-bg:var\(--task-bg\)/);
@@ -1031,11 +1032,12 @@ test("notes: an agent's note is pink, and a reader can only resolve it", () => {
     "--agent-pin:",
     "--agent-border:",
   ]) {
-    assert.equal(html.split(token).length - 1, 3, token + " is not in all three theme blocks");
+    // Light, dark, the OS's dark, and the always-dark chat drawer.
+    assert.equal(html.split(token).length - 1, 4, token + " is not in all four theme blocks");
   }
   // Pink is legible on white and on black, so the pin carries one value across
-  // all three — the split the highlight's yellow needs is not needed here.
-  assert.equal(html.split("--agent-pin:#ff2d87").length - 1, 3);
+  // all four — the split the highlight's yellow needs is not needed here.
+  assert.equal(html.split("--agent-pin:#ff2d87").length - 1, 4);
   assert.match(html, /\.note-mark\.is-agent,[^{]+\{\s*--note-bg:var\(--agent-bg\)/);
   // No .note-kind-option, because the switch never offers a kind nobody can
   // write — so the chip needs a name from somewhere other than KINDS.
@@ -2134,7 +2136,8 @@ test("labels: labelsHref carries the space, every label and the query, encoded",
 test("labels: every theme block defines every swatch", () => {
   const html = labelsDashboardLayout(labelsView());
   for (const color of ["gray", "red", "brown"]) {
-    assert.equal(html.match(new RegExp(`--label-${color}-bg:`, "g"))?.length, 3, color);
+    // Light, dark, the OS's dark, and the always-dark chat drawer.
+    assert.equal(html.match(new RegExp(`--label-${color}-bg:`, "g"))?.length, 4, color);
     assert.match(html, new RegExp(`\\[data-label-color="${color}"\\]\\{--lc-bg:var\\(--label-${color}-bg\\)`));
   }
 });
@@ -2588,6 +2591,13 @@ test("views: images are attached from the paperclip, which picks images only, or
   const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
   assert.match(script, /drawer\.addEventListener\("drop", \(event\) => \{\s*if \(!carriesFiles\(event\)\) return;\s*event\.preventDefault\(\);/);
   assert.match(script, /canvas\.toBlob\(resolve, "image\/jpeg", 0\.85\)/);
+});
+
+test("views: the chat drawer is dark whichever theme the page is in", () => {
+  const html = layout(pageView());
+  // It wears the dark theme's own colours, the native pickers' scheme with them.
+  assert.match(html, /\.chat-drawer\{\s*color-scheme:dark;\s*--bg:#0d1117;[^}]*--surface:#161b22;/);
+  assert.match(html, /\.chat-drawer \.prose img\{background:#f0f3f6/);
 });
 
 test("views: an unsent message, its images included, outlasts going to another page", () => {

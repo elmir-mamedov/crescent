@@ -1384,12 +1384,17 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
 /* The chat drawer: a column down the right edge. On a wide window the page
    makes room for it (body is a flex row, so its padding narrows the content)
    and the corner tools and update card move left with it; on a narrow one it
-   covers the page, which its own close button gives back. */
+   covers the page, which its own close button gives back.
+   It is dark in either theme: it wears the dark theme's colours, which
+   everything in it reads, its native pickers and scrollbars included. */
 .chat-drawer{
+  ${DARK_TOKENS}
   position:fixed; top:0; right:0; bottom:0; z-index:55; width:400px; max-width:100vw;
   display:flex; flex-direction:column; background:var(--surface); color:var(--fg);
   border-left:1px solid var(--line); box-shadow:var(--shadow-md);
 }
+/* As in a dark page, an image in a reply sits on a light panel. */
+.chat-drawer .prose img{background:#f0f3f6; padding:8px; border-radius:6px; filter:brightness(.9)}
 .chat-drawer[hidden]{display:none}
 /* Its parts toggle with the hidden attribute, which loses to any display rule
    (.button's, say) without this. */
