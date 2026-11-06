@@ -1386,9 +1386,12 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
    and the corner tools and update card move left with it; on a narrow one it
    covers the page, which its own close button gives back.
    It is dark in either theme: it wears the dark theme's colours, which
-   everything in it reads, its native pickers and scrollbars included. */
+   everything in it reads, its native pickers and scrollbars included, on a
+   near-black of its own, a step below the dark page, so that beside a dark
+   page it still reads as a panel apart rather than more of the same. */
 .chat-drawer{
   ${DARK_TOKENS}
+  --surface:#010409;
   position:fixed; top:0; right:0; bottom:0; z-index:55; width:400px; max-width:100vw;
   display:flex; flex-direction:column; background:var(--surface); color:var(--fg);
   border-left:1px solid var(--line); box-shadow:var(--shadow-md);
