@@ -1,7 +1,7 @@
 /** A space's image gallery: uploading images to it, and deleting them. */
 import type { FastifyInstance } from "fastify";
 import type { SpaceInfo } from "../content.js";
-import { GALLERY_BODY_LIMIT, listImages, uploadRefusal } from "../gallery.js";
+import { GALLERY_BODY_LIMIT, listImages, makeRecentDeletions, uploadRefusal } from "../gallery.js";
 import { galleryLayout, notFound, type ViewNotice } from "../views.js";
 import type { ServerContext } from "./context.js";
 import { errorMessage, formString, queryString, queryStrings } from "./http.js";
@@ -9,11 +9,13 @@ import { errorMessage, formString, queryString, queryStrings } from "./http.js";
 export async function registerGalleryRoutes(app: FastifyInstance, ctx: ServerContext): Promise<void> {
   const { siteTitle, username, content, writes } = ctx;
   const { dashboardSpace, findSpace, spaceChrome } = ctx.render;
+  const deletions = makeRecentDeletions();
 
   /**
    * The gallery for one space. `added` names the images just uploaded, which the
-   * grid marks, and `deleted` the one just deleted; a name that does not match
-   * what is there is dropped, so a stale or typed URL claims nothing.
+   * grid marks, and `deleted` the one just deleted, which the caller has
+   * claimed from `deletions`; a name that does not match what is there is
+   * dropped, so a stale or typed URL claims nothing.
    */
   async function renderGallery(
     space: SpaceInfo,
@@ -57,7 +59,8 @@ export async function registerGalleryRoutes(app: FastifyInstance, ctx: ServerCon
     const space = await dashboardSpace(req, reply);
     if (!space) return reply;
     const added = queryStrings(req.query, "added");
-    const deleted = queryString(req.query, "deleted") ?? undefined;
+    const named = queryString(req.query, "deleted");
+    const deleted = named && deletions.claim(space.key, named) ? named : undefined;
     return reply.type("text/html").send(await renderGallery(space, { added, deleted }));
   });
 
@@ -94,6 +97,7 @@ export async function registerGalleryRoutes(app: FastifyInstance, ctx: ServerCon
     }
     if (commitError) return refuse(500, `Deleted, but Git commit failed: ${commitError}`);
 
+    deletions.record(space.key, mutation.path);
     const query = new URLSearchParams({ space: space.key, deleted: mutation.path });
     return reply.redirect(`/_gallery?${query}`, 303);
   });

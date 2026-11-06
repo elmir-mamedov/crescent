@@ -9,6 +9,7 @@ import {
   imageFileName,
   isImageName,
   listImages,
+  makeRecentDeletions,
   pagesLinkingTo,
   readImageFile,
   saveImage,
@@ -351,4 +352,24 @@ test("deleteImage: a link in _assets is neither deleted nor followed", async (t)
       await fs.rm(outside, { force: true });
     }
   });
+});
+
+test("makeRecentDeletions: claims only a deletion it recorded, in that space, once", () => {
+  const deletions = makeRecentDeletions();
+  deletions.record("docs", "plot.png");
+  assert.equal(deletions.claim("docs", "never-there.png"), false);
+  assert.equal(deletions.claim("other", "plot.png"), false);
+  assert.equal(deletions.claim("docs", "plot.png"), true);
+  assert.equal(deletions.claim("docs", "plot.png"), false);
+});
+
+test("makeRecentDeletions: forgets a deletion left unclaimed past its time", () => {
+  let now = 1_000;
+  const deletions = makeRecentDeletions(60_000, () => now);
+  deletions.record("docs", "old.png");
+  deletions.record("docs", "new.png");
+  now += 59_999;
+  assert.equal(deletions.claim("docs", "new.png"), true);
+  now += 1;
+  assert.equal(deletions.claim("docs", "old.png"), false);
 });

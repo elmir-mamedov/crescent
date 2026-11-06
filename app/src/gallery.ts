@@ -234,6 +234,33 @@ export async function deleteImage(content: Content, spaceKey: string, rel: strin
 }
 
 /**
+ * The deletions a server has just made, so that the gallery it redirects to
+ * after one can say so. An image's absence proves nothing, since every name
+ * that never existed is absent too, so the gallery claims a deletion only when
+ * it finds it here: a typed or stale URL claims none. Each is claimed once and
+ * forgotten after `ttlMs` unclaimed.
+ */
+export function makeRecentDeletions(ttlMs = 60_000, now: () => number = Date.now) {
+  const made = new Map<string, number>();
+  const key = (spaceKey: string, rel: string) => `${spaceKey}\0${rel}`;
+  const prune = () => {
+    const at = now();
+    for (const [k, when] of made) if (at - when >= ttlMs) made.delete(k);
+  };
+  return {
+    record(spaceKey: string, rel: string): void {
+      prune();
+      made.set(key(spaceKey, rel), now());
+    },
+    /** Whether this server just deleted `rel` from the space; true only once. */
+    claim(spaceKey: string, rel: string): boolean {
+      prune();
+      return made.delete(key(spaceKey, rel));
+    },
+  };
+}
+
+/**
  * Save one upload into the space's `_assets`, under a name of its own. An
  * image already there is never replaced: a second `photo.png` becomes
  * `photo-2.png`. The caller commits the returned `fsPath`.
