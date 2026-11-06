@@ -98,6 +98,37 @@ test("a page created and deleted in one turn is not reported; a deleted old one 
   assert.deepEqual(changes, [{ kind: "deleted", what: "page", slug: "demo/old", title: "" }]);
 });
 
+test("added and deleted images are reported by their path in the KB, under their file name", () => {
+  const changes = pageChanges([
+    call("kb_add_image", { space: "demo", file: "/Users/me/Plot.PNG" }, { added: true, link: "_assets/plot.png", path: "demo/_assets/plot.png" }),
+    call("kb_update_page", { slug: "demo/a" }, { updated: true, slug: "demo/a" }),
+    call("kb_delete_image", { space: "demo", link: "_assets/charts/old.png" }, {
+      deleted: true,
+      link: "_assets/charts/old.png",
+      path: "demo/_assets/charts/old.png",
+    }),
+  ]);
+  assert.deepEqual(changes, [
+    { kind: "added", what: "image", slug: "demo/_assets/plot.png", title: "plot.png" },
+    { kind: "updated", what: "page", slug: "demo/a", title: "" },
+    { kind: "deleted", what: "image", slug: "demo/_assets/charts/old.png", title: "old.png" },
+  ]);
+});
+
+test("an image added and deleted in one turn is not reported; a refused deletion is not a change", () => {
+  const changes = pageChanges([
+    call("kb_add_image", { space: "demo", file: "/tmp/draft.png" }, { added: true, link: "_assets/draft.png", path: "demo/_assets/draft.png" }),
+    call("kb_delete_image", { space: "demo", link: "_assets/draft.png" }, { deleted: true, link: "_assets/draft.png", path: "demo/_assets/draft.png" }),
+    call("kb_delete_image", { space: "demo", link: "_assets/kept.png" }, "Not deleted: _assets/kept.png is still linked from demo/a (A).", true),
+  ]);
+  assert.deepEqual(changes, []);
+});
+
+test("resolving leaves an image as the tool reported it", () => {
+  const image = { kind: "added", what: "image", slug: "demo/_assets/plot.png", title: "plot.png" } as const;
+  assert.deepEqual(resolveChanges([image], PAGES), [image]);
+});
+
 test("a move carries the page, and what was filed under it, to the new slug", () => {
   const changes = pageChanges([
     call("kb_create_folder", { title: "Compute" }, { created: true, slug: "demo/compute", id: "f1" }),
@@ -141,7 +172,12 @@ test("changes resolve to the KB as it stands: by id first, then by slug", () => 
 });
 
 test("a message view renders replies and links report entries where the pages are now", () => {
-  const options = { render: (md: string) => `<p>${md}</p>`, pages: PAGES, href: (slug: string) => `/${slug}` };
+  const options = {
+    render: (md: string) => `<p>${md}</p>`,
+    pages: PAGES,
+    href: (slug: string) => `/${slug}`,
+    gallery: (space: string) => `/_gallery?space=${space}`,
+  };
   assert.deepEqual(messageView({ role: "assistant", text: "Hi", at: "t" }, options), { role: "assistant", html: "<p>Hi</p>" });
   assert.deepEqual(messageView({ role: "user", text: "q", at: "t", forcePages: true, slug: "demo" }, options), {
     role: "user",
@@ -156,6 +192,8 @@ test("a message view renders replies and links report entries where the pages ar
         changes: [
           { kind: "created", what: "page", id: "inc-id", slug: "demo/incentive-model", title: "Incentive model" },
           { kind: "deleted", what: "page", slug: "demo/old", title: "Old" },
+          { kind: "added", what: "image", slug: "demo/_assets/plot.png", title: "plot.png" },
+          { kind: "deleted", what: "image", slug: "demo/_assets/old.png", title: "old.png" },
         ],
       },
       options
@@ -172,6 +210,8 @@ test("a message view renders replies and links report entries where the pages ar
           href: "/demo/economics/incentive-model",
         },
         { kind: "deleted", what: "page", slug: "demo/old", title: "Old", href: null },
+        { kind: "added", what: "image", slug: "demo/_assets/plot.png", title: "plot.png", href: "/_gallery?space=demo" },
+        { kind: "deleted", what: "image", slug: "demo/_assets/old.png", title: "old.png", href: null },
       ],
     }
   );

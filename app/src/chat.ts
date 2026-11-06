@@ -65,7 +65,7 @@ Delete pages, create or delete spaces, and move or rename things only when the c
 
 ## After writing
 
-As soon as you finish, the app shows the person every page you created or changed, with links. So once you have written pages, do not summarise them, list them, link them or announce that you wrote them. End with no text at all, unless the person needs to know something the pages do not show: an assumption you made, a part you could not verify or left out, or a page filed somewhere they would not expect. Then say it in one or two sentences. Routine choices, such as filing pages in the space they are viewing, are not worth a word.
+As soon as you finish, the app shows the person every page you created or changed, and every image you added or deleted, with links. So once you have written pages or images, do not summarise them, list them, link them or announce that you wrote them. End with no text at all, unless the person needs to know something the pages do not show: an assumption you made, a part you could not verify or left out, or a page filed somewhere they would not expect. Then say it in one or two sentences. Routine choices, such as filing pages in the space they are viewing, are not worth a word.
 
 If the message also asked something the pages do not answer, answer just that part, briefly.
 `;
@@ -603,10 +603,11 @@ export function activityText(name: string, input: Record<string, unknown>): stri
 }
 
 /**
- * The pages a turn changed, from its successful kb25 write calls, one entry
- * per page in the order first touched. A page created and then edited counts
- * as created; one created and then deleted is not reported at all; a move
- * carries the entry (and anything filed under it) to the new slug.
+ * The pages a turn changed, and the images it added or deleted, from its
+ * successful kb25 write calls, one entry each in the order first touched. A
+ * page created and then edited counts as created; a page created, or an image
+ * added, and then deleted is not reported at all; a move carries the entry
+ * (and anything filed under it) to the new slug.
  */
 export function pageChanges(calls: { name: string; input: Record<string, unknown>; result?: { isError: boolean; text: string } }[]): PageChange[] {
   const changes: PageChange[] = [];
@@ -656,6 +657,19 @@ export function pageChanges(calls: { name: string; input: Record<string, unknown
       case "kb_restore_page":
         if (result.restored === true && slug) touch({ kind: "restored", what: "page", slug, title: "" });
         break;
+      case "kb_add_image": {
+        const where = str(result, "path");
+        if (result.added === true && where) changes.push({ kind: "added", what: "image", slug: where, title: lastSegment(where) });
+        break;
+      }
+      case "kb_delete_image": {
+        const where = str(result, "path");
+        if (result.deleted !== true || !where) break;
+        const added = at(where);
+        if (added?.kind === "added") changes.splice(changes.indexOf(added), 1);
+        else changes.push({ kind: "deleted", what: "image", slug: where, title: lastSegment(where) });
+        break;
+      }
       case "kb_delete_page": {
         if (result.deleted !== true || !slug) break;
         const existing = at(slug);
@@ -689,6 +703,10 @@ export function pageChanges(calls: { name: string; input: Record<string, unknown
   return changes;
 }
 
+function lastSegment(slug: string): string {
+  return slug.split("/").pop() || slug;
+}
+
 /** A stored message as the drawer shows it: replies rendered, report entries linked. */
 export type ChatMessageView =
   | { role: "user"; text: string; forcePages: boolean }
@@ -698,13 +716,19 @@ export type ChatMessageView =
 
 /**
  * Turn a stored message into its view. A report is resolved against the KB
- * as it is now, so its links follow pages moved since; a deleted page has no
- * link. `render` is the KB's own Markdown renderer, so wiki-links in a reply
- * resolve as they would on a page.
+ * as it is now, so its links follow pages moved since; a deleted page or
+ * image has no link, and an added image links to its space's gallery
+ * (`gallery`). `render` is the KB's own Markdown renderer, so wiki-links in a
+ * reply resolve as they would on a page.
  */
 export function messageView(
   message: ChatMessage,
-  options: { render: (markdown: string) => string; pages: PageNode[]; href: (slug: string) => string }
+  options: {
+    render: (markdown: string) => string;
+    pages: PageNode[];
+    href: (slug: string) => string;
+    gallery: (spaceKey: string) => string;
+  }
 ): ChatMessageView {
   switch (message.role) {
     case "user":
@@ -716,7 +740,12 @@ export function messageView(
         role: "report",
         changes: resolveChanges(message.changes, options.pages).map((change) => ({
           ...change,
-          href: change.kind === "deleted" ? null : options.href(change.slug),
+          href:
+            change.kind === "deleted"
+              ? null
+              : change.what === "image"
+                ? options.gallery(change.slug.split("/")[0])
+                : options.href(change.slug),
         })),
       };
     case "error":
@@ -728,7 +757,8 @@ export function messageView(
  * Fill in each change's current slug, title and id from the KB as it stands:
  * by id when the change has one (so it follows a later move), else by slug. A
  * deleted page keeps what it had; one that has since vanished keeps its last
- * known slug, with the slug's last segment for a title if it had none.
+ * known slug, with the slug's last segment for a title if it had none. An
+ * image is not a page, so it keeps what the tool reported.
  */
 export function resolveChanges(changes: PageChange[], pages: PageNode[]): PageChange[] {
   const byId = new Map<string, PageNode>();
@@ -738,6 +768,7 @@ export function resolveChanges(changes: PageChange[], pages: PageNode[]): PageCh
     bySlug.set(page.slug, page);
   }
   return changes.map((change) => {
+    if (change.what === "image") return change;
     const node =
       change.kind === "deleted" ? undefined : (change.id ? byId.get(change.id) : undefined) ?? bySlug.get(change.slug);
     if (!node) return { ...change, title: change.title || change.slug.split("/").pop() || change.slug };

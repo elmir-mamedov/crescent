@@ -7,6 +7,7 @@ import type { ChatMessage } from "../chat-store.js";
 import { messageView, type Chat, type ChatMessageView, type RunEvent } from "../chat.js";
 import { flatten } from "../content.js";
 import { createRenderer } from "../markdown.js";
+import { galleryHref } from "../views.js";
 import type { ServerContext } from "./context.js";
 import { pagePath } from "./http.js";
 
@@ -25,7 +26,9 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, cha
       content.tree("all").then(flatten),
     ]);
     const md = createRenderer((s) => titles.get(s), "", (id) => ids.get(id));
-    return messages.map((message) => messageView(message, { render: (text) => md.render(text), pages, href: pagePath }));
+    return messages.map((message) =>
+      messageView(message, { render: (text) => md.render(text), pages, href: pagePath, gallery: galleryHref })
+    );
   }
 
   app.get("/_chat/status", async (req, reply) => {

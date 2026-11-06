@@ -13,13 +13,19 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { EngineId } from "./agent-cli.js";
 
-/** One page (or folder, or space) a turn changed, for the report card. */
+/**
+ * One page (or folder, or space) a turn changed, or one image it added to or
+ * deleted from a space's `_assets`, for the report card.
+ */
 export interface PageChange {
-  kind: "created" | "updated" | "moved" | "renamed" | "archived" | "restored" | "deleted" | "noted";
-  what: "page" | "folder" | "space";
+  kind: "created" | "updated" | "moved" | "renamed" | "archived" | "restored" | "deleted" | "noted" | "added";
+  what: "page" | "folder" | "space" | "image";
   /** Stable page id, when the tool reported one; links resolve through it. */
   id?: string;
-  /** Where it is now — or was, for a deletion. */
+  /**
+   * Where it is now — or was, for a deletion. An image's is its path in the
+   * KB, `<space>/_assets/plot.png`.
+   */
   slug: string;
   title: string;
 }

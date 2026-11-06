@@ -294,9 +294,10 @@ export const CHAT_SCRIPT = `
   const VERBS = {
     created: "Created", updated: "Updated", moved: "Moved", renamed: "Renamed",
     archived: "Archived", restored: "Restored", deleted: "Deleted", noted: "Left a note on",
+    added: "Added",
   };
 
-  // The server's account of what a turn wrote, every page linked.
+  // The server's account of what a turn wrote, every page linked, and an added image to its gallery.
   function reportCard(changes) {
     const card = el("div", "chat-msg chat-report");
     card.append(el("div", "chat-report-head", "Done"));
