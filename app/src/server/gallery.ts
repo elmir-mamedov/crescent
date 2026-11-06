@@ -1,10 +1,10 @@
-/** A space's image gallery, and uploading images to it. */
+/** A space's image gallery: uploading images to it, and deleting them. */
 import type { FastifyInstance } from "fastify";
 import type { SpaceInfo } from "../content.js";
 import { GALLERY_BODY_LIMIT, listImages, uploadRefusal } from "../gallery.js";
-import { galleryLayout, type ViewNotice } from "../views.js";
+import { galleryLayout, notFound, type ViewNotice } from "../views.js";
 import type { ServerContext } from "./context.js";
-import { queryString, queryStrings } from "./http.js";
+import { errorMessage, formString, queryString, queryStrings } from "./http.js";
 
 export async function registerGalleryRoutes(app: FastifyInstance, ctx: ServerContext): Promise<void> {
   const { siteTitle, username, content, writes } = ctx;
@@ -12,12 +12,12 @@ export async function registerGalleryRoutes(app: FastifyInstance, ctx: ServerCon
 
   /**
    * The gallery for one space. `added` names the images just uploaded, which the
-   * grid marks; a name that is no longer there is dropped, so a stale or typed
-   * URL claims nothing.
+   * grid marks, and `deleted` the one just deleted; a name that does not match
+   * what is there is dropped, so a stale or typed URL claims nothing.
    */
   async function renderGallery(
     space: SpaceInfo,
-    options: { added?: string[]; notice?: ViewNotice } = {}
+    options: { added?: string[]; deleted?: string; notice?: ViewNotice } = {}
   ): Promise<string> {
     const filter = space.archived ? "all" : "live";
     const [spaces, { tree, labelSet }, titles, images] = await Promise.all([
@@ -27,9 +27,15 @@ export async function registerGalleryRoutes(app: FastifyInstance, ctx: ServerCon
       listImages(content, space.key),
     ]);
     const added = (options.added ?? []).filter((p) => images.some((image) => image.path === p));
-    const uploaded =
-      added.length === 1 ? `Uploaded ${added[0]}.` : added.length ? `Uploaded ${added.length} images.` : "";
-    const notice = options.notice ?? (uploaded ? ({ tone: "success", text: uploaded } satisfies ViewNotice) : undefined);
+    const deleted = options.deleted && !images.some((image) => image.path === options.deleted) ? options.deleted : "";
+    const done = added.length === 1
+      ? `Uploaded ${added[0]}.`
+      : added.length
+        ? `Uploaded ${added.length} images.`
+        : deleted
+          ? `Deleted ${deleted}.`
+          : "";
+    const notice = options.notice ?? (done ? ({ tone: "success", text: done } satisfies ViewNotice) : undefined);
 
     return galleryLayout({
       siteTitle: siteTitle,
@@ -51,7 +57,45 @@ export async function registerGalleryRoutes(app: FastifyInstance, ctx: ServerCon
     const space = await dashboardSpace(req, reply);
     if (!space) return reply;
     const added = queryStrings(req.query, "added");
-    return reply.type("text/html").send(await renderGallery(space, { added }));
+    const deleted = queryString(req.query, "deleted") ?? undefined;
+    return reply.type("text/html").send(await renderGallery(space, { added, deleted }));
+  });
+
+  /**
+   * Delete one image, from the viewer's Delete. Refused while a page still
+   * links to it, as kb_delete_image is: the gallery comes back naming those
+   * pages, and the image stays.
+   */
+  app.post("/_gallery/delete", async (req, reply) => {
+    reply.header("cache-control", "no-store");
+    const spaceKey = formString(req.body, "space") ?? "";
+    const space = await findSpace(spaceKey);
+    if (!space) {
+      return reply.code(404).type("text/html").send(notFound(siteTitle, spaceKey, await content.spaces(), username));
+    }
+    const image = formString(req.body, "image") ?? "";
+    const refuse = async (code: number, text: string) =>
+      reply.code(code).type("text/html").send(await renderGallery(space, { notice: { tone: "error", text } }));
+
+    let written: Awaited<ReturnType<typeof writes.deleteImage>>;
+    try {
+      written = image ? await writes.deleteImage(space.key, image) : null;
+    } catch (err) {
+      return refuse(400, errorMessage(err));
+    }
+    if (!written) return refuse(404, `There is no image _assets/${image} in this space.`);
+
+    const { mutation, commitError } = written;
+    if (mutation.linkedFrom.length) {
+      const pages = mutation.linkedFrom.map((page) => `“${page.title}” (${page.slug || "home page"})`);
+      const list = pages.length === 1 ? pages[0] : `${pages.slice(0, -1).join(", ")} and ${pages[pages.length - 1]}`;
+      const them = pages.length === 1 ? "that page" : "those pages";
+      return refuse(409, `Not deleted: ${mutation.path} is still on ${list}. Take it off ${them} first.`);
+    }
+    if (commitError) return refuse(500, `Deleted, but Git commit failed: ${commitError}`);
+
+    const query = new URLSearchParams({ space: space.key, deleted: mutation.path });
+    return reply.redirect(`/_gallery?${query}`, 303);
   });
 
   // An upload is an ordinary multipart form, read with the platform's own

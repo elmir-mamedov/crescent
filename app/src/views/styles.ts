@@ -1204,7 +1204,11 @@ html.has-find.has-tabs .toc{padding-top:58px}
 .gallery-viewer .help-head h2{font-size:15px; margin:0; padding:0; border:0; overflow-wrap:anywhere}
 .gallery-viewer-frame{display:flex; justify-content:center; padding:16px 20px 0}
 .prose .gallery-viewer-frame img{max-width:100%; max-height:72vh; object-fit:contain}
-.gallery-viewer-meta{margin:0; padding:12px 20px 16px; color:var(--muted); font-size:13px; overflow-wrap:anywhere}
+.gallery-viewer-foot{display:flex; align-items:center; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; padding:12px 20px 16px}
+.gallery-viewer-meta{margin:0; flex:1 1 200px; min-width:0; color:var(--muted); font-size:13px; overflow-wrap:anywhere}
+.gallery-delete{flex:0 0 auto; margin:0}
+.gallery-delete-confirm{display:inline-flex; align-items:center; gap:8px; color:var(--fg-secondary); font-size:13px}
+.gallery-delete [hidden]{display:none}
 /* Labels. A chip or dot reads its colours from --lc-*, which default to grey
    and are repointed by the data-label-color rule that follows. Chips wrap
    rather than nowrap: nowrap text inside .content widens the whole page. */

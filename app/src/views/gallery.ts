@@ -5,8 +5,8 @@ import { escapeHtml, galleryHref } from "./html.js";
 import { layout, type ViewNotice } from "./page.js";
 
 /**
- * A space's image gallery. gallery.ts on the server lists the images and takes
- * the uploads.
+ * A space's image gallery. gallery.ts on the server lists the images, takes
+ * the uploads and deletes them.
  */
 
 export interface GalleryView {
@@ -44,6 +44,8 @@ function assetHref(spaceKey: string, rel: string): string {
  * A thumbnail is a link to the image itself, so it opens with scripts off;
  * GALLERY_SCRIPT shows it in a dialog instead, which keeps a desktop window
  * on the gallery. The upload is a plain multipart form for the same reason.
+ * The dialog is also where an image is deleted, after a second click that
+ * confirms it; the server refuses while a page still links to the image.
  */
 export function galleryLayout(v: GalleryView): string {
   const added = new Set(v.added ?? []);
@@ -51,11 +53,12 @@ export function galleryLayout(v: GalleryView): string {
   const tiles = v.images
     .map((image) => {
       const href = escapeHtml(assetHref(v.spaceKey, image.path));
+      const rel = escapeHtml(image.path);
       const ref = escapeHtml(`_assets/${image.path}`);
       const name = escapeHtml(image.path.split("/").pop() ?? image.path);
       const size = escapeHtml(formatSize(image.size));
       return `<li class="gallery-item${added.has(image.path) ? " is-new" : ""}">
-      <a class="gallery-thumb" href="${href}" data-gallery-open data-name="${name}" data-ref="${ref}" data-size="${size}" aria-label="View ${name}">
+      <a class="gallery-thumb" href="${href}" data-gallery-open data-name="${name}" data-path="${rel}" data-ref="${ref}" data-size="${size}" aria-label="View ${name}">
         <img src="${href}" alt="" loading="lazy" decoding="async" />
       </a>
       <code class="gallery-ref" title="${ref}">${ref}</code>
@@ -99,7 +102,19 @@ export function galleryLayout(v: GalleryView): string {
     <button class="help-close" aria-label="Close" value="close">&times;</button>
   </form>
   <div class="gallery-viewer-frame"><img data-gallery-viewer-img alt="" /></div>
-  <p class="gallery-viewer-meta"><code data-gallery-viewer-ref></code> · <span data-gallery-viewer-size></span></p>
+  <div class="gallery-viewer-foot">
+    <p class="gallery-viewer-meta"><code data-gallery-viewer-ref></code> · <span data-gallery-viewer-size></span></p>
+    <form class="gallery-delete" method="post" action="/_gallery/delete" data-gallery-delete>
+      <input type="hidden" name="space" value="${escapeHtml(v.spaceKey)}" />
+      <input type="hidden" name="image" value="" data-gallery-delete-image />
+      <button type="button" class="button danger" data-gallery-delete-ask>Delete</button>
+      <span class="gallery-delete-confirm" data-gallery-delete-confirm hidden>
+        <span>Delete this image?</span>
+        <button type="button" class="button secondary" data-gallery-delete-cancel>Cancel</button>
+        <button type="submit" class="button danger" data-gallery-delete-submit>Delete</button>
+      </span>
+    </form>
+  </div>
 </dialog>
 <script>${GALLERY_SCRIPT}</script>`,
     notice: v.notice,
@@ -133,6 +148,24 @@ const GALLERY_SCRIPT = `
   const name = viewer.querySelector("[data-gallery-viewer-name]");
   const ref = viewer.querySelector("[data-gallery-viewer-ref]");
   const size = viewer.querySelector("[data-gallery-viewer-size]");
+  const remove = viewer.querySelector("[data-gallery-delete]");
+  const removeImage = remove.querySelector("[data-gallery-delete-image]");
+  const ask = remove.querySelector("[data-gallery-delete-ask]");
+  const confirm = remove.querySelector("[data-gallery-delete-confirm]");
+  const cancel = remove.querySelector("[data-gallery-delete-cancel]");
+  const submit = remove.querySelector("[data-gallery-delete-submit]");
+  // Delete asks first: the first click swaps it for the question, Cancel swaps back.
+  const asking = (on) => {
+    ask.hidden = on;
+    confirm.hidden = !on;
+    (on ? cancel : ask).focus();
+  };
+  ask.addEventListener("click", () => asking(true));
+  cancel.addEventListener("click", () => asking(false));
+  remove.addEventListener("submit", () => {
+    submit.disabled = true;
+    submit.textContent = "Deleting…";
+  });
   document.addEventListener("click", (event) => {
     const link = event.target instanceof Element ? event.target.closest("[data-gallery-open]") : null;
     if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -141,6 +174,9 @@ const GALLERY_SCRIPT = `
     name.textContent = link.dataset.name || "";
     ref.textContent = link.dataset.ref || "";
     size.textContent = link.dataset.size || "";
+    removeImage.value = link.dataset.path || "";
+    ask.hidden = false;
+    confirm.hidden = true;
     viewer.showModal();
     // Not its close button, which would wear a focus ring until clicked away.
     viewer.focus();

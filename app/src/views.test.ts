@@ -1219,6 +1219,24 @@ test("gallery: just-uploaded images are marked, and an empty space says so", () 
   assert.doesNotMatch(empty, /class="gallery-grid"/);
 });
 
+test("gallery: the viewer deletes the image it shows, asking first", () => {
+  const html = galleryLayout(
+    galleryView({ spaceKey: "a&b", images: [{ path: `diagrams/"x".png`, size: 1, modified: 0 }] })
+  );
+  // Each thumbnail carries the image's path inside _assets, which the script puts in the form.
+  assert.match(html, /data-gallery-open data-name="&quot;x&quot;\.png" data-path="diagrams\/&quot;x&quot;\.png"/);
+  assert.match(html, /<form class="gallery-delete" method="post" action="\/_gallery\/delete" data-gallery-delete>/);
+  assert.match(html, /<input type="hidden" name="space" value="a&amp;b" \/>/);
+  assert.match(html, /<input type="hidden" name="image" value="" data-gallery-delete-image \/>/);
+  // The first Delete only asks; the one that submits waits, hidden, behind the question.
+  assert.match(html, /<button type="button" class="button danger" data-gallery-delete-ask>Delete<\/button>/);
+  assert.match(
+    html,
+    /<span class="gallery-delete-confirm" data-gallery-delete-confirm hidden>[\s\S]*?<button type="submit" class="button danger" data-gallery-delete-submit>Delete<\/button>/
+  );
+  assert.match(html, /removeImage\.value = link\.dataset\.path \|\| "";/);
+});
+
 test("dashboard: the space key is URL-encoded, not pasted into the href raw", () => {
   const html = layout(pageView({ spaceKey: "a b&c" }));
   assert.match(html, /href="\/_dashboard\?space=a%20b%26c"/);
