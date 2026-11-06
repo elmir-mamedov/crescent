@@ -2597,8 +2597,8 @@ test("views: the chat drawer is dark whichever theme the page is in", () => {
   const html = layout(pageView());
   // It wears the dark theme's own colours, the native pickers' scheme with them.
   assert.match(html, /\.chat-drawer\{\s*color-scheme:dark;\s*--bg:#0d1117;[^}]*--surface:#161b22;/);
-  // On a dark of its own, between the dark sidebar's and the panel grey.
-  assert.match(html, /\.chat-drawer\{[^}]*--surface:#161b22;[^}]*--surface:#10141b;/);
+  // On the dark theme's own panel grey, with no darker shade of its own.
+  assert.doesNotMatch(html, /\.chat-drawer\{[^}]*--surface:#161b22;[^}]*--surface:/);
   assert.match(html, /\.chat-drawer \.prose img\{background:#f0f3f6/);
 });
 
