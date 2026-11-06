@@ -778,6 +778,57 @@ server.registerTool(
 );
 
 server.registerTool(
+  "kb_delete_image",
+  {
+    title: "Delete KB Image",
+    description:
+      "Permanently delete an image from a space's `_assets` folder. Refused while any page, archived ones included, still links to it: the refusal names those pages, so take the image off them with kb_update_page first, then delete it. Undone only through Git history.",
+    inputSchema: {
+      space: z.string().min(1).describe("Key of the space the image is in, e.g. kb25."),
+      link: z
+        .string()
+        .min(1)
+        .describe("The image's link as that space's pages write it, e.g. `_assets/plot.png` (what kb_add_image returned)."),
+      spaceInstructionsToken: instructionTokenSchema,
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({ space, link, spaceInstructionsToken }) => {
+    const spaceKey = content.spaceKeyOf(space);
+    const rel = /^_assets\/(.+)$/.exec(link.trim())?.[1];
+    if (!rel) return errorResult(`Give the image's link as a page writes it, starting with _assets/ (e.g. _assets/plot.png), not ${link}.`);
+
+    const gate = await gateWrite(spaceKey, spaceInstructionsToken);
+    if (gate) return gate;
+
+    try {
+      const written = await writes.deleteImage(spaceKey, rel);
+      if (!written) return errorResult(`There is no image at _assets/${rel} in the space "${spaceKey}".`);
+      const { mutation } = written;
+      if (mutation.linkedFrom.length) {
+        const pages = mutation.linkedFrom.map((page) => `${page.slug || "(home page)"} (${page.title})`).join(", ");
+        return errorResult(
+          `Not deleted: _assets/${mutation.path} is still linked from ${pages}. Take it off ${mutation.linkedFrom.length === 1 ? "that page" : "those pages"} with kb_update_page first, then delete it.`
+        );
+      }
+      return textResult({
+        deleted: true,
+        link: `_assets/${mutation.path}`,
+        path: git.kbRelPath(mutation.fsPath),
+        ...commitFields(written),
+        ...(await writeToken(spaceKey)),
+      });
+    } catch (err) {
+      return errorResult(errorMessage(err));
+    }
+  }
+);
+
+server.registerTool(
   "kb_rename_folder",
   {
     title: "Rename KB Folder",

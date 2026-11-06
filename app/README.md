@@ -178,6 +178,8 @@ Write tools (auto-commit to Git):
 - `kb_update_page` — replace a page's full raw Markdown (frontmatter validated).
 - `kb_add_image` — copy an image file on this machine (an absolute `file` path)
   into a space's `_assets/` and return the `_assets/…` link a page shows it by.
+- `kb_delete_image` — delete an image from a space's `_assets/` by that link.
+  Refuses while any page still links to it, and names those pages.
 - `kb_add_agent_note` — leave a pink note on the block containing a quoted
   passage. Refuses a quote it cannot find, or finds in more than one block.
 - `kb_resolve_agent_note` — take back one of those notes by id. Agent notes only;

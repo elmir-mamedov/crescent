@@ -11,7 +11,8 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { Content } from "./content.js";
+import { flatten, type Content } from "./content.js";
+import { mapWithConcurrency } from "./search.js";
 
 /**
  * What the gallery counts as an image. The raster formats every browser
@@ -54,6 +55,17 @@ export interface GalleryImage {
 export interface SavedImage {
   path: string;
   fsPath: string;
+}
+
+/** A page that links to an image, so deleting the image would break it. */
+export interface ImageLink {
+  slug: string;
+  title: string;
+}
+
+export interface ImageDeletion extends SavedImage {
+  /** Pages that still link to the image. When there are any, nothing was deleted. */
+  linkedFrom: ImageLink[];
 }
 
 export function isImageName(name: string): boolean {
@@ -170,6 +182,55 @@ export async function readImageFile(filePath: string): Promise<File> {
     throw new Error(`${name} is over ${GALLERY_BODY_LIMIT / 1024 / 1024} MB, too big to add.`);
   }
   return new File([await fs.readFile(filePath)], name);
+}
+
+/**
+ * Every page, archived ones included, whose source links to the image at
+ * `<space>/_assets/<rel>`. A page of that space links to it as
+ * `_assets/<rel>`, a page of any space as `/<space>/_assets/<rel>`; either
+ * form may be URL-encoded.
+ *
+ * This reads the source as text rather than as rendered Markdown, so a
+ * reference definition, a note's link and a mention in a code block all
+ * count. A page is kept from losing an image it shows at the price of now and
+ * then holding on to one it only names. Case is ignored, because the file
+ * systems of macOS and Windows ignore it when the image is served.
+ */
+export async function pagesLinkingTo(content: Content, spaceKey: string, rel: string): Promise<ImageLink[]> {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const plain = rel.normalize("NFC");
+  const names = [...new Set([plain, encodeURI(plain)])].map(escape).join("|");
+  // Not inside a longer name on either side: `my_assets/…` and `plot.png.bak` are other files.
+  const end = String.raw`(?![\w-]|\.\w)`;
+  const ownSpace = new RegExp(String.raw`(?<![\w-])_assets/(?:${names})${end}`, "iu");
+  const anySpace = new RegExp(String.raw`/${escape(spaceKey)}/_assets/(?:${names})${end}`, "iu");
+
+  // The KB's home page, when it has one, sits above every space and is not in the tree.
+  const pages = [{ slug: "", title: "Home" }, ...flatten(await content.tree("all"))];
+  const linking = await mapWithConcurrency(pages, 32, async ({ slug, title }) => {
+    const page = await content.loadRaw(slug);
+    if (!page) return null;
+    const pattern = slug && content.spaceKeyOf(slug) === spaceKey ? ownSpace : anySpace;
+    return pattern.test(page.raw.normalize("NFC")) ? { slug, title } : null;
+  });
+  return linking.filter((link): link is ImageLink => link !== null);
+}
+
+/**
+ * Delete the image at `<space>/_assets/<rel>`, unless a page still links to
+ * it: then nothing is deleted, and `linkedFrom` names the pages to take it off
+ * first. Null when there is no such image. The caller commits the returned
+ * `fsPath` once it is deleted.
+ */
+export async function deleteImage(content: Content, spaceKey: string, rel: string): Promise<ImageDeletion | null> {
+  const fsPath = await content.resolveAsset(spaceKey, rel);
+  if (!fsPath) return null;
+  if (!isImageName(fsPath)) throw new Error(`_assets/${rel} is not an image (${IMAGE_FORMATS}).`);
+
+  const inAssets = rel.split(/[\\/]/).filter(Boolean).join("/");
+  const linkedFrom = await pagesLinkingTo(content, spaceKey, inAssets);
+  if (!linkedFrom.length) await fs.rm(fsPath);
+  return { path: inAssets, fsPath, linkedFrom };
 }
 
 /**

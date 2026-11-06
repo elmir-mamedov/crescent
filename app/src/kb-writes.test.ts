@@ -191,3 +191,24 @@ test("addImages commits an image read from disk, and a second copy under a name 
     assert.equal(await git(repo, "status", "--porcelain"), "");
   });
 });
+
+test("deleteImage commits the deletion, and commits nothing while a page links to the image", async () => {
+  await withSpace(async ({ kb, writes, repo }) => {
+    const source = path.join(kb.dir, "plot.png");
+    await fs.writeFile(source, new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    await writes.addImages("docs", [await readImageFile(source)]);
+    await writes.createPage("docs", "Results", "![Plot](_assets/plot.png)");
+
+    const kept = await writes.deleteImage("docs", "plot.png");
+    assert.equal(kept?.commit, null);
+    assert.deepEqual(kept?.mutation.linkedFrom.map((page) => page.slug), ["docs/results"]);
+    assert.equal((await subjects(repo))[0], "Create docs/results.md via test");
+
+    await writes.updatePage("docs/results", "---\ntitle: Results\n---\nNo plot any more.\n");
+    const deleted = await writes.deleteImage("docs", "plot.png");
+    assert.ok(deleted?.commit);
+    assert.equal((await subjects(repo))[0], "Delete docs/_assets/plot.png via test");
+    assert.equal(await git(repo, "status", "--porcelain"), "");
+    assert.equal(await writes.deleteImage("docs", "plot.png"), null);
+  });
+});

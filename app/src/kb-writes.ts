@@ -25,7 +25,7 @@ import type {
   RenameSpaceMutation,
   ReorderMutation,
 } from "./content.js";
-import { saveImage, type SavedImage } from "./gallery.js";
+import { deleteImage, saveImage, type ImageDeletion, type SavedImage } from "./gallery.js";
 import type { Git } from "./git.js";
 import {
   applyPageLabels,
@@ -349,6 +349,18 @@ export function makeKbWrites({ content, git, via }: KbWritesDeps) {
           ? `Add ${git.kbRelPath(saved[0].fsPath)}`
           : `Add ${saved.length} images to ${spaceKey}/_assets`;
       return record({ saved, saveError }, saved.map((image) => image.fsPath), subject);
+    },
+
+    /**
+     * Delete an image from a space's `_assets/`, unless a page still links to
+     * it (`linkedFrom`), which deletes and commits nothing. Null when there is
+     * no such image.
+     */
+    async deleteImage(spaceKey: string, rel: string): Promise<Written<ImageDeletion> | null> {
+      const mutation = await deleteImage(content, spaceKey, rel);
+      if (!mutation) return null;
+      if (mutation.linkedFrom.length) return { mutation, commit: null };
+      return record(mutation, [mutation.fsPath], `Delete ${git.kbRelPath(mutation.fsPath)}`);
     },
   };
 }

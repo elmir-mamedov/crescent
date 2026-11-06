@@ -580,6 +580,8 @@ export function activityText(name: string, input: Record<string, unknown>): stri
       return `Creating the space ${quoted(str("title"))}…`;
     case `${KB}kb_add_image`:
       return `Adding the image ${quoted(str("file").split(/[\\/]/).pop() ?? "")}…`;
+    case `${KB}kb_delete_image`:
+      return `Deleting the image ${quoted(str("link").split("/").pop() ?? "")}…`;
     case `${KB}kb_update_page`:
       return `Updating ${str("slug")}…`;
     case `${KB}kb_add_agent_note`:

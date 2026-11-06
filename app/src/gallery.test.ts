@@ -5,9 +5,11 @@ import path from "node:path";
 import { Content } from "./content.js";
 import {
   GALLERY_BODY_LIMIT,
+  deleteImage,
   imageFileName,
   isImageName,
   listImages,
+  pagesLinkingTo,
   readImageFile,
   saveImage,
   uploadRefusal,
@@ -254,5 +256,99 @@ test("readImageFile: refuses a symbolic link, even to an image", async (t) => {
     const link = path.join(kb.dir, "link.png");
     if (!(await trySymlink(target, link, "file"))) return t.skip("this system makes no file links");
     await assert.rejects(readImageFile(link), /not a plain file/);
+  });
+});
+
+/** The slugs of the pages linking to `docs/_assets/<rel>`, in order. */
+async function linking(content: Content, rel: string): Promise<string[]> {
+  return (await pagesLinkingTo(content, "docs", rel)).map((page) => page.slug).sort();
+}
+
+test("pagesLinkingTo: every way a page links to the image, archived pages included", async () => {
+  await withSpace(async ({ content }) => {
+    await content.createSpace("Other");
+    const forms: Record<string, string> = {
+      Inline: "![Plot](_assets/plot.png)",
+      Sized: "![Plot](_assets/PLOT.png =600x)",
+      Reference: "![Plot][p]\n\n[p]: _assets/plot.png",
+      Download: "[the plot](_assets/plot.png).",
+      Absolute: "![Plot](/docs/_assets/plot.png)",
+    };
+    for (const [title, body] of Object.entries(forms)) await content.createPage("docs", title, body);
+    await content.createPage("other", "Elsewhere", "![Plot](/docs/_assets/plot.png)");
+    await content.createPage("docs", "Shelved", "![Plot](_assets/plot.png)");
+    await content.updateArchive("docs/shelved", true);
+    assert.deepEqual(await linking(content, "plot.png"), [
+      "docs/absolute",
+      "docs/download",
+      "docs/inline",
+      "docs/reference",
+      "docs/shelved",
+      "docs/sized",
+      "other/elsewhere",
+    ]);
+  });
+});
+
+test("pagesLinkingTo: other files and other spaces' images do not count", async () => {
+  await withSpace(async ({ content }) => {
+    await content.createSpace("Other");
+    await content.createPage("docs", "Near", "![](_assets/plot-2.png) ![](_assets/plot.png.bak) ![](my_assets/plot.png) ![](_assets/old/plot.png)");
+    await content.createPage("other", "Own", "![Its own plot](_assets/plot.png) ![](/other/_assets/plot.png)");
+    assert.deepEqual(await linking(content, "plot.png"), []);
+  });
+});
+
+test("pagesLinkingTo: a name with spaces counts written plain or URL-encoded", async () => {
+  await withSpace(async ({ content }) => {
+    await content.createPage("docs", "Plain", "![](<_assets/my plot.png>)");
+    await content.createPage("docs", "Encoded", "![](_assets/my%20plot.png)");
+    assert.deepEqual(await linking(content, "my plot.png"), ["docs/encoded", "docs/plain"]);
+  });
+});
+
+test("deleteImage: deletes an image no page links to", async () => {
+  await withSpace(async ({ content, assets }) => {
+    await saveImage(content, "docs", { name: "plot.png", type: "image/png" }, PNG);
+    const deleted = await deleteImage(content, "docs", "plot.png");
+    assert.deepEqual(deleted && { path: deleted.path, linkedFrom: deleted.linkedFrom }, { path: "plot.png", linkedFrom: [] });
+    await assert.rejects(fs.access(path.join(assets, "plot.png")));
+  });
+});
+
+test("deleteImage: keeps an image a page still links to, and names the page", async () => {
+  await withSpace(async ({ content, assets }) => {
+    await saveImage(content, "docs", { name: "plot.png", type: "image/png" }, PNG);
+    await content.createPage("docs", "Results", "![Plot](_assets/plot.png)");
+    const kept = await deleteImage(content, "docs", "plot.png");
+    assert.deepEqual(kept?.linkedFrom, [{ slug: "docs/results", title: "Results" }]);
+    await fs.access(path.join(assets, "plot.png"));
+  });
+});
+
+test("deleteImage: null for no such image; refuses a file that is not an image", async () => {
+  await withSpace(async ({ content, assets }) => {
+    assert.equal(await deleteImage(content, "docs", "missing.png"), null);
+    assert.equal(await deleteImage(content, "docs", "../index.md"), null);
+    await fs.mkdir(assets, { recursive: true });
+    await fs.writeFile(path.join(assets, "budget.pdf"), "%PDF");
+    await assert.rejects(deleteImage(content, "docs", "budget.pdf"), /not an image/);
+    await fs.access(path.join(assets, "budget.pdf"));
+  });
+});
+
+test("deleteImage: a link in _assets is neither deleted nor followed", async (t) => {
+  await withSpace(async ({ kb, content, assets }) => {
+    const outside = path.join(kb.dir, "..", `${path.basename(kb.dir)}-outside.png`);
+    await fs.writeFile(outside, PNG);
+    try {
+      await fs.mkdir(assets, { recursive: true });
+      if (!(await trySymlink(outside, path.join(assets, "a.png"), "file"))) return t.skip("this system makes no file links");
+      assert.equal(await deleteImage(content, "docs", "a.png"), null);
+      await fs.access(outside);
+      await fs.lstat(path.join(assets, "a.png"));
+    } finally {
+      await fs.rm(outside, { force: true });
+    }
   });
 });
