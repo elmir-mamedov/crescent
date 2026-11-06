@@ -14,6 +14,7 @@
  * so its own text after a write is only ever a caveat.
  */
 import type { PageNode } from "./content.js";
+import { IMAGE_FORMATS, imageFileName } from "./gallery.js";
 import {
   isEffortName,
   isModelName,
@@ -30,6 +31,7 @@ import {
   type ChatMessage,
   type ChatStore,
   type ChatThread,
+  type IncomingImage,
   type PageChange,
   type ThreadSummary,
 } from "./chat-store.js";
@@ -41,9 +43,9 @@ import {
  */
 export const CHAT_PROMPT = `# Crescent chat
 
-You are the assistant in the chat drawer of Crescent, a personal knowledge base of Markdown pages. The person is talking to you from inside the app while they read it. The kb25 tools give you read and write access to the knowledge base, and web search and fetch let you check facts. You have no other tools: no shell and no local files. Reply in the language the person writes in.
+You are the assistant in the chat drawer of Crescent, a personal knowledge base of Markdown pages. The person is talking to you from inside the app while they read it. The kb25 tools give you read and write access to the knowledge base, and web search and fetch let you check facts. You have no other tools: no shell, and no files on this computer but the images the person attaches to a message. Reply in the language the person writes in.
 
-Each message starts with a <kb25-context> block, written by the app rather than the person, saying which page they are viewing and whether they switched on "Write to KB".
+Each message starts with a <kb25-context> block, written by the app rather than the person, saying which page they are viewing and whether they switched on "Write to KB". A message the person attached images to also has a <kb25-attachments> block, giving the path of each. To put one on a page, add it to the page's space with kb_add_image and that path. When they want some other file of theirs, ask them to attach it, with the paperclip under the message box or by dropping it onto the chat; only images can be attached.
 
 ## Chat or pages
 
@@ -110,7 +112,7 @@ const MODELS_TTL_MS = 60 * 60 * 1000;
 
 export type SendOutcome =
   | { ok: true; thread: ChatThread }
-  | { ok: false; status: 400 | 409 | 503; error: string; engine?: EngineState };
+  | { ok: false; status: 400 | 409 | 500 | 503; error: string; engine?: EngineState };
 
 export interface ChatDeps {
   store: ChatStore;
@@ -151,8 +153,10 @@ export interface Chat {
   subscribe(id: string, listener: (event: RunEvent) => void): (() => void) | null;
   /** False when nothing was running. */
   stop(id: string): boolean;
-  /** Delete a thread that is not running. */
+  /** Delete a thread that is not running, and the images attached to it. */
   remove(id: string): Promise<boolean>;
+  /** Where an image attached to one of a thread's messages is, or null. */
+  imageFile(id: string, name: string): Promise<string | null>;
   activeCount(): number;
   /** Called each time the last running turn finishes. */
   onIdle(listener: () => void): void;
@@ -168,10 +172,39 @@ export interface SendInput {
   /** The model and effort level to run with; the engine's own default when absent. */
   model?: string;
   effort?: string;
+  /** Images attached to the message, kept with the thread. */
+  images?: IncomingImage[];
 }
 
 /** Long enough for a pasted article, short of a runaway paste. */
 export const MAX_MESSAGE_LENGTH = 50_000;
+
+/** The most images one message may carry. */
+export const MAX_IMAGES = 10;
+
+/**
+ * The largest copy of an image shown to the model. It goes base64-encoded,
+ * which grows it by a third, and Claude takes no image over 5 MB.
+ */
+const MAX_VIEW_BYTES = 3_500_000;
+
+/** Why a message's images are refused, or null when they can all be attached. */
+export function imagesRefusal(images: readonly IncomingImage[]): string | null {
+  if (images.length > MAX_IMAGES) return `Attach at most ${MAX_IMAGES} images to one message.`;
+  const notImages = images.filter((image) => imageFileName(image.name, image.type) === null);
+  if (notImages.length) {
+    const names = notImages.map((image) => image.name || "a file with no name").join(", ");
+    return `Only images can be attached (${IMAGE_FORMATS}); ${names} ${notImages.length === 1 ? "is not one" : "are not"}.`;
+  }
+  const empty = images.find((image) => image.bytes.length === 0);
+  return empty ? `${empty.name || "An image"} is empty.` : null;
+}
+
+/** The model's copy of an image, when it is one it can be shown: a JPEG small enough to send. */
+function usableView(view: Uint8Array | undefined): Uint8Array | undefined {
+  const jpeg = !!view && view[0] === 0xff && view[1] === 0xd8 && view[2] === 0xff;
+  return jpeg && view.length <= MAX_VIEW_BYTES ? view : undefined;
+}
 
 interface ToolCall {
   name: string;
@@ -258,8 +291,11 @@ export function makeChat(deps: ChatDeps): Chat {
   async function send(id: string, input: SendInput): Promise<SendOutcome> {
     if (!isThreadId(id)) return { ok: false, status: 400, error: "Not a thread id." };
     const text = input.text.trim();
-    if (!text) return { ok: false, status: 400, error: "The message is empty." };
+    const images = input.images ?? [];
+    if (!text && !images.length) return { ok: false, status: 400, error: "The message is empty." };
     if (text.length > MAX_MESSAGE_LENGTH) return { ok: false, status: 400, error: "The message is too long." };
+    const refusal = imagesRefusal(images);
+    if (refusal) return { ok: false, status: 400, error: refusal };
     if (input.model !== undefined && !isModelName(input.model)) {
       return { ok: false, status: 400, error: "Not a model name." };
     }
@@ -279,13 +315,21 @@ export function makeChat(deps: ChatDeps): Chat {
         engine: { id: engine.id, name: engine.name, status: ready },
       };
     }
-    // Checked again: the status check above can take a moment.
+    // Saved before the turn starts, so it can name where they are. Should a
+    // second message slip in meanwhile, its images stay with the thread unused.
+    let imageNames: string[] = [];
+    try {
+      imageNames = await deps.store.saveImages(id, images.map((image) => ({ ...image, view: usableView(image.view) })));
+    } catch (err) {
+      return { ok: false, status: 500, error: `Could not save the images: ${errorText(err)}` };
+    }
+    // Checked again: the status check and the saving above can take a moment.
     if (runs.has(id)) return { ok: false, status: 409, error: "This chat is still answering." };
 
     const at = now();
     const thread: ChatThread = existing ?? {
       id,
-      title: threadTitle(text),
+      title: threadTitle(text || images.map((image) => image.name).join(", ")),
       createdAt: at,
       updatedAt: at,
       engine: engine.id,
@@ -297,6 +341,7 @@ export function makeChat(deps: ChatDeps): Chat {
       at,
       forcePages: input.forcePages,
       ...(input.slug && { slug: input.slug }),
+      ...(imageNames.length && { images: imageNames }),
     };
     thread.messages.push(userMessage);
     thread.updatedAt = at;
@@ -322,8 +367,25 @@ export function makeChat(deps: ChatDeps): Chat {
     void (async () => {
       try {
         const pages = await deps.pages();
-        const prompt = `${contextBlock(input.slug, input.forcePages, pages)}\n\n${text}`;
-        const outcome = await runTurn(engine, thread, run, ready.path, prompt, input, (sessionId) => {
+        const attached = await Promise.all(
+          imageNames.map(async (name) => {
+            const view = await deps.store.imageView(id, name);
+            return { file: (await deps.store.imageFile(id, name)) ?? name, view: view && (engine.canShow?.(view) ?? true) ? view : null };
+          })
+        );
+        const prompt = [
+          contextBlock(input.slug, input.forcePages, pages),
+          attachmentsBlock(attached.map(({ file, view }) => ({ file, shown: !!view }))),
+          text,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+        const choice = {
+          model: input.model,
+          effort: input.effort,
+          images: attached.flatMap(({ view }) => (view ? [view] : [])),
+        };
+        const outcome = await runTurn(engine, thread, run, ready.path, prompt, choice, (sessionId) => {
           if (sessionId && thread.sessionId !== sessionId) {
             thread.sessionId = sessionId;
             save();
@@ -362,7 +424,7 @@ export function makeChat(deps: ChatDeps): Chat {
     run: Run,
     programPath: string,
     prompt: string,
-    choice: { model?: string; effort?: string },
+    choice: { model?: string; effort?: string; images?: string[] },
     onStarted: (sessionId: string) => void
   ): Promise<TurnOutcome> {
     const attempt = async (sessionId: string | undefined): Promise<TurnOutcome> => {
@@ -379,6 +441,7 @@ export function makeChat(deps: ChatDeps): Chat {
         model: choice.model,
         effort: choice.effort,
         text: prompt,
+        images: choice.images,
         onEvent: (event: AgentEvent) => {
           switch (event.type) {
             case "init":
@@ -457,6 +520,7 @@ export function makeChat(deps: ChatDeps): Chat {
       if (runs.has(id)) return false;
       return deps.store.remove(id);
     },
+    imageFile: (id, name) => deps.store.imageFile(id, name),
     activeCount: () => runs.size,
     onIdle(listener) {
       idleListeners.push(listener);
@@ -517,6 +581,19 @@ function finishMessages(
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * What the agent is told about the images attached to a message: where each
+ * one is, so it can put it on a page with kb_add_image, and which it was not
+ * shown (one the browser could not copy for it, or the engine cannot show).
+ * Empty when there are none.
+ */
+export function attachmentsBlock(images: readonly { file: string; shown: boolean }[]): string {
+  if (!images.length) return "";
+  const lines = images.map(({ file, shown }) => `- ${file}${shown ? "" : " (not shown to you: you have only its path)"}`);
+  const these = images.length === 1 ? "this image" : "these images";
+  return `<kb25-attachments>\nThe person attached ${these} to the message. To put one on a page, add it to the page's space with kb_add_image and its path here, then link what that returns.\n${lines.join("\n")}\n</kb25-attachments>`;
 }
 
 /**
@@ -709,7 +786,7 @@ function lastSegment(slug: string): string {
 
 /** A stored message as the drawer shows it: replies rendered, report entries linked. */
 export type ChatMessageView =
-  | { role: "user"; text: string; forcePages: boolean }
+  | { role: "user"; text: string; forcePages: boolean; images?: { name: string; href: string }[] }
   | { role: "assistant"; html: string }
   | { role: "report"; changes: (PageChange & { href: string | null })[] }
   | { role: "error"; text: string };
@@ -718,8 +795,9 @@ export type ChatMessageView =
  * Turn a stored message into its view. A report is resolved against the KB
  * as it is now, so its links follow pages moved since; a deleted page or
  * image has no link, and an added image links to its space's gallery
- * (`gallery`). `render` is the KB's own Markdown renderer, so wiki-links in a
- * reply resolve as they would on a page.
+ * (`gallery`). A message's attached images are linked where `image` serves
+ * them. `render` is the KB's own Markdown renderer, so wiki-links in a reply
+ * resolve as they would on a page.
  */
 export function messageView(
   message: ChatMessage,
@@ -728,11 +806,18 @@ export function messageView(
     pages: PageNode[];
     href: (slug: string) => string;
     gallery: (spaceKey: string) => string;
+    /** Where an image attached to a message of this thread is served. */
+    image: (name: string) => string;
   }
 ): ChatMessageView {
   switch (message.role) {
     case "user":
-      return { role: "user", text: message.text, forcePages: message.forcePages };
+      return {
+        role: "user",
+        text: message.text,
+        forcePages: message.forcePages,
+        ...(message.images?.length && { images: message.images.map((name) => ({ name, href: options.image(name) })) }),
+      };
     case "assistant":
       return { role: "assistant", html: options.render(message.text) };
     case "report":

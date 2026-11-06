@@ -1445,6 +1445,24 @@ body.chat-open .tab-strip{right:400px}
 .chat-msg{font-size:14px; line-height:1.55; overflow-wrap:anywhere}
 .chat-user{align-self:flex-end; max-width:85%; padding:8px 12px; border-radius:12px; background:var(--active-bg)}
 .chat-user-text{white-space:pre-wrap}
+.chat-user-images{display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 4px}
+.chat-user-images:last-child{margin-bottom:2px}
+.chat-user-images a{display:block; border-radius:8px; overflow:hidden; background:var(--surface)}
+.chat-user-images img{display:block; height:96px; max-width:100%; object-fit:cover}
+.chat-attachments{display:flex; flex-wrap:wrap; gap:8px}
+.chat-attachment{position:relative; width:56px; height:56px; border:1px solid var(--line); border-radius:8px; background:var(--surface-hover)}
+.chat-attachment img{display:block; width:100%; height:100%; border-radius:7px; object-fit:cover}
+.chat-attachment-remove{
+  position:absolute; top:-7px; right:-7px; display:inline-flex; align-items:center; justify-content:center;
+  width:20px; height:20px; padding:0; border:1px solid var(--line); border-radius:50%;
+  background:var(--surface); color:var(--fg-secondary); font-size:14px; line-height:1; cursor:pointer;
+}
+.chat-attachment-remove:hover{color:var(--fg)}
+.chat-drop{
+  position:absolute; inset:8px; z-index:2; display:flex; align-items:center; justify-content:center;
+  border:2px dashed var(--accent); border-radius:12px; background:var(--active-bg);
+  color:var(--accent); font-size:14px; font-weight:600; pointer-events:none;
+}
 .chat-tag{display:block; margin-bottom:2px; color:var(--accent); font-size:11px; font-weight:700; letter-spacing:.02em}
 .chat-assistant > :first-child{margin-top:0}
 .chat-assistant > :last-child{margin-bottom:0}

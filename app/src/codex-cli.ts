@@ -90,7 +90,8 @@ export function tomlString(value: string): string {
 /**
  * The arguments for one turn. The prompt itself goes on stdin. A model or
  * effort level applies to this turn alone; resuming a session with another
- * model works, though Codex says it may not do as well.
+ * model works, though Codex says it may not do as well. Images go with `-i`,
+ * after which `--` keeps the `-` that reads stdin from being taken for one.
  */
 export function codexArgs(options: {
   sessionId: string;
@@ -98,6 +99,7 @@ export function codexArgs(options: {
   mcp: McpServerSpec;
   model?: string;
   effort?: string;
+  images?: string[];
 }): string[] {
   const { mcp } = options;
   const env = Object.entries(mcp.env)
@@ -123,6 +125,8 @@ export function codexArgs(options: {
   if (options.model) args.push("-c", `model=${tomlString(options.model)}`);
   if (options.effort) args.push("-c", `model_reasoning_effort=${tomlString(options.effort)}`);
   if (options.resume) args.push("resume", options.sessionId);
+  for (const image of options.images ?? []) args.push("-i", image);
+  if (options.images?.length) args.push("--");
   args.push("-");
   return args;
 }
@@ -276,6 +280,7 @@ export const codexEngine: Engine = {
         mcp: options.mcp,
         model: options.model,
         effort: options.effort,
+        images: options.images,
       }),
       cwd,
       input: options.text,
@@ -284,5 +289,7 @@ export const codexEngine: Engine = {
       spawnImpl: options.spawnImpl,
     });
   },
+  // `-i` splits its value at commas, and drops the pieces without a word.
+  canShow: (file) => !file.includes(","),
   lostSession: (stderr) => /no rollout found/i.test(stderr),
 };

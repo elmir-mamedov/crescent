@@ -217,6 +217,20 @@ test("the prompt goes in as one stream-json user message", () => {
   assert.deepEqual(JSON.parse(line), { type: "user", message: { role: "user", content: 'say "hi"\nplease' } });
 });
 
+test("images go in the same message, before the text, as base64 JPEGs", () => {
+  assert.deepEqual(JSON.parse(turnInput("what is this?", ["AAA", "BBB"])), {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAA" } },
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "BBB" } },
+        { type: "text", text: "what is this?" },
+      ],
+    },
+  });
+});
+
 test("stream-json lines become init, text, tool and result events", () => {
   assert.deepEqual(parseLine(INIT), [
     { type: "init", sessionId: "s-1" },

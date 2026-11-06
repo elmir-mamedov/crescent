@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { isThreadId, makeChatStore, threadTitle, type ChatThread } from "./chat-store.js";
-import { makeTempKb } from "./test-helpers.js";
+import { makeTempKb, trySymlink } from "./test-helpers.js";
 
 const ID_A = "0b6f3a52-6d3e-4b8e-9a51-2f6c1d9e7a10";
 const ID_B = "7c1e2d43-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
@@ -90,6 +90,62 @@ test("removing a thread deletes its file only once", async () => {
     assert.equal(await store.remove(ID_A), true);
     assert.equal(await store.remove(ID_A), false);
     assert.equal(await store.get(ID_A), null);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("a message's images are saved with its thread under clean names, never one over another", async () => {
+  const kb = await makeTempKb();
+  try {
+    const store = makeChatStore(kb.dir);
+    const png = new Uint8Array([1, 2, 3]);
+    const names = await store.saveImages(ID_A, [
+      { name: "Screenshot 1.PNG", type: "image/png", bytes: png, view: new Uint8Array([9]) },
+      { name: "Screenshot 1.png", type: "image/png", bytes: png },
+      { name: "", type: "image/jpeg", bytes: png },
+    ]);
+    assert.deepEqual(names, ["screenshot-1.png", "screenshot-1-2.png", "image.jpg"]);
+    const folder = path.join(kb.dir, ".kb25", "chat", "images", ID_A);
+    assert.equal(await store.imageFile(ID_A, "screenshot-1.png"), path.join(folder, "screenshot-1.png"));
+    assert.equal(await store.imageView(ID_A, "screenshot-1.png"), path.join(folder, "view", "screenshot-1.png.jpg"));
+    assert.equal(await store.imageView(ID_A, "screenshot-1-2.png"), null);
+    assert.deepEqual(await store.saveImages(ID_A, [{ name: "screenshot 1.png", type: "", bytes: png }]), ["screenshot-1-3.png"]);
+    await assert.rejects(store.saveImages(ID_A, [{ name: "notes.txt", type: "text/plain", bytes: png }]), /not an image/);
+    await assert.rejects(store.saveImages("../x", [{ name: "a.png", type: "image/png", bytes: png }]), /Not a thread id/);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("an image is found only by a name the store gives, and never through a link", async (t) => {
+  const kb = await makeTempKb();
+  try {
+    const store = makeChatStore(kb.dir);
+    await store.saveImages(ID_A, [{ name: "a.png", type: "image/png", bytes: new Uint8Array([1]) }]);
+    for (const name of ["../a.png", "A.png", "a.txt", "view", ".a.png", "a.png/"]) {
+      assert.equal(await store.imageFile(ID_A, name), null, name);
+    }
+    assert.equal(await store.imageFile(ID_B, "a.png"), null);
+    assert.equal(await store.imageFile("not-an-id", "a.png"), null);
+    const folder = path.join(kb.dir, ".kb25", "chat", "images", ID_A);
+    if (!(await trySymlink(path.join(folder, "a.png"), path.join(folder, "b.png"), "file"))) return t.skip("this system makes no file links");
+    assert.equal(await store.imageFile(ID_A, "b.png"), null);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("removing a thread removes its images", async () => {
+  const kb = await makeTempKb();
+  try {
+    const store = makeChatStore(kb.dir);
+    await store.save(thread(ID_A, "2026-10-17T09:05:00.000Z"));
+    await store.saveImages(ID_A, [{ name: "a.png", type: "image/png", bytes: new Uint8Array([1]) }]);
+    await store.saveImages(ID_B, [{ name: "a.png", type: "image/png", bytes: new Uint8Array([1]) }]);
+    assert.equal(await store.remove(ID_A), true);
+    await assert.rejects(fs.access(path.join(kb.dir, ".kb25", "chat", "images", ID_A)));
+    assert.ok(await store.imageFile(ID_B, "a.png"));
   } finally {
     await kb.cleanup();
   }

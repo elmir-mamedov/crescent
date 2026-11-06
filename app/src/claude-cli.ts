@@ -133,9 +133,18 @@ export function mcpConfig(command: string, args: string[], env: Record<string, s
   return `${JSON.stringify({ mcpServers: { kb25: { type: "stdio", command, args, env } } }, null, 2)}\n`;
 }
 
-/** The stdin of a turn: one stream-json user message. */
-export function turnInput(text: string): string {
-  return `${JSON.stringify({ type: "user", message: { role: "user", content: text } })}\n`;
+/**
+ * The stdin of a turn: one stream-json user message. Images, each a base64
+ * JPEG, go before the text, as the API advises.
+ */
+export function turnInput(text: string, images: readonly string[] = []): string {
+  const content = images.length
+    ? [
+        ...images.map((data) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } })),
+        { type: "text", text },
+      ]
+    : text;
+  return `${JSON.stringify({ type: "user", message: { role: "user", content } })}\n`;
 }
 
 type Json = Record<string, unknown>;
@@ -297,6 +306,8 @@ export interface TurnOptions {
   /** The working folder: empty, so no project settings or CLAUDE.md come along. */
   cwd: string;
   text: string;
+  /** Base64 JPEGs to show the model with the text. */
+  images?: string[];
   onEvent: (event: AgentEvent) => void;
   spawnImpl?: SpawnImpl;
 }
@@ -307,7 +318,7 @@ export function startTurn(options: TurnOptions): Turn {
     command: options.claudePath,
     args: turnArgs(options),
     cwd: options.cwd,
-    input: turnInput(options.text),
+    input: turnInput(options.text, options.images),
     readLine: parseLine,
     onEvent: options.onEvent,
     spawnImpl: options.spawnImpl,
@@ -344,6 +355,7 @@ export const claudeEngine: Engine = {
       effort: options.effort,
       cwd,
       text: options.text,
+      images: await Promise.all((options.images ?? []).map(async (file) => (await fs.readFile(file)).toString("base64"))),
       onEvent: options.onEvent,
       spawnImpl: options.spawnImpl,
     });

@@ -92,7 +92,10 @@ the next message, from those that Claude Code or Codex offers. The chat starts
 on Opus 5.5 for Claude Code and on GPT-6-Sol for Codex (GPT-6-Luna while
 GPT-6-Sol isn't available to the account), both at extra high effort, and
 keeps your last choice for each program. The model settings in your own
-Claude Code or Codex configuration don't apply to the chat. Conversations are stored in the `.kb25/chat` folder of your
+Claude Code or Codex configuration don't apply to the chat. To show the chat
+an image, attach it with the paperclip under the message box or drop it onto
+the chat; it can then describe it, or put it on a page. Conversations, and the
+images attached to them, are stored in the `.kb25/chat` folder of your
 knowledge base, separate from the spaces.
 
 **Using Crescent from Claude.** Once connected during installation, the Claude

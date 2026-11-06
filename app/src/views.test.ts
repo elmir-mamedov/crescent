@@ -2579,6 +2579,17 @@ test("views: every page with the corner has the chat, told which page is open", 
   assert.doesNotMatch(loginLayout({ siteTitle: "KB", next: "/" } as LoginView), /data-chat/);
 });
 
+test("views: images are attached from the paperclip, which picks images only, or dropped on the drawer", () => {
+  const html = layout(pageView());
+  assert.match(html, /<button type="button" class="chat-icon-button" data-chat-attach aria-label="Attach images"/);
+  assert.match(html, /<input type="file" data-chat-file accept="\.png,\.jpg,\.jpeg,\.gif,\.webp,\.avif,\.svg" multiple hidden \/>/);
+  assert.match(html, /<div class="chat-drop" data-chat-drop hidden>Drop images to attach them<\/div>/);
+  assert.match(html, /<form class="chat-form" data-chat-form>\s*<div class="chat-attachments" data-chat-attachments hidden><\/div>/);
+  const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
+  assert.match(script, /drawer\.addEventListener\("drop", \(event\) => \{\s*if \(!carriesFiles\(event\)\) return;\s*event\.preventDefault\(\);/);
+  assert.match(script, /canvas\.toBlob\(resolve, "image\/jpeg", 0\.85\)/);
+});
+
 test("views: the page the chat is told about is escaped into its attribute", () => {
   const html = layout(pageView({ activeSlug: 'kb25/"><b>x' }));
   assert.match(html, /data-chat-slug="kb25\/&quot;&gt;&lt;b&gt;x"/);
@@ -2587,8 +2598,10 @@ test("views: the page the chat is told about is escaped into its attribute", () 
 test("views: the chat posts to its thread and follows the turn's event stream", () => {
   const html = layout(pageView());
   const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
-  assert.match(script, /fetch\("\/_chat\/threads\/" \+ threadId \+ "\/messages"/);
-  assert.match(script, /JSON\.stringify\(\{\s*text,\s*forcePages: pages\.checked,\s*slug,\s*engine: threadEngine \? undefined : engine,/);
+  assert.match(script, /fetch\("\/_chat\/threads\/" \+ threadId \+ "\/messages", \{ method: "POST", body: data \}\)/);
+  assert.match(script, /data\.append\("text", text\);\s*if \(pages\.checked\) data\.append\("forcePages", "true"\);\s*data\.append\("slug", slug\);\s*if \(!threadEngine && engine\) data\.append\("engine", engine\);/);
+  // Each image goes as it is, with the copy made for the model beside it.
+  assert.match(script, /data\.append\("image", item\.file, item\.file\.name\);\s*if \(copies\[n\]\) data\.append\("view-" \+ n, copies\[n\], "view\.jpg"\);/);
   assert.match(script, /new EventSource\("\/_chat\/threads\/" \+ threadId \+ "\/events"\)/);
   assert.match(script, /"\/_chat\/status" \+ \(fresh \? "\?fresh=1" : ""\)/);
   // The report links every page the turn wrote, and server text stays text.
@@ -2628,7 +2641,7 @@ test("views: the chat picks a model and effort from what the engine listed, per 
   assert.match(script, /const wanted = \[saved\.get\("effort\." \+ engine\.id\), engine\.start\.effort, "high"\]/);
   assert.match(script, /effortPicker\.hidden = !efforts\.length/);
   assert.doesNotMatch(script, /Default (model|effort)/);
-  assert.match(script, /model: modelPicker\.value \|\| undefined,\s*effort: effortPicker\.value \|\| undefined,/);
+  assert.match(script, /if \(modelPicker\.value\) data\.append\("model", modelPicker\.value\);\s*if \(effortPicker\.value\) data\.append\("effort", effortPicker\.value\);/);
 });
 
 // --- tabs (feedback #18) -------------------------------------------------------

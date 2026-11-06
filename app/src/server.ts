@@ -222,7 +222,7 @@ registerDashboardRoutes(app, ctx);
 await registerGalleryRoutes(app, ctx);
 registerUpdateRoutes(app, { siteTitle: SITE_TITLE, updater });
 await registerFeedbackRoutes(app, feedback);
-registerChatRoutes(app, ctx, chat);
+await registerChatRoutes(app, ctx, chat);
 const changeStreams = registerChangeRoutes(app, changes);
 const windows = registerDesktopRoutes(app, { desktop: DESKTOP, chat, shutdown });
 

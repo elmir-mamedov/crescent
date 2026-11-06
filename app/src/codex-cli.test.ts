@@ -123,6 +123,19 @@ test("a later turn resumes the session Codex named, after the exec options", () 
   assert.ok(args.indexOf("--json") < args.indexOf("resume"));
 });
 
+test("images go with -i, and -- keeps the stdin dash from being taken for one", () => {
+  const fresh = codexArgs({ sessionId: "x", resume: false, mcp: MCP, images: ["/v/a.jpg", "/v/b.jpg"] });
+  assert.deepEqual(fresh.slice(-6), ["-i", "/v/a.jpg", "-i", "/v/b.jpg", "--", "-"]);
+  const resumed = codexArgs({ sessionId: "01a14980-ac0d", resume: true, mcp: MCP, images: ["/v/a.jpg"] });
+  assert.deepEqual(resumed.slice(-6), ["resume", "01a14980-ac0d", "-i", "/v/a.jpg", "--", "-"]);
+  assert.equal(codexArgs({ sessionId: "x", resume: false, mcp: MCP, images: [] }).includes("--"), false);
+});
+
+test("Codex is shown no image whose path has a comma, which -i would split", () => {
+  assert.equal(codexEngine.canShow?.("/Users/a/KB/.kb25/chat/images/t/view/a.png.jpg"), true);
+  assert.equal(codexEngine.canShow?.("/Users/a/Notes, 2026/.kb25/chat/images/t/view/a.png.jpg"), false);
+});
+
 test("a model and effort level are set only when chosen, before any resume", () => {
   const plain = codexArgs({ sessionId: "01a14980-ac0d", resume: true, mcp: MCP });
   assert.equal(plain.some((a) => a.startsWith("model")), false);

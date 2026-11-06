@@ -32,7 +32,7 @@ const IMAGE_TYPES: Record<string, string> = {
 export const IMAGE_ACCEPT = Object.keys(IMAGE_TYPES).join(",");
 
 /** The formats, said the way the refusal names them. */
-const IMAGE_FORMATS = "PNG, JPEG, GIF, WebP, AVIF or SVG";
+export const IMAGE_FORMATS = "PNG, JPEG, GIF, WebP, AVIF or SVG";
 
 /**
  * The most one upload may carry, all its images together. A phone photo or a
@@ -70,6 +70,12 @@ export interface ImageDeletion extends SavedImage {
 
 export function isImageName(name: string): boolean {
   return Object.hasOwn(IMAGE_TYPES, path.extname(name).toLowerCase());
+}
+
+/** The type an image is sent with, by its extension; undefined for anything else. */
+export function imageType(name: string): string | undefined {
+  const ext = path.extname(name).toLowerCase();
+  return Object.hasOwn(IMAGE_TYPES, ext) ? IMAGE_TYPES[ext] : undefined;
 }
 
 /** The space's `_assets` folder, or null when the key cannot name a space. */

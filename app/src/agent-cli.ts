@@ -79,6 +79,8 @@ export interface EngineTurnOptions {
   model?: string;
   effort?: string;
   text: string;
+  /** JPEG files to show the model with the text: copies of the images attached to it. */
+  images?: string[];
   onEvent: (event: AgentEvent) => void;
   spawnImpl?: SpawnImpl;
 }
@@ -108,6 +110,8 @@ export interface Engine {
    */
   models(path: string, dir: string): Promise<ModelOption[] | null>;
   startTurn(options: EngineTurnOptions): Promise<Turn>;
+  /** Whether a turn can show the model the image at this path; every one when absent. */
+  canShow?(file: string): boolean;
   /** True when a resume failed because the engine no longer has the session. */
   lostSession(stderr: string): boolean;
 }

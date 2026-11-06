@@ -134,9 +134,19 @@ drawer says what is missing.
   it: a page that loads mid-turn replays it from `/_chat/threads/<id>/events`.
   It also holds the system prompt. When a turn writes, the server reads its
   kb25 tool calls and appends a report of the pages created, updated, moved or
-  deleted, with links; the model only adds a caveat.
+  deleted, and the images added or deleted, with links; the model only adds a
+  caveat.
+- Images can go with a message, picked with the paperclip under the box or
+  dropped onto the drawer. The model sees a JPEG copy the browser draws (no
+  more than 1568 pixels a side, since the server cannot shrink an image), as
+  base64 image blocks for Claude Code and `-i` for Codex, and gets each
+  original's path in a `<kb25-attachments>` block, so it can put one on a page
+  with `kb_add_image`. That path is the only file outside the KB the chat can
+  reach; it still has no file tools.
 - `src/chat-store.ts` keeps each thread as JSON in `<KB_DIR>/.kb25/chat/threads`,
   beside the spaces rather than in one, so no space commits a conversation.
+  A message's images are kept in `<KB_DIR>/.kb25/chat/images/<thread>`, and
+  deleted with the thread.
 - The chat's MCP server commits as `... via chat` (`KB25_COMMIT_VIA=chat`).
 - A launcher-started server does not quit when KB25's window closes while a
   turn is still running; it waits for the turn to end, and stays if a page is

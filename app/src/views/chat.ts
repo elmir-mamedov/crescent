@@ -1,3 +1,4 @@
+import { IMAGE_ACCEPT } from "../gallery.js";
 import { escapeHtml } from "./html.js";
 
 /**
@@ -16,6 +17,8 @@ export const CHAT_BUTTON = `<button type="button" class="chat-button" data-chat-
  * viewed, sent with each message so "this page" means something to Claude.
  * The drawer starts hidden; CHAT_SCRIPT opens it before first paint when it
  * was open on the last page, so moving between pages does not make it jump.
+ * Images go with a message from the paperclip under the box, or dropped
+ * anywhere on the drawer.
  */
 export function chatDrawer(slug: string): string {
   return `<section class="chat-drawer" data-chat data-chat-slug="${escapeHtml(slug)}" aria-label="Chat" hidden>
@@ -36,13 +39,19 @@ export function chatDrawer(slug: string): string {
   <div class="chat-setup" data-chat-setup hidden></div>
   <div class="chat-log" data-chat-log></div>
   <div class="chat-activity" data-chat-activity role="status" hidden></div>
+  <div class="chat-drop" data-chat-drop hidden>Drop images to attach them</div>
   <form class="chat-form" data-chat-form>
+    <div class="chat-attachments" data-chat-attachments hidden></div>
     <textarea class="chat-input" data-chat-input rows="1" aria-label="Message" placeholder="Ask anything, or ask for a page…"></textarea>
     <div class="chat-form-row chat-run" data-chat-run hidden>
       <select class="chat-select" data-chat-model aria-label="Model" title="The model the next message runs on"></select>
       <select class="chat-select" data-chat-effort aria-label="Effort" title="How much the model thinks before it answers"></select>
     </div>
     <div class="chat-form-row">
+      <button type="button" class="chat-icon-button" data-chat-attach aria-label="Attach images" title="Attach images, or drop them onto the chat">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+      </button>
+      <input type="file" data-chat-file accept="${IMAGE_ACCEPT}" multiple hidden />
       <label class="chat-pages" title="Write the answer into the knowledge base as pages, not into the chat"><input type="checkbox" data-chat-pages /> Write to KB</label>
       <div class="chat-engines" data-chat-engines role="radiogroup" aria-label="Run this chat on" hidden></div>
       <button type="button" class="button secondary" data-chat-stop hidden>Stop</button>
@@ -59,6 +68,11 @@ export function chatDrawer(slug: string): string {
  * from its question. Server text goes in as text. A reply is the one piece of
  * HTML: the server rendered it from Markdown with raw HTML off, and it is
  * parsed with DOMParser, whose documents never run scripts, then moved in.
+ *
+ * An attached image is sent as it is, for the agent to put on a page, along
+ * with a smaller JPEG drawn from it here, which is what the model is shown:
+ * the server has no way to shrink an image, and a screenshot is often more
+ * than Claude takes.
  */
 export const CHAT_SCRIPT = `
 (() => {
@@ -81,6 +95,10 @@ export const CHAT_SCRIPT = `
   const runRow = $("[data-chat-run]");
   const modelPicker = $("[data-chat-model]");
   const effortPicker = $("[data-chat-effort]");
+  const attachButton = $("[data-chat-attach]");
+  const fileInput = $("[data-chat-file]");
+  const strip = $("[data-chat-attachments]");
+  const dropZone = $("[data-chat-drop]");
   const slug = drawer.dataset.chatSlug || "";
 
   const saved = {
@@ -104,6 +122,10 @@ export const CHAT_SCRIPT = `
   // engine, or null while the chat is new and its engine can still be picked.
   let engines = [];
   let threadEngine = null;
+  // The images going with the next message: each file, a URL to show it by,
+  // and the copy for the model (a promise of a JPEG, or of null).
+  let attachments = [];
+  const MAX_IMAGES = 10;
 
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
@@ -325,7 +347,23 @@ export const CHAT_SCRIPT = `
     if (message.role === "user") {
       const bubble = el("div", "chat-msg chat-user");
       if (message.forcePages) bubble.append(el("span", "chat-tag", "Write to KB"));
-      bubble.append(el("div", "chat-user-text", message.text));
+      if (message.images && message.images.length) {
+        const row = el("div", "chat-user-images");
+        for (const image of message.images) {
+          const link = el("a");
+          link.href = image.href;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.title = image.name;
+          const img = el("img");
+          img.src = image.href;
+          img.alt = image.name;
+          link.append(img);
+          row.append(link);
+        }
+        bubble.append(row);
+      }
+      if (message.text) bubble.append(el("div", "chat-user-text", message.text));
       log.append(bubble);
     } else if (message.role === "assistant") {
       const reply = el("div", "chat-msg chat-assistant prose");
@@ -435,6 +473,82 @@ export const CHAT_SCRIPT = `
     }
   }
 
+  const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/svg+xml"];
+  const IMAGE_EXTENSIONS = fileInput.accept.split(",");
+  const isImage = (file) =>
+    IMAGE_TYPES.includes(file.type) || IMAGE_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext));
+
+  // The copy the model is shown: no more than 1568 pixels on its longer side,
+  // which is as much as Claude looks at, drawn on white as a JPEG. Null when
+  // the browser cannot draw the image, or will not let it be read back, as
+  // some will not for an SVG; the agent then has only its path.
+  async function modelCopy(url) {
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const width = img.naturalWidth || 1024;
+      const height = img.naturalHeight || 1024;
+      const scale = Math.min(1, 1568 / Math.max(width, height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      const draw = canvas.getContext("2d");
+      draw.fillStyle = "#fff";
+      draw.fillRect(0, 0, canvas.width, canvas.height);
+      draw.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    } catch {
+      return null;
+    }
+  }
+
+  function renderAttachments() {
+    strip.replaceChildren(
+      ...attachments.map((item) => {
+        const chip = el("div", "chat-attachment");
+        chip.title = item.file.name;
+        const img = el("img");
+        img.src = item.url;
+        img.alt = item.file.name;
+        const remove = el("button", "chat-attachment-remove", "×");
+        remove.type = "button";
+        remove.setAttribute("aria-label", "Remove " + item.file.name);
+        remove.addEventListener("click", () => {
+          dropAttachments([item]);
+          input.focus();
+        });
+        chip.append(img, remove);
+        return chip;
+      })
+    );
+    strip.hidden = !attachments.length;
+  }
+
+  function dropAttachments(items) {
+    for (const item of items) URL.revokeObjectURL(item.url);
+    attachments = attachments.filter((item) => !items.includes(item));
+    renderAttachments();
+  }
+
+  // Take what was picked or dropped: images, up to the limit, and say what was left out.
+  function attachFiles(files) {
+    const list = Array.from(files || []);
+    const images = list.filter(isImage);
+    const others = list.filter((file) => !isImage(file));
+    const room = Math.max(0, MAX_IMAGES - attachments.length);
+    for (const file of images.slice(0, room)) {
+      const url = URL.createObjectURL(file);
+      attachments.push({ file, url, copy: modelCopy(url) });
+    }
+    renderAttachments();
+    if (others.length) {
+      const names = others.map((file) => file.name).join(", ");
+      showError("Only images can be attached; " + names + (others.length === 1 ? " is not one." : " are not."));
+    }
+    if (images.length > room) showError("A message can take " + MAX_IMAGES + " images at most.");
+  }
+
   function autosize() {
     input.style.height = "auto";
     input.style.height = Math.min(input.scrollHeight, 200) + "px";
@@ -443,30 +557,32 @@ export const CHAT_SCRIPT = `
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const text = input.value.trim();
-    if (!text || busy) return;
+    if ((!text && !attachments.length) || busy) return;
     if (!threadId) {
       threadId = newId();
       saved.set("thread", threadId);
     }
     const engine = threadEngine || chosenEngine();
+    const sending = attachments.slice();
     setBusy(true);
-    setActivity("Thinking…");
+    setActivity(sending.length ? "Sending the images…" : "Thinking…");
+    // A new chat says which engine to run on; a thread keeps its own.
+    // Model and effort go with every message, unless left to the engine.
+    const data = new FormData();
+    data.append("text", text);
+    if (pages.checked) data.append("forcePages", "true");
+    data.append("slug", slug);
+    if (!threadEngine && engine) data.append("engine", engine);
+    if (modelPicker.value) data.append("model", modelPicker.value);
+    if (effortPicker.value) data.append("effort", effortPicker.value);
+    const copies = await Promise.all(sending.map((item) => item.copy));
+    sending.forEach((item, n) => {
+      data.append("image", item.file, item.file.name);
+      if (copies[n]) data.append("view-" + n, copies[n], "view.jpg");
+    });
     let res = null;
     try {
-      res = await fetch("/_chat/threads/" + threadId + "/messages", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        // A new chat says which engine to run on; a thread keeps its own.
-        // Model and effort go with every message, unless left to the engine.
-        body: JSON.stringify({
-          text,
-          forcePages: pages.checked,
-          slug,
-          engine: threadEngine ? undefined : engine,
-          model: modelPicker.value || undefined,
-          effort: effortPicker.value || undefined,
-        }),
-      });
+      res = await fetch("/_chat/threads/" + threadId + "/messages", { method: "POST", body: data });
     } catch {}
     const body = res ? await res.json().catch(() => ({})) : {};
     if (!res || !res.ok) {
@@ -482,6 +598,7 @@ export const CHAT_SCRIPT = `
     }
     input.value = "";
     autosize();
+    dropAttachments(sending);
     if (body.title) titleEl.textContent = body.title;
     threadEngine = threadEngine || engine;
     renderEngines();
@@ -496,6 +613,43 @@ export const CHAT_SCRIPT = `
   });
   input.addEventListener("input", autosize);
   pages.addEventListener("change", () => setPages(pages.checked));
+  attachButton.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    attachFiles(fileInput.files);
+    fileInput.value = "";
+    input.focus();
+  });
+
+  // Files dragged over the drawer are taken for attaching, with a sign saying
+  // so; dropped anywhere else they are the browser's, as before. Entering a
+  // child counts before leaving its parent, hence the depth.
+  const carriesFiles = (event) =>
+    !form.hidden && !!event.dataTransfer && Array.from(event.dataTransfer.types).includes("Files");
+  let dragDepth = 0;
+  drawer.addEventListener("dragenter", (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    dragDepth += 1;
+    dropZone.hidden = false;
+  });
+  drawer.addEventListener("dragover", (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  });
+  drawer.addEventListener("dragleave", (event) => {
+    if (!carriesFiles(event)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) dropZone.hidden = true;
+  });
+  drawer.addEventListener("drop", (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    dragDepth = 0;
+    dropZone.hidden = true;
+    attachFiles(event.dataTransfer.files);
+    input.focus();
+  });
   modelPicker.addEventListener("change", () => {
     saved.set("model." + (threadEngine || chosenEngine()), modelPicker.value || null);
     renderRun();

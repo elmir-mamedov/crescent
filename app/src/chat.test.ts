@@ -1,11 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { AgentEvent, AgentStatus, Engine, EngineTurnOptions, ModelOption, Turn } from "./agent-cli.js";
 import { makeChatStore } from "./chat-store.js";
 import {
   CHAT_PROMPT,
+  MAX_IMAGES,
   activityText,
+  attachmentsBlock,
   contextBlock,
   makeChat,
   messageView,
@@ -177,12 +180,19 @@ test("a message view renders replies and links report entries where the pages ar
     pages: PAGES,
     href: (slug: string) => `/${slug}`,
     gallery: (space: string) => `/_gallery?space=${space}`,
+    image: (name: string) => `/_chat/threads/t/images/${name}`,
   };
   assert.deepEqual(messageView({ role: "assistant", text: "Hi", at: "t" }, options), { role: "assistant", html: "<p>Hi</p>" });
   assert.deepEqual(messageView({ role: "user", text: "q", at: "t", forcePages: true, slug: "demo" }, options), {
     role: "user",
     text: "q",
     forcePages: true,
+  });
+  assert.deepEqual(messageView({ role: "user", text: "", at: "t", forcePages: false, images: ["a.png"] }, options), {
+    role: "user",
+    text: "",
+    forcePages: false,
+    images: [{ name: "a.png", href: "/_chat/threads/t/images/a.png" }],
   });
   assert.deepEqual(
     messageView(
@@ -243,6 +253,7 @@ test("the activity line says what the turn is doing", () => {
 
 test("the system prompt keeps the hand-off and the explicit-request rule", () => {
   assert.match(CHAT_PROMPT, /do not summarise them, list them, link them/);
+  assert.match(CHAT_PROMPT, /<kb25-attachments>[^\n]*kb_add_image[^\n]*paperclip/);
   assert.match(CHAT_PROMPT, /even "from the ground up", is a chat request/);
   assert.match(CHAT_PROMPT, /Write to KB/);
 });
@@ -293,14 +304,15 @@ function fakeEngine(fake: ReturnType<typeof fakeTurns>, status: AgentStatus, id:
 async function withChat(
   scripts: Parameters<typeof fakeTurns>[0],
   body: (ctx: { chat: ReturnType<typeof makeChat>; fake: ReturnType<typeof fakeTurns>; kbDir: string }) => Promise<void>,
-  status: AgentStatus = OK
+  status: AgentStatus = OK,
+  canShow?: Engine["canShow"]
 ) {
   const kb = await makeTempKb();
   try {
     const fake = fakeTurns(scripts);
     const chat = makeChat({
       store: makeChatStore(kb.dir),
-      engines: [fakeEngine(fake, status)],
+      engines: [{ ...fakeEngine(fake, status), ...(canShow && { canShow }) }],
       workDir: path.join(kb.dir, "work"),
       mcp: { command: "/usr/bin/node", args: ["mcp.mjs"], env: { KB_DIR: kb.dir, KB25_COMMIT_VIA: "chat" } },
       pages: async () => PAGES,
@@ -503,6 +515,107 @@ test("bad ids and empty messages are refused before anything runs", async () => 
     assert.equal(empty.ok ? 0 : empty.status, 400);
     assert.equal(fake.calls.length, 0);
   });
+});
+
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+test("attached images are kept with the thread, named to the agent by path, and shown to the model", async () => {
+  await withChat([{ events: [INIT, result("")] }], async ({ chat, fake, kbDir }) => {
+    const sent = await chat.send(ID, {
+      text: "put these on the page",
+      forcePages: false,
+      slug: "demo",
+      images: [
+        { name: "My Plot.PNG", type: "image/png", bytes: PNG, view: JPEG },
+        { name: "drawing.svg", type: "image/svg+xml", bytes: new TextEncoder().encode("<svg/>") },
+      ],
+    });
+    assert.equal(sent.ok, true);
+    await finished(chat, ID);
+
+    const folder = path.join(kbDir, ".kb25", "chat", "images", ID);
+    const plot = path.join(folder, "my-plot.png");
+    const drawing = path.join(folder, "drawing.svg");
+    assert.deepEqual(await fs.readFile(plot), Buffer.from(PNG));
+    const [options] = fake.calls;
+    assert.deepEqual(options.images, [path.join(folder, "view", "my-plot.png.jpg")]);
+    assert.ok(options.text.includes(`<kb25-attachments>\nThe person attached these images to the message.`));
+    assert.ok(options.text.includes(`\n- ${plot}\n- ${drawing} (not shown to you: you have only its path)\n</kb25-attachments>`));
+    assert.match(options.text, /<\/kb25-context>\n\n<kb25-attachments>[\s\S]*<\/kb25-attachments>\n\nput these on the page$/);
+
+    const thread = await chat.thread(ID);
+    assert.deepEqual(thread?.messages[0], {
+      role: "user",
+      text: "put these on the page",
+      at: "2026-10-17T10:00:00.000Z",
+      forcePages: false,
+      slug: "demo",
+      images: ["my-plot.png", "drawing.svg"],
+    });
+    assert.equal(await chat.imageFile(ID, "my-plot.png"), plot);
+    assert.equal(await chat.imageFile(ID, "../threads/x.png"), null);
+
+    assert.equal(await chat.remove(ID), true);
+    await assert.rejects(fs.access(folder));
+  });
+});
+
+test("a message can be images alone, titled by their names", async () => {
+  await withChat([{ events: [INIT, result("")] }], async ({ chat, fake }) => {
+    const sent = await chat.send(ID, { text: " ", forcePages: false, images: [{ name: "Screenshot.png", type: "image/png", bytes: PNG }] });
+    assert.equal(sent.ok && sent.thread.title, "Screenshot.png");
+    await finished(chat, ID);
+    assert.match(fake.calls[0].text, /<\/kb25-attachments>$/);
+  });
+});
+
+test("too many images, a file that is not one, or an empty one is refused before anything is saved", async () => {
+  await withChat([], async ({ chat, fake, kbDir }) => {
+    const image = { name: "a.png", type: "image/png", bytes: PNG };
+    const tooMany = await chat.send(ID, { text: "hi", forcePages: false, images: Array(MAX_IMAGES + 1).fill(image) });
+    const notImage = await chat.send(ID, { text: "hi", forcePages: false, images: [image, { name: "notes.txt", type: "text/plain", bytes: PNG }] });
+    const empty = await chat.send(ID, { text: "hi", forcePages: false, images: [{ ...image, bytes: new Uint8Array() }] });
+    assert.deepEqual(
+      [tooMany, notImage, empty].map((sent) => (sent.ok ? "" : sent.error)),
+      [
+        `Attach at most ${MAX_IMAGES} images to one message.`,
+        "Only images can be attached (PNG, JPEG, GIF, WebP, AVIF or SVG); notes.txt is not one.",
+        "a.png is empty.",
+      ]
+    );
+    assert.equal(fake.calls.length, 0);
+    await assert.rejects(fs.access(path.join(kbDir, ".kb25", "chat", "images")));
+  });
+});
+
+test("the model is shown only a JPEG copy, and only one its engine can show", async () => {
+  await withChat(
+    [{ events: [INIT, result("")] }],
+    async ({ chat, fake }) => {
+      await chat.send(ID, {
+        text: "look",
+        forcePages: false,
+        images: [
+          { name: "a.png", type: "image/png", bytes: PNG, view: JPEG },
+          { name: "b.png", type: "image/png", bytes: PNG, view: PNG },
+        ],
+      });
+      await finished(chat, ID);
+      assert.deepEqual(fake.calls[0].images, []);
+      assert.equal((fake.calls[0].text.match(/not shown to you/g) ?? []).length, 2);
+    },
+    OK,
+    () => false
+  );
+});
+
+test("the attachments block lists each path, and says which the model was not shown", () => {
+  assert.equal(attachmentsBlock([]), "");
+  assert.equal(
+    attachmentsBlock([{ file: "/kb/a.png", shown: true }]),
+    "<kb25-attachments>\nThe person attached this image to the message. To put one on a page, add it to the page's space with kb_add_image and its path here, then link what that returns.\n- /kb/a.png\n</kb25-attachments>"
+  );
 });
 
 test("each turn runs with the model and effort it was sent with, or the engine's own", async () => {
