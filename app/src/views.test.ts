@@ -2590,6 +2590,23 @@ test("views: images are attached from the paperclip, which picks images only, or
   assert.match(script, /canvas\.toBlob\(resolve, "image\/jpeg", 0\.85\)/);
 });
 
+test("views: an unsent message, its images included, outlasts going to another page", () => {
+  const html = layout(pageView());
+  const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
+  // The text is kept as it is typed and put back when the next page loads…
+  assert.match(script, /saved\.set\("draft", input\.value \|\| null\)/);
+  assert.match(script, /input\.value = saved\.get\("draft"\) \|\| "";\s*restoreImages\(\);/);
+  // …and the images, which localStorage cannot hold, as files in IndexedDB,
+  // saved whenever one is attached or removed.
+  assert.match(script, /indexedDB\.open\("kb25\.chat", 1\)/);
+  assert.equal(script.match(/draftImages\.set\(attachments\.map\(\(item\) => item\.file\)\)/g)?.length, 3);
+  // Only a send the server took clears it; a failed one leaves the draft.
+  const failed = script.indexOf("if (!res || !res.ok)");
+  const cleared = script.indexOf('saved.set("draft", null)');
+  assert.ok(failed > 0 && cleared > failed);
+  assert.match(script, /input\.value = "";\s*saved\.set\("draft", null\);\s*autosize\(\);\s*dropAttachments\(sending\);/);
+});
+
 test("views: the page the chat is told about is escaped into its attribute", () => {
   const html = layout(pageView({ activeSlug: 'kb25/"><b>x' }));
   assert.match(html, /data-chat-slug="kb25\/&quot;&gt;&lt;b&gt;x"/);

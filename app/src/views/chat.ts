@@ -119,6 +119,55 @@ export const CHAT_SCRIPT = `
     },
   };
 
+  // The message being written survives going to another page, which is a
+  // page load that starts the drawer over: its text is saved with the rest
+  // ("draft"), and its images, which localStorage cannot hold, as the files
+  // themselves in IndexedDB. Where IndexedDB is out of reach (a private
+  // window, say) the images are simply not kept, as before.
+  const draftImages = (() => {
+    let db = null;
+    const open = () => {
+      if (!db) {
+        db = new Promise((resolve) => {
+          try {
+            const req = indexedDB.open("kb25.chat", 1);
+            req.onupgradeneeded = () => req.result.createObjectStore("draft");
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = req.onblocked = () => resolve(null);
+          } catch {
+            resolve(null);
+          }
+        });
+      }
+      return db;
+    };
+    // Each call opens its transaction in the order it was made, so saves
+    // land in order however quickly they follow one another.
+    const run = async (mode, act) => {
+      const store = await open();
+      if (!store) return undefined;
+      return new Promise((resolve) => {
+        try {
+          const tx = store.transaction("draft", mode);
+          const req = act(tx.objectStore("draft"));
+          tx.oncomplete = () => resolve(req.result);
+          tx.onerror = tx.onabort = () => resolve(undefined);
+        } catch {
+          resolve(undefined);
+        }
+      });
+    };
+    return {
+      get: () => run("readonly", (store) => store.get("images")),
+      set: (files) =>
+        run("readwrite", (store) =>
+          files.length
+            ? store.put(files.map((file) => ({ name: file.name, type: file.type, blob: file })), "images")
+            : store.delete("images")
+        ),
+    };
+  })();
+
   let threadId = saved.get("thread");
   let source = null;
   let streaming = null;
@@ -165,6 +214,9 @@ export const CHAT_SCRIPT = `
     drawer.hidden = !open;
     toggle.setAttribute("aria-expanded", String(open));
     saved.set("open", open ? "1" : null);
+    // A hidden box has no height to measure, so a draft put back while the
+    // drawer was closed is sized once it shows.
+    if (open) autosize();
   }
 
   function setPages(on) {
@@ -545,6 +597,25 @@ export const CHAT_SCRIPT = `
     for (const item of items) URL.revokeObjectURL(item.url);
     attachments = attachments.filter((item) => !items.includes(item));
     renderAttachments();
+    draftImages.set(attachments.map((item) => item.file));
+  }
+
+  // Put back the images a draft had on the last page, ahead of any attached
+  // since this one loaded.
+  async function restoreImages() {
+    const stored = await draftImages.get();
+    if (!Array.isArray(stored) || !stored.length) return;
+    const restored = [];
+    for (const item of stored) {
+      if (!item || !(item.blob instanceof Blob)) continue;
+      const file = new File([item.blob], item.name || "image", { type: item.type || item.blob.type });
+      const url = URL.createObjectURL(file);
+      restored.push({ file, url, copy: modelCopy(url) });
+    }
+    const since = attachments;
+    attachments = restored.concat(since);
+    renderAttachments();
+    if (since.length) draftImages.set(attachments.map((item) => item.file));
   }
 
   // Take what was picked or dropped: images, up to the limit, and say what was left out.
@@ -558,6 +629,7 @@ export const CHAT_SCRIPT = `
       attachments.push({ file, url, copy: modelCopy(url) });
     }
     renderAttachments();
+    draftImages.set(attachments.map((item) => item.file));
     if (others.length) {
       const names = others.map((file) => file.name).join(", ");
       showError("Only images can be attached; " + names + (others.length === 1 ? " is not one." : " are not."));
@@ -612,7 +684,9 @@ export const CHAT_SCRIPT = `
       }
       return showError(res ? body.error || "That message couldn't be sent." : "Crescent didn't answer. Is it still running?");
     }
+    // Sent, so no longer a draft; until here a failed send leaves it all in place.
     input.value = "";
+    saved.set("draft", null);
     autosize();
     dropAttachments(sending);
     if (body.title) titleEl.textContent = body.title;
@@ -627,7 +701,10 @@ export const CHAT_SCRIPT = `
       form.requestSubmit();
     }
   });
-  input.addEventListener("input", autosize);
+  input.addEventListener("input", () => {
+    autosize();
+    saved.set("draft", input.value || null);
+  });
   pages.addEventListener("change", () => setPages(pages.checked));
   attachButton.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
@@ -753,6 +830,8 @@ export const CHAT_SCRIPT = `
   });
 
   setPages(saved.get("pages") === "1");
+  input.value = saved.get("draft") || "";
+  restoreImages();
   // Before first paint, so a drawer that was open on the last page is simply there.
   if (saved.get("open") === "1") {
     setOpen(true);
