@@ -2584,7 +2584,7 @@ test("views: images are attached from the paperclip, which picks images only, or
   assert.match(html, /<button type="button" class="chat-icon-button" data-chat-attach aria-label="Attach images"/);
   assert.match(html, /<input type="file" data-chat-file accept="\.png,\.jpg,\.jpeg,\.gif,\.webp,\.avif,\.svg" multiple hidden \/>/);
   assert.match(html, /<div class="chat-drop" data-chat-drop hidden>Drop images to attach them<\/div>/);
-  assert.match(html, /<form class="chat-form" data-chat-form>\s*<div class="chat-attachments" data-chat-attachments hidden><\/div>/);
+  assert.match(html, /<form class="chat-form" data-chat-form>\s*<div class="chat-composer">\s*<div class="chat-attachments" data-chat-attachments hidden><\/div>/);
   const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
   assert.match(script, /drawer\.addEventListener\("drop", \(event\) => \{\s*if \(!carriesFiles\(event\)\) return;\s*event\.preventDefault\(\);/);
   assert.match(script, /canvas\.toBlob\(resolve, "image\/jpeg", 0\.85\)/);
@@ -2625,13 +2625,13 @@ test("views: the chat offers Claude or Codex for a new chat and names a thread's
 
 test("views: the chat picks a model and effort from what the engine listed, per engine", () => {
   const html = layout(pageView());
-  // A row of their own, hidden until the engine has said what it offers.
+  // A row under the box, beside the engine switch, hidden until there is something to show.
   assert.match(
     html,
-    /<div class="chat-form-row chat-run" data-chat-run hidden>\s*<select class="chat-select" data-chat-model aria-label="Model"[^>]*><\/select>\s*<select class="chat-select" data-chat-effort aria-label="Effort"[^>]*><\/select>\s*<\/div>/
+    /<div class="chat-meta chat-run" data-chat-run hidden>\s*<div class="chat-engines" data-chat-engines[^>]*><\/div>\s*<select class="chat-select" data-chat-model aria-label="Model"[^>]*><\/select>\s*<select class="chat-select" data-chat-effort aria-label="Effort"[^>]*><\/select>\s*<\/div>/
   );
   const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
-  assert.match(script, /runRow\.hidden = !models/);
+  assert.match(script, /runRow\.hidden = !models && enginePicker\.hidden/);
   // Only the engine's own models, no Default: the last pick, else what it starts on.
   assert.match(script, /modelPicker\.replaceChildren\(\.\.\.models\.map\(\(m\) => option\(m\.id, m\.name\)\)\)/);
   assert.match(script, /models\.find\(\(m\) => m\.id === saved\.get\("model\." \+ engine\.id\)\) \|\|\s*models\.find\(\(m\) => m\.id === engine\.start\.model\)/);

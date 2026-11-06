@@ -41,21 +41,27 @@ export function chatDrawer(slug: string): string {
   <div class="chat-activity" data-chat-activity role="status" hidden></div>
   <div class="chat-drop" data-chat-drop hidden>Drop images to attach them</div>
   <form class="chat-form" data-chat-form>
-    <div class="chat-attachments" data-chat-attachments hidden></div>
-    <textarea class="chat-input" data-chat-input rows="1" aria-label="Message" placeholder="Ask anything, or ask for a page…"></textarea>
-    <div class="chat-form-row chat-run" data-chat-run hidden>
+    <div class="chat-composer">
+      <div class="chat-attachments" data-chat-attachments hidden></div>
+      <textarea class="chat-input" data-chat-input rows="1" aria-label="Message" placeholder="Ask anything, or ask for a page…"></textarea>
+      <div class="chat-toolbar">
+        <button type="button" class="chat-icon-button" data-chat-attach aria-label="Attach images" title="Attach images, or drop them onto the chat">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+        </button>
+        <input type="file" data-chat-file accept="${IMAGE_ACCEPT}" multiple hidden />
+        <label class="chat-pages" title="Write the answer into the knowledge base as pages, not into the chat"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.38 3.62a1 1 0 0 1 3 3L7.37 18.64a2 2 0 0 1-.86.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.85z" /></svg><input type="checkbox" data-chat-pages /> Write to KB</label>
+        <button type="button" class="chat-send chat-stop" data-chat-stop aria-label="Stop" title="Stop" hidden>
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor" /></svg>
+        </button>
+        <button type="submit" class="chat-send" data-chat-send aria-label="Send" title="Send">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" /></svg>
+        </button>
+      </div>
+    </div>
+    <div class="chat-meta chat-run" data-chat-run hidden>
+      <div class="chat-engines" data-chat-engines role="radiogroup" aria-label="Run this chat on" hidden></div>
       <select class="chat-select" data-chat-model aria-label="Model" title="The model the next message runs on"></select>
       <select class="chat-select" data-chat-effort aria-label="Effort" title="How much the model thinks before it answers"></select>
-    </div>
-    <div class="chat-form-row">
-      <button type="button" class="chat-icon-button" data-chat-attach aria-label="Attach images" title="Attach images, or drop them onto the chat">
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
-      </button>
-      <input type="file" data-chat-file accept="${IMAGE_ACCEPT}" multiple hidden />
-      <label class="chat-pages" title="Write the answer into the knowledge base as pages, not into the chat"><input type="checkbox" data-chat-pages /> Write to KB</label>
-      <div class="chat-engines" data-chat-engines role="radiogroup" aria-label="Run this chat on" hidden></div>
-      <button type="button" class="button secondary" data-chat-stop hidden>Stop</button>
-      <button type="submit" class="button primary" data-chat-send>Send</button>
     </div>
   </form>
 </section>`;
@@ -187,7 +193,12 @@ export const CHAT_SCRIPT = `
   const scrollDown = () => { log.scrollTop = log.scrollHeight; };
 
   function showEmpty() {
-    log.replaceChildren(el("p", "chat-empty", "Ask about anything, or ask for a page. Switch on Write to KB to have the answer written as pages instead."));
+    const empty = el("div", "chat-empty");
+    empty.append(
+      el("span", "chat-empty-mark"),
+      el("p", "", "Ask about anything, or ask for a page. Switch on Write to KB to have the answer written as pages instead.")
+    );
+    log.replaceChildren(empty);
   }
 
   function showError(text) {
@@ -259,12 +270,15 @@ export const CHAT_SCRIPT = `
       effortPicker.replaceChildren(...efforts.map((e) => option(e, (EFFORTS[e] || e) + " effort")));
       const wanted = [saved.get("effort." + engine.id), engine.start.effort, "high"];
       effortPicker.value = wanted.find((e) => efforts.includes(e)) || efforts[0] || "";
+      modelPicker.hidden = false;
       effortPicker.hidden = !efforts.length;
     } else {
       modelPicker.replaceChildren();
       effortPicker.replaceChildren();
+      modelPicker.hidden = effortPicker.hidden = true;
     }
-    runRow.hidden = !models;
+    // The row under the box also carries the engine switch, so it shows while either does.
+    runRow.hidden = !models && enginePicker.hidden;
   }
 
   const HELP = {
@@ -326,6 +340,8 @@ export const CHAT_SCRIPT = `
     const list = el("ul", "chat-report-list");
     for (const change of changes) {
       const item = el("li");
+      // What changed picks the row's icon: a page, a folder, a space or an image.
+      item.dataset.what = change.what;
       const verb = VERBS[change.kind] || change.kind;
       item.append(el("span", "chat-report-verb", change.what === "page" ? verb + " " : verb + " " + change.what + " "));
       if (change.href) {
@@ -674,12 +690,13 @@ export const CHAT_SCRIPT = `
     const threads = data ? data.threads : [];
     const rows = threads.map((thread) => {
       const row = el("div", "chat-history-row");
+      if (thread.id === threadId) row.classList.add("is-current");
       const open = el("button", "chat-history-open");
       open.type = "button";
       open.append(el("span", "chat-history-title", thread.title));
       const when = new Date(thread.updatedAt);
       const tags = (ready().length > 1 ? engineName(thread.engine) + " · " : "") + (thread.running ? "Answering · " : "");
-      open.append(el("span", "chat-history-when", tags + when.toLocaleString()));
+      open.append(el("span", "chat-history-when", tags + when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })));
       open.addEventListener("click", () => {
         threadId = thread.id;
         saved.set("thread", threadId);
