@@ -24,6 +24,7 @@ import {
   powershell,
   psQuote,
   readEnvFile,
+  recordUpdate,
   sleep,
   stopServer,
   tildify,
@@ -90,6 +91,7 @@ async function main() {
   } else {
     await stopServer(p); // an update must not keep serving the old version
     replaceApp();
+    if (installed) recordUpdate(p.updatedFile, installed, version);
     console.log(installed ? `Updated Crescent ${installed} → ${version}.` : `Installed Crescent ${version}.`);
   }
 

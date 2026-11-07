@@ -17,6 +17,11 @@ export function registerUpdateRoutes(
       if (!started.ok) return reply.code(409).send({ error: started.reason });
       return reply.code(202).send(await updater.status());
     });
+    // The person closed the card saying what the update they just had brought.
+    app.post("/_update/seen", async (_req, reply) => {
+      await updater.seen();
+      return reply.code(204).send();
+    });
     // Check while the server starts, so the window opening it seldom waits.
     void updater.status();
   }

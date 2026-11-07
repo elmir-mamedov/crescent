@@ -16,6 +16,8 @@
 //                  as their ../../.env
 //   kb25.log       server output
 //   server.pid     the running server, so updates and removal can stop it
+//   updated.json   the last update, {"from","to"}, which the new version's pages
+//                  announce until the person closes that card (src/update.ts)
 //
 // On macOS the window is ~/Applications/KB25.app itself (mac-app.mjs).
 import { execFileSync, spawn } from "node:child_process";
@@ -47,7 +49,29 @@ export function paths(home = kb25Home()) {
     envFile: path.join(home, ".env"),
     logFile: path.join(home, "kb25.log"),
     pidFile: path.join(home, "server.pid"),
+    updatedFile: path.join(home, "updated.json"),
   };
+}
+
+/**
+ * Record an update from `from` to `to` in `file`, for the new version's pages
+ * to say what it brought. On top of an update whose card is still unclosed,
+ * the earlier `from` stays, so those pages name every release since. Only that
+ * card depends on it, so a failure here never fails the update.
+ */
+export function recordUpdate(file, from, to) {
+  try {
+    let start = from;
+    try {
+      const prior = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (prior?.to === from && typeof prior.from === "string") start = prior.from;
+    } catch {
+      // No earlier update waiting to be seen.
+    }
+    fs.writeFileSync(file, `${JSON.stringify({ from: start, to })}\n`);
+  } catch {
+    // The update itself went through; only its card won't show.
+  }
 }
 
 /** KEY=value lines, the same shape the server's loadEnvFile reads. */

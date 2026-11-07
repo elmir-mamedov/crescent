@@ -2,6 +2,7 @@ import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from "node:c
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { UPDATE_MESSAGES } from "./update-messages.js";
 
 /**
  * In-app updates for an installed copy. The check reads the VERSION file every
@@ -30,6 +31,12 @@ export interface Install {
   logFile: string;
   /** The running server's pid, which updates and removal stop it by. */
   pidFile: string;
+  /**
+   * Where setup.mjs records an update, `{"from":"0.20.0","to":"0.21.0"}`, for
+   * the new version's pages to say what it brought; deleted once the person
+   * closes the card that says so.
+   */
+  updatedFile: string;
 }
 
 /**
@@ -61,8 +68,13 @@ export function findInstall(
     launcher,
     logFile: path.join(home, "update.log"),
     pidFile: path.join(home, "server.pid"),
+    // installer/common.mjs names it too, for setup.mjs to write.
+    updatedFile: path.join(home, "updated.json"),
   };
 }
+
+const VERSION = /^\d+\.\d+\.\d+$/;
+const isVersion = (value: unknown): value is string => typeof value === "string" && VERSION.test(value);
 
 /** Order two x.y.z versions numerically: negative, zero or positive. */
 export function compareVersions(a: string, b: string): number {
@@ -92,6 +104,18 @@ export interface UpdateStatus {
    * failed after stopping this server.
    */
   instance: string;
+  /** The update this install just had, until the person closes the card that says so. */
+  updated: JustUpdated | null;
+}
+
+/** What the card a page shows after an update says. */
+export interface JustUpdated {
+  from: string;
+  to: string;
+  /** The release notes of `to`. */
+  notesUrl: string;
+  /** The developers' messages (update-messages.ts) for each version after `from` up to `to`, oldest first. */
+  messages: { version: string; text: string }[];
 }
 
 export type StartResult = { ok: true } | { ok: false; reason: string };
@@ -109,12 +133,16 @@ export interface UpdaterOptions {
   fetch?: typeof fetch;
   now?: () => number;
   spawn?: Spawner;
+  /** The developers' messages by version; UPDATE_MESSAGES when absent. */
+  messages?: Readonly<Record<string, string>>;
 }
 
 export interface Updater {
   /** `fresh` checks again unless a check started within the last minute, for opening KB25. */
   status(options?: { fresh?: boolean }): Promise<UpdateStatus>;
   start(): Promise<StartResult>;
+  /** The person closed the card saying what the update brought: forget the update. */
+  seen(): Promise<void>;
 }
 
 export function makeUpdater(options: UpdaterOptions): Updater {
@@ -123,6 +151,7 @@ export function makeUpdater(options: UpdaterOptions): Updater {
   const fetchImpl = options.fetch ?? fetch;
   const now = options.now ?? Date.now;
   const spawn: Spawner = options.spawn ?? ((command, args, opts) => nodeSpawn(command, args, opts));
+  const messages = options.messages ?? UPDATE_MESSAGES;
 
   const instance = randomUUID();
   let latest: string | null = null;
@@ -139,7 +168,7 @@ export function makeUpdater(options: UpdaterOptions): Updater {
         signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
       });
       const text = response.ok ? (await response.text()).trim() : "";
-      if (!/^\d+\.\d+\.\d+$/.test(text)) throw new Error(`no version in the release (${response.status})`);
+      if (!isVersion(text)) throw new Error(`no version in the release (${response.status})`);
       latest = text;
       nextCheckAt = now() + CHECK_EVERY_MS;
     } catch {
@@ -162,7 +191,37 @@ export function makeUpdater(options: UpdaterOptions): Updater {
       state,
       logFile: install.logFile,
       instance,
+      updated: await justUpdated(),
     };
+  }
+
+  /**
+   * The update setup.mjs recorded, read afresh each time so a card closed on
+   * one page stays closed on the next. A record of an update to some other
+   * version is none of this one's.
+   */
+  async function justUpdated(): Promise<JustUpdated | null> {
+    let record: { from?: unknown; to?: unknown };
+    try {
+      record = JSON.parse(await fs.promises.readFile(install.updatedFile, "utf8")) ?? {};
+    } catch {
+      return null;
+    }
+    const { from, to } = record;
+    if (!isVersion(from) || to !== install.version || compareVersions(from, to) >= 0) return null;
+    return {
+      from,
+      to,
+      notesUrl: `${releasesUrl}/tag/v${to}`,
+      messages: Object.entries(messages)
+        .filter(([version]) => isVersion(version) && compareVersions(version, from) > 0 && compareVersions(version, to) <= 0)
+        .sort(([a], [b]) => compareVersions(a, b))
+        .map(([version, text]) => ({ version, text })),
+    };
+  }
+
+  async function seen(): Promise<void> {
+    await fs.promises.rm(install.updatedFile, { force: true });
   }
 
   async function start(): Promise<StartResult> {
@@ -199,7 +258,7 @@ export function makeUpdater(options: UpdaterOptions): Updater {
     return { ok: true };
   }
 
-  return { status, start };
+  return { status, start, seen };
 }
 
 /**

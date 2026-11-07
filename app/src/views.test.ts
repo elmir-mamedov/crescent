@@ -1750,6 +1750,21 @@ test("views: every page with the corner carries a hidden update card that asks /
   }
 });
 
+test("views: after an update the card says so from the server's record, and closing it tells the server", () => {
+  const html = layout(pageView());
+  const script = html.slice(html.indexOf('const card = document.querySelector("[data-update]")'));
+  assert.match(script, /if \(s\.updated\) return updated\(s\);/);
+  assert.match(script, /"Crescent is updated to " \+ u\.to/);
+  assert.match(script, /"What's new in " \+ u\.to/);
+  assert.match(script, /notes\.href = u\.notesUrl;/);
+  assert.match(script, /u\.messages\.map\(\(m\) => el\("p", "update-text update-message", label\(m\)\)\)/);
+  assert.match(script, /fetch\("\/_update\/seen", \{ method: "POST" \}\)/);
+  // The page that ran the update no longer carries it across the reload: the
+  // desktop window is closed before the new version answers, so it never could.
+  assert.doesNotMatch(script, /localStorage\.setItem\("kb25\.update\.done"|store\.set\(DONE/);
+  assert.match(html, /\.update-message\{color:var\(--fg\); white-space:pre-line\}/);
+});
+
 function gateView(overrides: Partial<UpdateGateView> = {}): UpdateGateView {
   return {
     siteTitle: "KB",
@@ -1778,6 +1793,7 @@ test("feedback #21: the update gate's only way on is installing, then the app op
   assert.match(script, /now\.current !== current/);
   assert.match(script, /now\.instance !== instance/, "a server back on the old version means it failed");
   assert.match(script, /location\.replace\("\/"\)/);
+  assert.doesNotMatch(script, /kb25\.update\.done/, "the server says the update is done, not the gate");
   // A failed update lets the person in on this version.
   assert.match(script, /"Continue with " \+ current/);
   assert.doesNotMatch(script, /\.innerHTML/, "server text never goes in as HTML");

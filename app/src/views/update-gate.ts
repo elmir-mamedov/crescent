@@ -47,9 +47,10 @@ ${renderHead(`Update · ${escapeHtml(v.siteTitle)}`)}
 
 /**
  * Runs the update gate's update (updateGateLayout) and opens the app once the
- * server is back on the new version. Shares the update card's storage keys, so
- * the first page says the update is done, and a person let in after a failed
- * update isn't offered the same one again straight away.
+ * server is back on the new version, whose first page says so from the
+ * server's own record of the update (update.ts). Shares the update card's
+ * dismissal key, so a person let in after a failed update isn't offered the
+ * same one again straight away.
  */
 const GATE_SCRIPT = `
 (() => {
@@ -112,7 +113,6 @@ const GATE_SCRIPT = `
       let now = null;
       try { now = await getStatus(); } catch {} // the server is restarting
       if (now && now.current !== current) {
-        store("kb25.update.done", now.current);
         enter();
       } else if ((now && (now.state === "failed" || now.instance !== instance)) || Date.now() > deadline) {
         failed();

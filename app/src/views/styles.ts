@@ -588,6 +588,8 @@ html.kb-placed main,html.kb-placed .toc{animation:kb-fade-in .14s ease-out}
 }
 .update-title{margin:0; font-size:14px; font-weight:600}
 .update-text{margin:6px 0 0; color:var(--muted); font-size:13px; overflow-wrap:anywhere}
+/* The developers' message after an update: what the card is there to say. */
+.update-message{color:var(--fg); white-space:pre-line}
 .update-notes{display:inline-block; margin-top:4px; font-size:13px}
 .update-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:12px}
 .help-head{

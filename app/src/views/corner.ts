@@ -257,16 +257,17 @@ document.querySelectorAll("[data-feedback-open]").forEach((button) => {
  * The update card in the bottom-right corner. An installed copy answers
  * GET /_update (see update.ts); anywhere else that is a 404 page and the card
  * stays hidden. Update starts the installer, then polls until the server comes
- * back on the new version and reloads; the reloaded page says to restart
- * Claude clients, whose MCP servers keep running the old code until they
- * restart. Server text only ever goes in via textContent.
+ * back on the new version and reloads. After an update, however it ran (this
+ * card, the update gate, the installer by hand), the new version's pages say
+ * so here, with its release notes and the developers' messages
+ * (update-messages.ts), until the person closes the card. Server text only
+ * ever goes in via textContent.
  */
 const UPDATE_SCRIPT = `
 (() => {
   const card = document.querySelector("[data-update]");
   if (!card || !window.fetch) return;
   const DISMISSED = "kb25.update.dismissed";
-  const DONE = "kb25.update.done";
   const store = {
     get(key) { try { return localStorage.getItem(key); } catch { return null; } },
     set(key, value) { try { localStorage.setItem(key, value); } catch {} },
@@ -313,6 +314,26 @@ const UPDATE_SCRIPT = `
     );
   }
 
+  function updated(s) {
+    const u = s.updated;
+    const notes = el("a", "update-notes", "What's new in " + u.to);
+    notes.href = u.notesUrl;
+    notes.target = "_blank";
+    notes.rel = "noopener";
+    // A version on each when there are several, for someone who skipped releases.
+    const label = (m) => (u.messages.length > 1 ? m.version + ": " : "") + m.text;
+    show(
+      el("p", "update-title", "Crescent is updated to " + u.to),
+      ...u.messages.map((m) => el("p", "update-text update-message", label(m))),
+      notes,
+      actions(button("OK", "secondary", () => {
+        hide();
+        fetch("/_update/seen", { method: "POST" }).catch(() => {});
+        if (s.available && s.state !== "updating" && store.get(DISMISSED) !== s.latest) offer(s);
+      }))
+    );
+  }
+
   function failed(s, reason) {
     show(
       el("p", "update-title", "The update didn't finish"),
@@ -334,7 +355,6 @@ const UPDATE_SCRIPT = `
       let now = null;
       try { now = await getStatus(); } catch {} // the server is restarting
       if (now && now.current === s.latest) {
-        store.set(DONE, s.latest);
         location.reload();
       } else if ((now && now.state === "failed") || Date.now() > deadline) {
         failed(s);
@@ -345,19 +365,11 @@ const UPDATE_SCRIPT = `
     setTimeout(poll, 1500);
   }
 
+  // Where 0.21.0 and earlier noted an update for the reloaded page; the server knows now.
+  store.remove("kb25.update.done");
   getStatus().then((s) => {
     if (!s) return;
-    const done = store.get(DONE);
-    if (done) {
-      store.remove(DONE);
-      if (done === s.current) {
-        return show(
-          el("p", "update-title", "Crescent is updated to " + done),
-          el("p", "update-text", "If the Claude app or Claude Code is open, restart it to use the new version there."),
-          actions(button("OK", "secondary", hide))
-        );
-      }
-    }
+    if (s.updated) return updated(s);
     if (s.available && s.state !== "updating" && store.get(DISMISSED) !== s.latest) offer(s);
   }).catch(() => {});
 })();

@@ -65,6 +65,7 @@ test("an installed layout is found, with the platform's Node", async () => {
         launcher: path.join(dir.home, "app", "installer", "launcher.mjs"),
         logFile: path.join(dir.home, "update.log"),
         pidFile: path.join(dir.home, "server.pid"),
+        updatedFile: path.join(dir.home, "updated.json"),
       });
     } finally {
       await dir.cleanup();
@@ -93,6 +94,7 @@ function install(home: string, version = "0.2.0"): Install {
     launcher: "/kb25/app/installer/launcher.mjs",
     logFile: path.join(home, "update.log"),
     pidFile: path.join(home, "server.pid"),
+    updatedFile: path.join(home, "updated.json"),
   };
 }
 
@@ -297,6 +299,120 @@ test("on Windows the update runs install.ps1 in a hidden PowerShell", async () =
     assert.match(script, /if \(\$code\) \{ & 'C:\\KB25\\node\\node\.exe' 'C:\\KB25\\app\\installer\\launcher\.mjs' \}/);
     assert.match(script, /exit \$code$/);
     assert.equal(options.windowsHide, true);
+  } finally {
+    await tmp.cleanup();
+  }
+});
+
+/** installer/common.mjs, plain JS outside tsc's reach, loaded by URL. */
+async function installerCommon() {
+  const url = new URL("../installer/common.mjs", import.meta.url).href;
+  return (await import(url)) as { recordUpdate(file: string, from: string, to: string): void };
+}
+
+const MESSAGES = {
+  "0.1.0": "before the update",
+  "0.1.5": "Restart Claude.",
+  "0.2.0": "Your pages moved.",
+  "0.3.0": "not out yet",
+  "next": "not a version",
+};
+
+test("after an update, the status says from what, with the release notes and each message since", async () => {
+  const tmp = await makeTempKb();
+  try {
+    const target = install(tmp.dir);
+    await fs.writeFile(target.updatedFile, `${JSON.stringify({ from: "0.1.0", to: "0.2.0" })}\n`);
+    const { impl } = fakeFetch("0.2.0\n");
+    const status = await makeUpdater({ install: target, releasesUrl: RELEASES, fetch: impl, messages: MESSAGES }).status();
+    assert.deepEqual(status.updated, {
+      from: "0.1.0",
+      to: "0.2.0",
+      notesUrl: `${RELEASES}/tag/v0.2.0`,
+      messages: [
+        { version: "0.1.5", text: "Restart Claude." },
+        { version: "0.2.0", text: "Your pages moved." },
+      ],
+    });
+    assert.equal(status.available, false);
+  } finally {
+    await tmp.cleanup();
+  }
+});
+
+test("an update with no message for its versions still says it happened", async () => {
+  const tmp = await makeTempKb();
+  try {
+    const target = install(tmp.dir);
+    await fs.writeFile(target.updatedFile, JSON.stringify({ from: "0.1.9", to: "0.2.0" }));
+    const { impl } = fakeFetch("0.2.0\n");
+    const status = await makeUpdater({ install: target, releasesUrl: RELEASES, fetch: impl, messages: {} }).status();
+    assert.deepEqual(status.updated?.messages, []);
+    assert.equal(status.updated?.to, "0.2.0");
+  } finally {
+    await tmp.cleanup();
+  }
+});
+
+test("no record, a broken one, or one of an update to another version is no update", async () => {
+  const tmp = await makeTempKb();
+  try {
+    const target = install(tmp.dir);
+    const { impl } = fakeFetch("0.2.0\n");
+    const updater = makeUpdater({ install: target, releasesUrl: RELEASES, fetch: impl, messages: MESSAGES });
+    assert.equal((await updater.status()).updated, null);
+    for (const record of [
+      "{not json",
+      "null",
+      JSON.stringify({ from: "0.1.0", to: "0.1.9" }),
+      JSON.stringify({ from: "0.2.0", to: "0.2.0" }),
+      JSON.stringify({ from: "0.3.0", to: "0.2.0" }),
+      JSON.stringify({ from: "old", to: "0.2.0" }),
+    ]) {
+      await fs.writeFile(target.updatedFile, record);
+      assert.equal((await updater.status()).updated, null, record);
+    }
+  } finally {
+    await tmp.cleanup();
+  }
+});
+
+test("seen forgets the update, and is harmless with none to forget", async () => {
+  const tmp = await makeTempKb();
+  try {
+    const target = install(tmp.dir);
+    await fs.writeFile(target.updatedFile, JSON.stringify({ from: "0.1.0", to: "0.2.0" }));
+    const { impl } = fakeFetch("0.2.0\n");
+    const updater = makeUpdater({ install: target, releasesUrl: RELEASES, fetch: impl, messages: MESSAGES });
+    assert.ok((await updater.status()).updated);
+    await updater.seen();
+    assert.equal((await updater.status()).updated, null);
+    await assert.rejects(fs.stat(target.updatedFile));
+    await updater.seen();
+  } finally {
+    await tmp.cleanup();
+  }
+});
+
+test("the installer records an update, keeping where an unseen one started", async () => {
+  const tmp = await makeTempKb();
+  try {
+    const { recordUpdate } = await installerCommon();
+    const file = path.join(tmp.dir, "updated.json");
+    const read = async () => JSON.parse(await fs.readFile(file, "utf8"));
+    recordUpdate(file, "0.20.0", "0.21.0");
+    assert.deepEqual(await read(), { from: "0.20.0", to: "0.21.0" });
+    // Updated again before that card was closed: the next page names both releases.
+    recordUpdate(file, "0.21.0", "0.21.1");
+    assert.deepEqual(await read(), { from: "0.20.0", to: "0.21.1" });
+    // A record that doesn't lead to this update is someone else's.
+    recordUpdate(file, "0.22.0", "0.23.0");
+    assert.deepEqual(await read(), { from: "0.22.0", to: "0.23.0" });
+    await fs.writeFile(file, "{broken");
+    recordUpdate(file, "0.23.0", "0.24.0");
+    assert.deepEqual(await read(), { from: "0.23.0", to: "0.24.0" });
+    // Nowhere to write: the update goes on without its card.
+    assert.doesNotThrow(() => recordUpdate(path.join(tmp.dir, "missing", "updated.json"), "0.1.0", "0.2.0"));
   } finally {
     await tmp.cleanup();
   }
