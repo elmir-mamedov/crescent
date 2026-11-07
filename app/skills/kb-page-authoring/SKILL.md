@@ -36,6 +36,7 @@ Follow the KB's conventions so the page fits in:
 - The `title` you pass is slugified into a lowercase-hyphenated URL automatically — put the human-readable title in `title`, not crammed into a filename. Add `tags`/`summary` when they'll help discovery.
 - Structure with clear headings and lead with what the reader needs first. Write the page for someone landing on it cold, not as a reply to the current request.
 - Reference images and attachments in the portable relative form `_assets/file.png` (it's rewritten to the space-qualified path at render time).
+- **An image file on this machine → `kb_add_image`.** A plot you made, a screenshot the user attached: save it into the space with `kb_add_image` and put the `_assets/...` link it returns in the page. Never embed an image as a base64 data URI — it bloats the page, its history and every read of it, and an SVG embedded that way doesn't render at all.
 - A **folder** is a pure container with no body — don't try to write prose into one. Use `kb_create_folder` only when you need an empty grouping container.
 
 ## After you write — the hand-off
