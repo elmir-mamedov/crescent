@@ -1,0 +1,8 @@
+# Derived search index — generated from the markdown files, never committed.
+*.sqlite
+*.sqlite-*
+.search-index/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db

@@ -1,0 +1,16 @@
+{
+  "labels": [
+    {
+      "name": "Draft",
+      "color": "yellow"
+    },
+    {
+      "name": "Needs review",
+      "color": "orange"
+    },
+    {
+      "name": "Verified",
+      "color": "green"
+    }
+  ]
+}

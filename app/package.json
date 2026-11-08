@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Lean viewer/editor for the markdown knowledge base.",
   "scripts": {
+    "predev": "tsx src/dev-reset.ts --if-missing",
     "dev": "tsx watch src/server.ts",
+    "dev:reset": "tsx src/dev-reset.ts",
     "mcp": "tsx src/mcp.ts",
     "harvest": "tsx src/harvest/harvest.ts",
     "migrate:ids": "tsx src/migrate-ids.ts",
