@@ -23,6 +23,7 @@ import { codexEngine } from "./codex-cli.js";
 import { makeChat } from "./chat.js";
 import { makeChatStore } from "./chat-store.js";
 import { DEFAULT_RELEASES_URL, findInstall, makeUpdater } from "./update.js";
+import { installedKbDir, sameDir } from "./dev-kb.js";
 import { configureViews } from "./views.js";
 import { registerArchiveRoutes } from "./server/archive.js";
 import { registerAuth } from "./server/auth.js";
@@ -55,6 +56,22 @@ loadEnvFile(path.join(__dirname, "..", ".env"));
 const KB_DIR = path.resolve(
   process.env.KB_DIR ?? path.join(__dirname, "..", "..", "kb")
 );
+// The install this server runs from, or null in a checkout (update.ts).
+const install = findInstall(__dirname);
+// A checkout is for trying things, and every trial edit it makes is a commit:
+// it refuses the KB an installed copy on this computer keeps its pages in, and
+// opens the sample KB (dev-kb.ts) instead. KB25_DEV_REAL_KB=1 opens it anyway.
+if (!install && !envFlag("KB25_DEV_REAL_KB")) {
+  const installedKb = installedKbDir();
+  if (installedKb && sameDir(installedKb, KB_DIR)) {
+    console.error(
+      `${KB_DIR} is where your installed Crescent keeps its pages, and a checkout's ` +
+        "server would commit every trial edit to them. Point KB_DIR at another folder " +
+        "(npm run dev:reset makes a sample KB in kb/), or set KB25_DEV_REAL_KB=1 to open it anyway."
+    );
+    process.exit(1);
+  }
+}
 // Loopback-only by default, so the viewer is reachable from this machine and
 // nowhere else. Fastify binds both 127.0.0.1 and ::1 for "localhost". Leave it
 // there: a wider bind publishes a sign-in form backed by one static credential
@@ -128,7 +145,6 @@ const app = Fastify({
 // In-app updates, for an installed copy only: a checkout has no VERSION or
 // private Node, so neither route exists there and the page's update card,
 // finding no /_update, stays hidden. KB25_UPDATE_CHECK=0 turns the check off.
-const install = findInstall(__dirname);
 const updateCheck = !/^(0|false|no|off)$/i.test(process.env.KB25_UPDATE_CHECK?.trim() ?? "");
 const updater =
   install && updateCheck
