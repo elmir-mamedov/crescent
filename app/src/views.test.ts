@@ -1071,6 +1071,24 @@ test("feedback #46: an agent's note offers to take down all of its notes on the 
   assert.match(html, /\.note-popover-foot\{border-top:1px solid var\(--line\); padding-top:10px\}/);
 });
 
+test("feedback #50: a note's write is shown in place, without reloading the page", () => {
+  const html = layout(pageView());
+  // A write that went through brings the notes up to date where they are.
+  assert.match(html, /if \(result\.ok\) refresh\(\);/);
+  assert.doesNotMatch(html, /if \(result\.ok\) window\.location\.reload\(\);/);
+  // From a fresh copy of the page, whose blocks must line up with the ones
+  // shown; one that has changed in some other way is reloaded instead.
+  assert.match(html, /fetch\(location\.href, \{ cache: "no-store" \}\)/);
+  assert.match(html, /if \(html === null \|\| !adopt\(new DOMParser\(\)\.parseFromString\(html, "text\/html"\)\)\) \{\s*window\.location\.reload\(\);/);
+  assert.match(html, /if \(blocks\.length !== nextBlocks\.length\) return false;/);
+  assert.match(html, /if \(blocks\[i\]\.getAttribute\("data-src-hash"\) !== nextBlocks\[i\]\.getAttribute\("data-src-hash"\)\) return false;/);
+  // The old marks and pins come off before the new ones go on.
+  assert.match(html, /unpaint\(\);\s*blocks\.forEach\(/);
+  assert.match(html, /byId\.clear\(\);\s*for \(const note of notes\) byId\.set\(note\.id, note\);\s*paint\(\);/);
+  // Still built from text, never from the fetched page's markup.
+  assert.doesNotMatch(html, /innerHTML/);
+});
+
 test("notes: the kind switch gets its own row, so no kind is clipped", () => {
   const html = layout(pageView());
   // Three kinds beside Cancel and Save overflow the 320px panel, and .note-kinds

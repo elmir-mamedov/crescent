@@ -189,6 +189,23 @@ export const NOTES_SCRIPT = `
     }
   }
 
+  /** Take every note off the page again, leaving the prose as it was rendered. */
+  function unpaint() {
+    for (const pin of article.querySelectorAll("[data-note-pin]")) pin.remove();
+    // Outer marks come first in document order, so a mark inside another is
+    // still in the page, in the outer one's place, when its turn comes.
+    const parents = new Set();
+    for (const mark of article.querySelectorAll("[data-note-mark]")) {
+      const parent = mark.parentNode;
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      mark.remove();
+      parents.add(parent);
+    }
+    // Join the text that marking split, so the page has the nodes it came with.
+    for (const parent of parents) parent.normalize();
+    for (const block of article.querySelectorAll(".has-note")) block.classList.remove("has-note");
+  }
+
   // --- the controls shared by writing and rewriting --------------------------
 
   /**
@@ -522,10 +539,78 @@ export const NOTES_SCRIPT = `
       })
       .then((result) => {
         if (!result) return;
-        if (result.ok) window.location.reload();
+        if (result.ok) refresh();
         else fail(result.error || "Could not save the note.", button);
       })
       .catch(() => fail("Could not reach the server.", button));
+  }
+
+  /**
+   * Show the notes as they are after a write, without reloading the page
+   * (feedback #50): a reload blinked the whole page to change one mark. The
+   * page is fetched again and only what a note changes is taken from it: each
+   * block's source line and the notes on it, the notes themselves, and when
+   * the page was last updated. A page whose blocks no longer line up with the
+   * ones shown, because something else changed it too, is reloaded instead.
+   */
+  function refresh() {
+    fetch(location.href, { cache: "no-store" })
+      .then((response) => (response.ok && !response.redirected ? response.text() : null))
+      .then((html) => {
+        if (html === null || !adopt(new DOMParser().parseFromString(html, "text/html"))) {
+          window.location.reload();
+        }
+      })
+      .catch(() => window.location.reload());
+  }
+
+  /** Take the notes from \`next\`, a fresh copy of this page; false if it no longer fits. */
+  function adopt(next) {
+    const nextArticle = next.querySelector("article.prose");
+    const nextPayload = next.getElementById("kb25-notes");
+    if (!nextArticle || !nextPayload) return false;
+    // A block's fingerprint leaves its notes out, so only another change to
+    // the page tells these apart.
+    const blocks = article.querySelectorAll("[data-src-hash]");
+    const nextBlocks = nextArticle.querySelectorAll("[data-src-hash]");
+    if (blocks.length !== nextBlocks.length) return false;
+    for (let i = 0; i < blocks.length; i++) {
+      if (blocks[i].getAttribute("data-src-hash") !== nextBlocks[i].getAttribute("data-src-hash")) return false;
+    }
+    const nextData = nextPayload.getAttribute("data-notes") || "[]";
+    let nextNotes;
+    try {
+      nextNotes = JSON.parse(nextData);
+    } catch (err) {
+      return false;
+    }
+
+    // What the reload used to close: the card or composer the write came
+    // from, and the selection the new note was made from.
+    closePopover();
+    closeComposer();
+    hideAddButton();
+    const selection = window.getSelection();
+    if (selection) selection.removeAllRanges();
+
+    unpaint();
+    blocks.forEach((block, i) => {
+      const from = nextBlocks[i];
+      block.setAttribute("data-src-line", from.getAttribute("data-src-line") || "");
+      const ids = from.getAttribute("data-kb25-notes");
+      if (ids) block.setAttribute("data-kb25-notes", ids);
+      else block.removeAttribute("data-kb25-notes");
+    });
+    payload.setAttribute("data-notes", nextData);
+    notes = nextNotes;
+    byId.clear();
+    for (const note of notes) byId.set(note.id, note);
+    paint();
+
+    const stamp = document.querySelector(".page-head .updated");
+    const nextStamp = next.querySelector(".page-head .updated");
+    if (stamp && nextStamp) stamp.textContent = nextStamp.textContent;
+    return true;
   }
 
   function fail(message, button) {

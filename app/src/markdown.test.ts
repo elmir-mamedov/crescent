@@ -457,6 +457,30 @@ test("the block below a note carries its id, and every top-level block is anchor
   assert.match(html, /<p data-src-line="\d+" data-src-hash="[0-9a-f]{8}" data-kb25-notes="aaa">/);
 });
 
+test("a note leaves every block's fingerprint as it was, and moves only the lines below it", () => {
+  // NOTES_SCRIPT relies on this to take a page's notes from a fresh render in
+  // place: the blocks of the two renders line up by fingerprint (feedback #50).
+  const before = "# Title\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n";
+  const after = before.replace("Second", noteComment("aaa", "Fix this.", "Second") + "\nSecond");
+  const anchors = (body: string) =>
+    [...render(body).matchAll(/data-src-line="(\d+)" data-src-hash="([0-9a-f]+)"/g)].map((m) => ({
+      line: Number(m[1]),
+      hash: m[2],
+    }));
+  const was = anchors(before);
+  const now = anchors(after);
+  assert.equal(now.length, 4);
+  assert.deepEqual(
+    now.map((a) => a.hash),
+    was.map((a) => a.hash)
+  );
+  assert.deepEqual(
+    now.slice(0, 2).map((a) => a.line),
+    was.slice(0, 2).map((a) => a.line)
+  );
+  assert.ok(now[3].line > was[3].line);
+});
+
 test("two notes stacked on one block are both listed on it", () => {
   const html = render(
     noteComment("aaa", "First.") + "\n" + noteComment("bbb", "Second.") + "\nParagraph.\n"
