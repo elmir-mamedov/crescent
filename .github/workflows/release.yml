@@ -16,6 +16,18 @@ jobs:
     # Windows one here too.
     runs-on: macos-latest
     steps:
+      # Every change reaches main through a pull request that CI passed, so a
+      # release is cut from main: a tag on any other commit stops here. The
+      # compare reads "behind" or "identical" when the tag is in main's history.
+      - name: Tag is on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)
+          if [ "$status" != behind ] && [ "$status" != identical ]; then
+            echo "::error::$GITHUB_REF_NAME is not on main ($status). Merge its pull request, then tag main."
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
