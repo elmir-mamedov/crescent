@@ -20,7 +20,7 @@ and Claude Code can work with the same pages through an MCP connection.
 - **Organising.** Labels mark pages with coloured tags such as "Draft". Search
   covers the current space and can be narrowed by label. Pages can be
   archived and restored, and pages you haven't opened yet are marked in the
-  sidebar.
+  sidebar. A page opened by accident can be marked unread again.
 - **Notes.** Tasks, remarks and highlights can be attached to a passage of a
   page. A dashboard collects open tasks, and another lists pages by label.
 - **Chat.** A side panel on every page sends questions to Claude Code or Codex
