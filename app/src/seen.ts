@@ -12,9 +12,13 @@
  * It is one JSON file of page ids, `<KB_DIR>/.kb25/seen.json`. It sits beside
  * the spaces rather than in one, so no space's repo ever commits it, and its
  * folder's leading dot keeps space discovery and sync from taking it for a
- * space. Ids are only ever added, and every write re-reads the file first, so
- * two viewers on one KB keep each other's visits. Keyed by id, so a page that
- * is moved or renamed before it is opened keeps its dot.
+ * space. Every write re-reads the file first, so two viewers on one KB keep
+ * each other's visits. Keyed by id, so a page that is moved or renamed before
+ * it is opened keeps its dot.
+ *
+ * A page leaves the list only when a person marks it unread from its ⋯ menu
+ * (feedback #12), having opened it by accident: it is new to them again until
+ * they next open it.
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -24,6 +28,8 @@ export interface SeenPages {
   ids(): Promise<ReadonlySet<string>>;
   /** Record that the page with this id has been opened. */
   add(id: string): Promise<void>;
+  /** Mark the page with this id unread, so it is new again until it is next opened. */
+  remove(id: string): Promise<void>;
 }
 
 /** `baseline` lists the ids of every page in the KB right now. */
@@ -75,6 +81,13 @@ export function makeSeenPages(kbDir: string, baseline: () => Promise<Iterable<st
         const ids = await current();
         if (ids.has(id)) return;
         ids.add(id);
+        await write(ids);
+      });
+    },
+    remove(id) {
+      return serial(async () => {
+        const ids = await current();
+        if (!ids.delete(id)) return;
         await write(ids);
       });
     },

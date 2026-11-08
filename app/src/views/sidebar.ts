@@ -5,7 +5,7 @@ import { archiveHref, escapeHtml, slugPath } from "./html.js";
 import { labelDialog } from "./labels.js";
 import { SEARCH_SCRIPT, sidebarSearch } from "./search.js";
 import { PAGE_NAV } from "./tabs.js";
-import { TREE_PLACE_SCRIPT, renderTree } from "./tree.js";
+import { TREE_PLACE_SCRIPT, UNREAD_SCRIPT, renderTree } from "./tree.js";
 
 /**
  * The sidebar: the space switcher, the search box, the Create menu, the archive
@@ -94,6 +94,7 @@ export function sidebarHtml(
     parentSlug: spaceKey,
   })}</nav>
   <script>${TREE_PLACE_SCRIPT}</script>
+  <script>${UNREAD_SCRIPT}</script>
   ${SIDEBAR_PLACED_MARKER}
 </aside>
 <script>${SEARCH_SCRIPT}</script>

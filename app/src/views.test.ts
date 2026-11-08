@@ -2332,6 +2332,47 @@ test("fresh: a group hiding a fresh page shows a ring, drawn only while it is sh
   assert.match(html, /\.tree li\.collapsed > \.tree-row > \.tree-fresh-within\{display:block\}/);
 });
 
+test("unread: an opened page's ⋯ menu offers to mark it unread", () => {
+  const html = layout(
+    pageView({
+      activeSlug: "kb25/open",
+      tree: [
+        node({ slug: "kb25/open", title: "Open", id: "id-open" }),
+        node({ slug: "kb25/new", title: "New", id: "id-new", fresh: true }),
+        node({ slug: "kb25/box", title: "Box", id: "id-box", isSection: true, isFolder: true }),
+        node({ slug: "kb25/old", title: "Old" }),
+      ],
+    })
+  );
+  const menu = (slug: string) =>
+    sidebarTree(html).match(new RegExp(`<li data-tree-slug="${slug.replace(/\//g, "\\/")}"[^>]*>[\\s\\S]*?</details>`))?.[0] ?? "";
+  // Beside Copy link, before the items that take the page away.
+  assert.match(
+    menu("kb25/open"),
+    /data-copy-slug="kb25\/open">Copy link<\/button>\s*<button type="button" data-mark-unread="kb25\/open">Mark as unread<\/button>\s*<form method="post" action="\/_archive/
+  );
+  // A page already showing its dot is unread as it is; a folder is never new,
+  // and a page without an id cannot be tracked.
+  assert.doesNotMatch(menu("kb25/new"), /data-mark-unread/);
+  assert.doesNotMatch(menu("kb25/box"), /data-mark-unread/);
+  assert.doesNotMatch(menu("kb25/old"), /data-mark-unread/);
+});
+
+test("unread: the sidebar draws the dot back itself, and keeps it over a reload", () => {
+  const html = layout(pageView({ tree: [node({ slug: "kb25/notes", title: "Notes", id: "id-notes" })] }));
+  const aside = html.match(/<aside class="sidebar">[\s\S]*?<\/aside>/)?.[0] ?? "";
+  const script = aside.match(/<script>([^<]*kb:kept-unread[^<]*)<\/script>/)?.[1] ?? "";
+  assert.ok(script, "the script runs inside the sidebar, before the tree first paints");
+  assert.ok(aside.indexOf(script) < aside.indexOf('id="kb-sidebar-placed"'));
+  assert.match(script, /fetch\("\/_unread\/" \+ slug\.split\("\/"\)\.map\(encodeURIComponent\)\.join\("\/"\), \{\s*method: "POST",/);
+  // The marks it draws are the ones the server draws.
+  assert.match(script, /const MARK = \{"className":"tree-fresh","label":"New, not opened yet","title":"New — this page has not been opened yet"\};/);
+  assert.match(script, /const WITHIN = \{"className":"tree-fresh-within","label":"Contains new pages",/);
+  // Only the open page is handed on, and only to a reload of this same view.
+  assert.match(script, /if \(!isOpen\(li\)\) return;\s*try \{\s*sessionStorage\.setItem\(KEPT_KEY, JSON\.stringify\(\{ url: location\.href, slug \}\)\);/);
+  assert.match(script, /if \(!kept \|\| kept\.url !== location\.href \|\| !nav \|\| nav\.type !== "reload"\) \{\s*kept = null;\s*sessionStorage\.removeItem\(KEPT_KEY\);/);
+});
+
 test("fresh: the archive's list of pages never shows the mark", () => {
   const html = archiveLayout(archiveView());
   const content = html.match(/<article class="prose">[\s\S]*?<\/article>/)?.[0] ?? "";

@@ -42,6 +42,7 @@ import { makeRender } from "./server/render.js";
 import { registerSearchRoutes } from "./server/search.js";
 import { registerSpaceRoutes } from "./server/spaces.js";
 import { registerStaticRoutes } from "./server/static.js";
+import { registerUnreadRoutes } from "./server/unread.js";
 import { registerUpdateRoutes } from "./server/update.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -217,6 +218,7 @@ registerArchiveRoutes(app, ctx);
 registerMoveRoutes(app, ctx);
 registerNoteRoutes(app, ctx);
 registerLabelRoutes(app, ctx);
+registerUnreadRoutes(app, ctx);
 registerSearchRoutes(app, ctx);
 registerDashboardRoutes(app, ctx);
 await registerGalleryRoutes(app, ctx);

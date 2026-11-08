@@ -109,12 +109,24 @@ function containsSlug(node: PageNode, slug: string): boolean {
  * dialog and the dashboards, and the sidebar keeps this one signal.
  */
 function freshMark(node: PageNode): string {
-  if (node.fresh) {
-    return `<span class="tree-fresh" role="img" aria-label="New, not opened yet" title="New — this page has not been opened yet"></span>`;
-  }
-  return node.children.some(hasFresh)
-    ? `<span class="tree-fresh-within" role="img" aria-label="Contains new pages" title="Contains new pages that have not been opened yet"></span>`
-    : "";
+  if (node.fresh) return markHtml(FRESH_MARK);
+  return node.children.some(hasFresh) ? markHtml(FRESH_WITHIN_MARK) : "";
+}
+
+/** The two marks, which UNREAD_SCRIPT also draws when a page is marked unread. */
+const FRESH_MARK = {
+  className: "tree-fresh",
+  label: "New, not opened yet",
+  title: "New — this page has not been opened yet",
+};
+const FRESH_WITHIN_MARK = {
+  className: "tree-fresh-within",
+  label: "Contains new pages",
+  title: "Contains new pages that have not been opened yet",
+};
+
+function markHtml(mark: typeof FRESH_MARK): string {
+  return `<span class="${mark.className}" role="img" aria-label="${escapeHtml(mark.label)}" title="${escapeHtml(mark.title)}"></span>`;
 }
 
 function hasFresh(node: PageNode): boolean {
@@ -126,7 +138,8 @@ function hasFresh(node: PageNode): boolean {
  * folder is a pure container, so it gets a Rename control and NO Edit/Download;
  * ordinary pages keep Edit/Download and a "Labels" item that opens the shared
  * label dialog. Naming a new folder and renaming one happen in the shared folder
- * dialog.
+ * dialog. A page that has been opened can be marked unread again (UNREAD_SCRIPT),
+ * so one opened by accident gets its dot back.
  */
 function treeMenu(node: PageNode): string {
   const slug = node.slug;
@@ -142,13 +155,19 @@ function treeMenu(node: PageNode): string {
     : `<a href="/_edit${slugPath(slug)}">Edit</a>
       <a href="/_download${slugPath(slug)}" download>Download</a>
       <button type="button" data-label-open data-label-slug="${escapeHtml(slug)}" data-label-title="${escapeHtml(node.title)}" data-label-current="${escapeHtml(JSON.stringify(node.labels ?? []))}">Labels</button>`;
+  // Only a page can be new (markFresh), and one already showing its dot is
+  // unread as it is.
+  const markUnread =
+    !node.isFolder && node.id && !node.fresh
+      ? `\n      <button type="button" data-mark-unread="${escapeHtml(slug)}">Mark as unread</button>`
+      : "";
   return `<details class="tree-menu">
     <summary aria-label="Page actions">⋯</summary>
     <div class="tree-menu-pop">
       ${newPage}
       ${newFolder}
       ${middle}
-      <button type="button" data-copy-slug="${escapeHtml(slug)}">Copy link</button>
+      <button type="button" data-copy-slug="${escapeHtml(slug)}">Copy link</button>${markUnread}
       <form method="post" action="/_archive${slugPath(slug)}">
         <button type="submit">Archive</button>
       </form>
@@ -213,6 +232,134 @@ export const TREE_PLACE_SCRIPT = `
       pane.scrollTop += rowBox.top - paneBox.top - (pane.clientHeight - rowBox.height) / 2;
     }
   }
+})();
+`;
+
+/**
+ * Marking a page unread from its ⋯ menu (feedback #12): the server forgets it
+ * was opened, and its row gets the dot back, with the ring on each group above
+ * it, drawn here rather than by a reload. Reloading the page that was marked
+ * would open it again, for the server counts every load of a page as opening
+ * it.
+ *
+ * For the same reason, a mark on the open page is handed on to every reload of
+ * this view, which marks it unread again before the tree first paints: the
+ * change feed reloads a page whenever its space changes, and an agent writing
+ * pages there would otherwise take the dot straight back off. Any other load
+ * ends the hand-off, as opening the page anew is meant to. Emitted inside the
+ * <aside>, straight after TREE_PLACE_SCRIPT, for the same reason that is.
+ */
+export const UNREAD_SCRIPT = `
+(() => {
+  const tree = document.querySelector(".tree");
+  if (!tree) return;
+  const KEPT_KEY = "kb:kept-unread";
+  const MARK = ${JSON.stringify(FRESH_MARK)};
+  const WITHIN = ${JSON.stringify(FRESH_WITHIN_MARK)};
+
+  function markNode(mark) {
+    const node = document.createElement("span");
+    node.className = mark.className;
+    node.setAttribute("role", "img");
+    node.setAttribute("aria-label", mark.label);
+    node.title = mark.title;
+    return node;
+  }
+
+  function rowOf(li) {
+    return li.querySelector(":scope > .tree-row");
+  }
+
+  /** The marks renderTree draws for a page nobody has opened, after its title. */
+  function draw(li) {
+    const row = rowOf(li);
+    if (!row) return;
+    const button = row.querySelector("[data-mark-unread]");
+    if (button) button.remove();
+    if (row.querySelector(":scope > ." + MARK.className)) return;
+    // A row with its own dot never shows the ring as well.
+    const ring = row.querySelector(":scope > ." + WITHIN.className);
+    if (ring) ring.remove();
+    row.insertBefore(markNode(MARK), row.querySelector(":scope > .tree-menu"));
+    for (let up = li.parentElement.closest("li[data-tree-slug]"); up; up = up.parentElement.closest("li[data-tree-slug]")) {
+      const upRow = rowOf(up);
+      if (!upRow || upRow.querySelector(":scope > ." + MARK.className + ", :scope > ." + WITHIN.className)) continue;
+      upRow.insertBefore(markNode(WITHIN), upRow.querySelector(":scope > .tree-menu"));
+    }
+  }
+
+  function rowFor(slug) {
+    for (const li of tree.querySelectorAll("li[data-tree-slug]")) {
+      if (li.getAttribute("data-tree-slug") === slug) return li;
+    }
+    return null;
+  }
+
+  function fail(message) {
+    const box = document.querySelector("[data-move-error]");
+    if (!box) return;
+    box.textContent = message || "Could not mark the page unread.";
+    box.hidden = false;
+    window.setTimeout(() => {
+      box.hidden = true;
+    }, 5000);
+  }
+
+  /** True once the server has it unread; says why not otherwise. */
+  async function markUnread(slug) {
+    try {
+      const response = await fetch("/_unread/" + slug.split("/").map(encodeURIComponent).join("/"), {
+        method: "POST",
+      });
+      const result = await response.json().catch(() => null);
+      if (response.ok && result && result.ok) return true;
+      fail(result && result.error);
+    } catch {
+      fail();
+    }
+    return false;
+  }
+
+  function isOpen(li) {
+    return !!(li && li.querySelector(":scope > .tree-row a.active[data-drag-slug]"));
+  }
+
+  let kept = null;
+  try {
+    kept = JSON.parse(sessionStorage.getItem(KEPT_KEY) || "null");
+    const nav = performance.getEntriesByType("navigation")[0];
+    if (!kept || kept.url !== location.href || !nav || nav.type !== "reload") {
+      kept = null;
+      sessionStorage.removeItem(KEPT_KEY);
+    }
+  } catch {
+    kept = null;
+  }
+  const keptRow = kept && rowFor(kept.slug);
+  if (keptRow && isOpen(keptRow)) {
+    draw(keptRow);
+    markUnread(kept.slug).then((ok) => {
+      if (ok) return;
+      try {
+        sessionStorage.removeItem(KEPT_KEY);
+      } catch {}
+    });
+  }
+
+  tree.addEventListener("click", async (event) => {
+    const button = event.target.closest && event.target.closest("[data-mark-unread]");
+    if (!button) return;
+    const slug = button.getAttribute("data-mark-unread") || "";
+    const li = button.closest("li[data-tree-slug]");
+    const menu = button.closest(".tree-menu");
+    if (menu) menu.open = false;
+    if (!slug || !li || !(await markUnread(slug))) return;
+    draw(li);
+    if (!isOpen(li)) return;
+    try {
+      sessionStorage.setItem(KEPT_KEY, JSON.stringify({ url: location.href, slug }));
+    } catch {}
+  });
 })();
 `;
 

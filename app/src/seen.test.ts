@@ -79,3 +79,35 @@ test("the list lives beside the spaces, in a folder space discovery skips", asyn
     await kb.cleanup();
   }
 });
+
+test("a page marked unread is new again, until it is next opened", async () => {
+  const kb = await makeTempKb();
+  try {
+    const seen = makeSeenPages(kb.dir, baselineOf(["old1", "old2"]).list);
+    await seen.add("new1");
+    await seen.remove("old1");
+    await seen.remove("new1");
+    // Kept across restarts, like a visit.
+    const later = makeSeenPages(kb.dir, baselineOf([]).list);
+    assert.deepEqual([...(await later.ids())], ["old2"]);
+    await later.add("old1");
+    assert.deepEqual([...(await seen.ids())].sort(), ["old1", "old2"]);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("marking unread before the list began still starts it from the baseline", async () => {
+  const kb = await makeTempKb();
+  try {
+    const seen = makeSeenPages(kb.dir, baselineOf(["old1", "old2"]).list);
+    await seen.remove("old1");
+    // Only the page marked is new; the rest of the KB is not lit up.
+    assert.deepEqual([...(await seen.ids())], ["old2"]);
+    // A page that was never seen stays as it was.
+    await seen.remove("never");
+    assert.deepEqual([...(await seen.ids())], ["old2"]);
+  } finally {
+    await kb.cleanup();
+  }
+});
