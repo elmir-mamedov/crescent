@@ -44,12 +44,16 @@ export const PAGE_NAV = `<div class="page-nav" role="group" aria-label="History"
  * again each time they are brought up to date. Where the browser says whether
  * there is anywhere to go (the Navigation API), a button with nowhere to go
  * is disabled; elsewhere both stay on, and history ignores a step past its end.
+ * PAGE_NAV_STATE_SCRIPT has already dimmed it for the first paint.
  */
 const PAGE_NAV_SCRIPT = `
 (() => {
   const nav = window.navigation;
+  const root = document.documentElement;
   function update() {
     if (!nav || typeof nav.canGoBack !== "boolean") return;
+    root.classList.toggle("kb-no-back", !nav.canGoBack);
+    root.classList.toggle("kb-no-forward", !nav.canGoForward);
     for (const button of document.querySelectorAll("[data-page-back]")) button.disabled = !nav.canGoBack;
     for (const button of document.querySelectorAll("[data-page-forward]")) button.disabled = !nav.canGoForward;
   }
@@ -62,6 +66,22 @@ const PAGE_NAV_SCRIPT = `
     if (target.closest("[data-page-back]")) history.back();
     else if (target.closest("[data-page-forward]")) history.forward();
   });
+})();
+`;
+
+/**
+ * Where Back and Forward have nowhere to go, as classes on <html> that dim
+ * them (styles.ts), set in <head> before either is parsed. The buttons come
+ * enabled, and WebKit paints a page before it has finished parsing it, so a
+ * page that waited for PAGE_NAV_SCRIPT to disable them showed Forward lit for
+ * a frame on every page opened (feedback #48).
+ */
+export const PAGE_NAV_STATE_SCRIPT = `
+(() => {
+  const nav = window.navigation;
+  if (!nav || typeof nav.canGoBack !== "boolean") return;
+  document.documentElement.classList.toggle("kb-no-back", !nav.canGoBack);
+  document.documentElement.classList.toggle("kb-no-forward", !nav.canGoForward);
 })();
 `;
 

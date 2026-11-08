@@ -486,7 +486,7 @@ body.dragging-page .space-current{
 }
 .page-nav-button:hover:not(:disabled){background:var(--tab-hover-bg); color:var(--fg)}
 .page-nav-button:focus-visible{outline:2px solid var(--focus-ring); outline-offset:1px}
-.page-nav-button:disabled{opacity:.35; cursor:default}
+.page-nav-button:disabled,html.kb-no-back [data-page-back],html.kb-no-forward [data-page-forward]{opacity:.35; cursor:default}
 .page-nav-button svg{display:block}
 .tab{
   position:relative; flex:0 1 200px; min-width:88px; height:32px;

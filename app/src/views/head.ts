@@ -1,5 +1,6 @@
 import { desktop } from "./config.js";
 import { STYLES } from "./styles.js";
+import { PAGE_NAV_STATE_SCRIPT } from "./tabs.js";
 
 /**
  * The <head> every page shares, and the scripts in it, which run before the body
@@ -8,8 +9,9 @@ import { STYLES } from "./styles.js";
  */
 
 /**
- * The shared document <head>: theming meta, favicons, the inlined stylesheet, and
- * the FOUC-safe theme script. The script sets `data-theme` on <html> before the
+ * The shared document <head>: theming meta, favicons, the inlined stylesheet, the
+ * FOUC-safe theme script, and whether Back and Forward have anywhere to go
+ * (PAGE_NAV_STATE_SCRIPT). The theme script sets `data-theme` on <html> before the
  * body paints (from localStorage, else the OS preference) and wires the toggle.
  * `extra` is for head markup only some pages need, such as KaTeX's stylesheet
  * or SIDEBAR_RENDER_HOLD.
@@ -24,6 +26,7 @@ ${FAVICON_TAGS}
 <style>${STYLES}</style>${extra}
 <script>${THEME_SCRIPT}</script>${desktop ? `\n<script>${QUIT_SCRIPT}</script>` : ""}
 <script>${SWIPE_SCRIPT}</script>
+<script>${PAGE_NAV_STATE_SCRIPT}</script>
 </head>`;
 }
 

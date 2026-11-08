@@ -2945,6 +2945,24 @@ test("feedback #38: Back and Forward lead the tab strip, and the sidebar without
   assert.match(html, /The arrows at the top left go back and forward between the pages you have opened/);
 });
 
+test("feedback #48: an arrow with nowhere to go is dim from the first paint", () => {
+  const views: Array<[string, string]> = [
+    ["page", layout(pageView())],
+    ["folder", folderLayout(folderView())],
+    ["edit", editLayout(editView())],
+    ["dashboard", dashboardLayout(dashboardView())],
+    ["spaces", spacesLayout(spacesView())],
+  ];
+  for (const [name, html] of views) {
+    // Decided in <head>, before either pair of buttons is parsed.
+    const head = html.slice(0, html.indexOf("</head>"));
+    assert.match(head, /classList\.toggle\("kb-no-back", !nav\.canGoBack\);\s*document\.documentElement\.classList\.toggle\("kb-no-forward", !nav\.canGoForward\);/, name);
+    assert.match(html, /\.page-nav-button:disabled,html\.kb-no-back \[data-page-back\],html\.kb-no-forward \[data-page-forward\]\{opacity:\.35; cursor:default\}/, name);
+  }
+  // And kept up as the page moves through history, with the buttons' own state.
+  assert.match(layout(pageView()), /root\.classList\.toggle\("kb-no-back", !nav\.canGoBack\);\s*root\.classList\.toggle\("kb-no-forward", !nav\.canGoForward\);\s*for \(const button of document\.querySelectorAll\("\[data-page-back\]"\)\)/);
+});
+
 test("tabs: every view with the corner draws the strip first, hidden until there are two", () => {
   const views: Array<[string, string]> = [
     ["page", layout(pageView())],
