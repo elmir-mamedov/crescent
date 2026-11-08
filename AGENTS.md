@@ -17,7 +17,7 @@ Run commands from `app/`:
 - `npm install` installs runtime and TypeScript tooling.
 - `npm run dev` starts the viewer with `tsx watch` at `http://localhost:4000`.
 - `npm start` runs the server once without watch mode.
-- `npm run app:install` installs `~/Applications/Crescent.app` (macOS), a Spotlight-launchable app that starts the server if needed and opens Crescent's own window (see Installer & Releases).
+- `npm run app:install` installs `~/Applications/Crescent Dev.app` (macOS), a Spotlight-launchable app that starts this checkout's server if needed and opens Crescent's own window (see Installer & Releases). Its own name and bundle id (`local.kb25.viewer.dev`) keep it apart from an installed `Crescent.app`.
 - `npm run typecheck` runs `tsc --noEmit`; use this as the primary verification step.
 - `npm run build:shell` builds KB25's native windows into `shell/build/`, each where its tools are: the macOS one with `swiftc`, the Windows one with the .NET SDK (on any system). `--require mac,windows` fails instead of skipping.
 - `npm run build:release` builds `dist/kb25.zip`, what the one-line installer downloads; it builds both windows, so it runs on macOS with the .NET SDK (`DOTNET` names a `dotnet` not on `PATH`).

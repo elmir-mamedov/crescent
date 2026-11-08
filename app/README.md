@@ -13,8 +13,10 @@ npm run dev      # http://localhost:4000, auto-reloads on file changes
 npm run mcp      # stdio MCP server for local agent/client integrations
 ```
 
-On macOS, `npm run app:install` adds `~/Applications/Crescent.app`, so the
-viewer opens like any other app (Cmd+Space, "Crescent"). It starts the server
+On macOS, `npm run app:install` adds `~/Applications/Crescent Dev.app`, so the
+viewer opens like any other app (Cmd+Space, "Crescent Dev"). It has its own
+name and bundle id, so an installed `Crescent.app` stays as it is beside it,
+with its own window position and storage. It starts the server
 if it is not already running and opens the viewer in its own window, the native
 app in `shell/mac/`, which it builds with `swiftc` (Xcode or its Command Line
 Tools).
@@ -256,5 +258,5 @@ needs a hand-written entry.
 
 - `npm run dev` — watch + reload.
 - `npm start` — run once.
-- `npm run app:install` — install the `Crescent.app` launcher (macOS).
+- `npm run app:install` — install the `Crescent Dev.app` launcher (macOS).
 - `npm run typecheck` — type-check with `tsc --noEmit`.

@@ -1,5 +1,7 @@
-// Installs ~/Applications/Crescent.app, KB25's window (shell/mac/KB25.swift, built
-// here with swiftc) that Spotlight, Launchpad and the Dock pick up. Opening it
+// Installs ~/Applications/Crescent Dev.app, KB25's window (shell/mac/KB25.swift,
+// built here with swiftc) that Spotlight, Launchpad and the Dock pick up. It has
+// its own name and bundle id, so it sits beside an installed Crescent.app rather
+// than replacing it, and keeps its window's storage and position apart. Opening it
 // starts the server when it is not already running and opens the viewer; it
 // stops the server it started when the window closes. A server already running
 // from a terminal (npm run dev) is not in desktop mode and keeps running.
@@ -19,7 +21,7 @@ import { sh, writeMacApp } from "../installer/mac-app.mjs";
 import { buildMacShell } from "./build-shell.mjs";
 
 if (process.platform !== "darwin") {
-  console.error("Crescent.app is a macOS launcher; on other systems run `npm start`.");
+  console.error("Crescent Dev.app is a macOS launcher; on other systems run `npm run dev`.");
   process.exit(1);
 }
 
@@ -36,7 +38,8 @@ if (!executable) {
   process.exit(1);
 }
 
-const bundle = path.join(os.homedir(), "Applications", "Crescent.app");
+const name = "Crescent Dev";
+const bundle = path.join(os.homedir(), "Applications", `${name}.app`);
 const logPath = path.join(os.homedir(), "Library", "Logs", "kb25-viewer.log");
 const port = process.env.PORT ?? "4000";
 
@@ -53,12 +56,14 @@ up() { curl -s -o /dev/null --max-time 1 "$URL/"; }
 
 if ! up; then
   cd ${sh(appDir)} || exit 1
+  # As npm run dev does: make the sample KB when there is none yet.
+  ${sh(process.execPath)} ${sh(tsxCli)} src/dev-reset.ts --if-missing >>"$LOG" 2>&1
   nohup ${sh(process.execPath)} ${sh(tsxCli)} src/server.ts >>"$LOG" 2>&1 &
   i=0
   until up; do
     i=$((i + 1))
     if [ "$i" -gt 60 ]; then
-      osascript -e "display alert \\"Crescent did not start\\" message \\"See $LOG\\"" >/dev/null
+      osascript -e "display alert \\"${name} did not start\\" message \\"See $LOG\\"" >/dev/null
       exit 1
     fi
     sleep 0.25
@@ -75,5 +80,7 @@ writeMacApp({
   start: ["/bin/sh", path.join(bundle, "Contents", "Resources", "start.sh")],
   resources: { "start.sh": script },
   iconPng: path.join(appDir, "public", "favicon-512x512.png"),
+  name,
+  bundleId: "local.kb25.viewer.dev",
 });
-console.log(`Installed ${bundle}. Open it from Spotlight: Cmd+Space, "Crescent".`);
+console.log(`Installed ${bundle}. Open it from Spotlight: Cmd+Space, "${name}".`);

@@ -16,14 +16,25 @@ const LSREGISTER =
  * built window. `start` is the command it runs to start the server and learn
  * its address (KB25StartCommand); `resources` are extra files for
  * Contents/Resources, such as a script `start` names. `iconPng` is a square
- * PNG, 512px or larger.
+ * PNG, 512px or larger. `name` and `bundleId` are what the Dock and Cmd+Tab
+ * show, and what macOS keeps the window's storage and position under: the
+ * developer launcher passes its own, so it never stands in for the real app.
  */
-export function writeMacApp({ bundle, executable, start, version = "", resources = {}, iconPng }) {
+export function writeMacApp({
+  bundle,
+  executable,
+  start,
+  version = "",
+  resources = {},
+  iconPng,
+  name = "Crescent",
+  bundleId = "local.kb25.viewer",
+}) {
   fs.rmSync(bundle, { recursive: true, force: true });
   const contents = path.join(bundle, "Contents");
   fs.mkdirSync(path.join(contents, "MacOS"), { recursive: true });
   fs.mkdirSync(path.join(contents, "Resources"), { recursive: true });
-  fs.writeFileSync(path.join(contents, "Info.plist"), infoPlist({ start, version }));
+  fs.writeFileSync(path.join(contents, "Info.plist"), infoPlist({ start, version, name, bundleId }));
   fs.copyFileSync(executable, path.join(contents, "MacOS", "KB25"));
   fs.chmodSync(path.join(contents, "MacOS", "KB25"), 0o755);
   for (const [name, content] of Object.entries(resources)) {
@@ -62,14 +73,14 @@ const xml = (value) =>
  * The bundle's Info.plist. Local networking lets the window load the server
  * on localhost over plain http, which App Transport Security otherwise blocks.
  */
-function infoPlist({ start, version }) {
+function infoPlist({ start, version, name, bundleId }) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Crescent</string>
-  <key>CFBundleDisplayName</key><string>Crescent</string>
-  <key>CFBundleIdentifier</key><string>local.kb25.viewer</string>
+  <key>CFBundleName</key><string>${xml(name)}</string>
+  <key>CFBundleDisplayName</key><string>${xml(name)}</string>
+  <key>CFBundleIdentifier</key><string>${xml(bundleId)}</string>
   <key>CFBundleExecutable</key><string>KB25</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
