@@ -6,7 +6,7 @@ This repository contains Crescent, a lean Markdown knowledge-base viewer. Applic
 
 The app was called KB25 through 0.12.0, and KB25 stays its internal name. Rename only what people see: page text, window titles and menus, the installer's messages, `Crescent.app` and `Crescent.lnk`. Keep the `kb25` spelling everywhere else, because installed copies and stored data depend on it: the `KB25_*` environment variables (an update from 0.12.0 hands the new installer `KB25_UPDATE` and `KB25_HOME`), the install folders, `kb25.zip`, the `KB25`/`KB25.exe` executable and the `local.kb25.viewer` bundle id (the macOS window's storage and position hang on it), `.kb25/` and `~/.config/kb25/`, browser storage keys, the `kb25:note` marker, the `kb25` MCP server id, and the feedback app id.
 
-Knowledge-base content lives in `kb/`. Each top-level folder under `kb/` is a **space** and its own git repo (`kb/<space>/.git`); `kb/` itself is not versioned. Folders are navigation sections, `index.md` files are section landing pages, and leaf pages use lowercase hyphenated filenames such as `kb/engineering/runbooks/deploy.md`. Assets belong under each space's own `kb/<space>/_assets/` and are referenced with the portable relative form `_assets/file.png` (rewritten to `/<space>/_assets/file.png` at render time). Root files such as `first-step.md` and `knowledge-base-plan.md` are planning/spec notes.
+In a checkout, `kb/` holds the sample KB the dev server opens: two spaces on quantum mechanics, copied from `app/dev/seed/`, which `npm run dev` makes on its first run and `npm run dev:reset` makes again from scratch. Keep no real pages there. The server refuses the KB an installed Crescent on the same computer uses (`KB25_DEV_REAL_KB=1` overrides that), and `dev:reset` deletes only a KB it made itself. To change what the sample shows, edit `app/dev/seed/`; `src/dev-kb.test.ts` checks that every link, section anchor, image, label and note in it resolves. Each top-level folder under `kb/` is a **space** and its own git repo (`kb/<space>/.git`); `kb/` itself is not versioned. Folders are navigation sections, `index.md` files are section landing pages, and leaf pages use lowercase hyphenated filenames such as `kb/engineering/runbooks/deploy.md`. Assets belong under each space's own `kb/<space>/_assets/` and are referenced with the portable relative form `_assets/file.png` (rewritten to `/<space>/_assets/file.png` at render time). Root files such as `first-step.md` and `knowledge-base-plan.md` are planning/spec notes.
 
 Feedback comes from [`@elmir-mamedov/feedback`](https://github.com/elmir-mamedov/feedback), a dependency pinned to a release tag in `app/package.json`: it draws the viewer's feedback dialog (loaded from `/_vendor/feedback/`, mounted by `FEEDBACK_SCRIPT` in `views/corner.ts`), and `app/src/feedback.ts` uses its outbox to send each report to the shared relay (the private `elmir-mamedov/feedback-relay` repo), which files it as an issue in the private `elmir-mamedov/kb25-feedback` repo. The report format and limits live in that package; change them there, release it, and bump the tag here. `relay/` is the old KB25-only Worker, kept running for copies of KB25 0.3.0 and earlier, which post to it; don't build on it, and retire it once those copies have updated (`relay/README.md` covers it).
 
@@ -15,7 +15,8 @@ Feedback comes from [`@elmir-mamedov/feedback`](https://github.com/elmir-mamedov
 Run commands from `app/`:
 
 - `npm install` installs runtime and TypeScript tooling.
-- `npm run dev` starts the viewer with `tsx watch` at `http://localhost:4000`.
+- `npm run dev` starts the viewer with `tsx watch` at `http://localhost:4000`, on the sample KB in `kb/` (made first if it is missing).
+- `npm run dev:reset` replaces `kb/` with a fresh copy of the sample KB, after a test that changed it.
 - `npm start` runs the server once without watch mode.
 - `npm run app:install` installs `~/Applications/Crescent Dev.app` (macOS), a Spotlight-launchable app that starts this checkout's server if needed and opens Crescent's own window (see Installer & Releases). Its own name and bundle id (`local.kb25.viewer.dev`) keep it apart from an installed `Crescent.app`.
 - `npm run typecheck` runs `tsc --noEmit`; use this as the primary verification step.
@@ -40,7 +41,7 @@ For content, use lowercase hyphenated Markdown filenames because paths become UR
 
 ## Testing Guidelines
 
-Tests use Node's built-in runner (`node:test`) executed through `tsx`; run them with `npm test` from `app/`. Test files live next to the code they cover as `src/*.test.ts`, and shared setup (throwaway KB dirs, git identity) is in `src/test-helpers.ts`. No extra dependencies are required. Before submitting code, run `npm run typecheck` and `npm test`, and manually smoke-test key routes with `npm run dev`.
+Tests use Node's built-in runner (`node:test`) executed through `tsx`; run them with `npm test` from `app/`. Test files live next to the code they cover as `src/*.test.ts`, and shared setup (throwaway KB dirs, git identity) is in `src/test-helpers.ts`. No extra dependencies are required. Before submitting code, run `npm run typecheck` and `npm test`, and manually smoke-test key routes with `npm run dev`, on the sample KB.
 
 ## Commit & Pull Request Guidelines
 

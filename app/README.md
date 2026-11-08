@@ -13,6 +13,14 @@ npm run dev      # http://localhost:4000, auto-reloads on file changes
 npm run mcp      # stdio MCP server for local agent/client integrations
 ```
 
+In a checkout the server opens a sample knowledge base in `../kb`: two spaces
+on quantum mechanics, copied from `dev/seed/`, each its own git repo.
+`npm run dev` makes it on its first run, and `npm run dev:reset` makes it
+again from scratch, so a test can change anything in it. Keep real pages
+somewhere else: the server refuses to open the KB an installed Crescent on
+this computer uses, unless `KB25_DEV_REAL_KB=1` is set, and `dev:reset` only
+ever deletes a KB it made itself.
+
 On macOS, `npm run app:install` adds `~/Applications/Crescent Dev.app`, so the
 viewer opens like any other app (Cmd+Space, "Crescent Dev"). It has its own
 name and bundle id, so an installed `Crescent.app` stays as it is beside it,
@@ -38,7 +46,8 @@ pointing everyone at one exposed process.
 
 | Var          | Default        | Meaning                                  |
 |--------------|----------------|------------------------------------------|
-| `KB_DIR`     | `../kb`        | Path to the content folder. The MCP server also reads it from `~/.config/kb25/.env`. |
+| `KB_DIR`     | `../kb`        | Path to the content folder; in a checkout, `../kb` is the sample KB. The MCP server also reads it from `~/.config/kb25/.env`. |
+| `KB25_DEV_REAL_KB` | off     | Let a checkout's server open the KB an installed Crescent uses. Every edit made there is a real commit. |
 | `PORT`       | `4000`         | Port to listen on.                       |
 | `HOST`       | `localhost`    | Bind address. Leave it — a wider bind exposes the login form (see Run). |
 | `SITE_TITLE` | `Knowledge Base` | Name shown in the sidebar/title.       |
@@ -256,7 +265,8 @@ needs a hand-written entry.
 
 ## Scripts
 
-- `npm run dev` — watch + reload.
+- `npm run dev` — watch + reload, on the sample KB (made first if missing).
+- `npm run dev:reset` — replace `../kb` with a fresh copy of the sample KB.
 - `npm start` — run once.
 - `npm run app:install` — install the `Crescent Dev.app` launcher (macOS).
 - `npm run typecheck` — type-check with `tsc --noEmit`.
