@@ -28,6 +28,7 @@ import {
   type InstructionsBlock,
 } from "./space-instructions.js";
 import { syncFromEnv } from "./sync.js";
+import { loadEnvFile } from "./env-file.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const USER_ENV_FILE = path.join(
@@ -110,25 +111,6 @@ interface SearchMatch {
    */
   section?: { anchor: string; text: string };
   score: number;
-}
-
-function loadEnvFile(filePath: string): void {
-  if (!fs.existsSync(filePath)) return;
-
-  const source = fs.readFileSync(filePath, "utf8");
-  for (const line of source.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-    if (!match) continue;
-
-    const [, key, rawValue] = match;
-    if (process.env[key] !== undefined) continue;
-
-    const value = rawValue.replace(/^(['"])(.*)\1$/, "$2");
-    process.env[key] = value;
-  }
 }
 
 function expandHome(filePath: string): string {

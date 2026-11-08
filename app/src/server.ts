@@ -16,6 +16,7 @@ import { makeKbWrites } from "./kb-writes.js";
 import { makeSeenPages } from "./seen.js";
 import { isLoopbackHost } from "./loopback.js";
 import { envFlag, envNumber, syncFromEnv } from "./sync.js";
+import { loadEnvFile } from "./env-file.js";
 import { DEFAULT_FEEDBACK_RELAY, checkoutVersion, makeFeedback } from "./feedback.js";
 import { claudeEngine } from "./claude-cli.js";
 import { codexEngine } from "./codex-cli.js";
@@ -166,25 +167,6 @@ const chat = makeChat({
   workDir: path.join(os.tmpdir(), `kb25-chat-${crypto.createHash("sha256").update(KB_DIR).digest("hex").slice(0, 12)}`),
   pages: async () => flatten(await content.tree("all")),
 });
-
-function loadEnvFile(filePath: string): void {
-  if (!fs.existsSync(filePath)) return;
-
-  const source = fs.readFileSync(filePath, "utf8");
-  for (const line of source.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-    if (!match) continue;
-
-    const [, key, rawValue] = match;
-    if (process.env[key] !== undefined) continue;
-
-    const value = rawValue.replace(/^(['"])(.*)\1$/, "$2");
-    process.env[key] = value;
-  }
-}
 
 function requireEnv(name: string): string {
   const value = process.env[name];
