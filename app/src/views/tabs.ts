@@ -204,7 +204,8 @@ export const TAB_MODEL = `
  * as it does any link asked for in a new window, so the click never reaches it.
  * A new tab shows up on the page it opens, once that has loaded: the strip
  * slides down when it is the second tab, and the tab fades in when it joins
- * others. Until then the page that was open stays as it was.
+ * others. Until then the page that was open stays as it was. A plain click on
+ * a link to the page already open does nothing.
  *
  * Scroll positions go in localStorage, for the pages in tabs and the last few
  * read in any (scrollRemember). One comes back only when a page is opened
@@ -537,6 +538,17 @@ ${TAB_MODEL}
     event.preventDefault();
     openTab(link.href, (link.textContent || "").trim());
   });
+  // A plain click on a link to the page already open, such as its own row in
+  // the sidebar, stays on it (feedback #50): loading it again only blinked it
+  // and folded the groups opened by hand. A link to one of its sections still
+  // goes there.
+  window.addEventListener("click", (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const link = pageLink(event);
+    if (!link || (link.target && link.target !== "_self")) return;
+    if (link.href.indexOf("#") >= 0 || pathOf(link.href) !== here) return;
+    event.preventDefault();
+  });
 
   // A page put back from the back/forward cache runs none of the above again.
   window.addEventListener("pageshow", (event) => {
@@ -621,11 +633,15 @@ ${TAB_MODEL}
     if (observer) observer.disconnect();
     for (const type of STOP) window.removeEventListener(type, finish, true);
   };
+  // Back on the page it was on, as after a form that returns to it: the
+  // reader saw it there a moment ago, and fading it in again blinked it
+  // (feedback #50).
+  const cameBack = document.referrer === location.href;
   const place = () => {
     window.scrollTo(0, target);
     reached = window.scrollY >= target - 1;
     root.classList.remove("kb-placing");
-    root.classList.add("kb-placed");
+    if (!cameBack) root.classList.add("kb-placed");
     pickAnchor();
     for (const type of STOP) window.addEventListener(type, finish, { capture: true, passive: true });
     if (typeof ResizeObserver === "function") {

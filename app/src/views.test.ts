@@ -3037,6 +3037,19 @@ test("tabs: a place comes back only for a page opened afresh, without a #section
   assert.doesNotMatch(pageHtml(), /scroll-behavior/);
 });
 
+test("feedback #50: the open page is not loaded again to show what it already shows", () => {
+  const tabs = [...pageHtml().matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('const SCROLL_KEY = "kb25.scroll"'));
+  assert.ok(tabs);
+  // A plain click on a link to it stays put; one to a section of it still goes.
+  assert.match(tabs, /if \(event\.button !== 0 \|\| event\.metaKey \|\| event\.ctrlKey \|\| event\.shiftKey \|\| event\.altKey\) return;\s*const link = pageLink\(event\);/);
+  assert.match(tabs, /if \(link\.href\.indexOf\("#"\) >= 0 \|\| pathOf\(link\.href\) !== here\) return;\s*event\.preventDefault\(\);/);
+  // Back on it after a form that returns there, it is put in place unfaded.
+  assert.match(tabs, /const cameBack = document\.referrer === location\.href;/);
+  assert.match(tabs, /root\.classList\.remove\("kb-placing"\);\s*if \(!cameBack\) root\.classList\.add\("kb-placed"\);/);
+});
+
 test("tabs: a new tab shows up once its page has loaded, the strip sliding in for the second", () => {
   const tabs = [...pageHtml().matchAll(/<script>([\s\S]*?)<\/script>/g)]
     .map((m) => m[1])

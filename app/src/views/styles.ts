@@ -551,8 +551,8 @@ html.has-tabs .toc{top:var(--tabs-h); max-height:calc(100vh - var(--tabs-h)); pa
   .tab-strip{align-items:flex-end; padding:0 12px 10px}
 }
 /* A page put back where it was read stays out of sight until it is there
-   (TABS_SCRIPT), then fades in; should the script never get that far, it
-   shows anyway. */
+   (TABS_SCRIPT), then fades in, unless it is the page the reader was just
+   on; should the script never get that far, it shows anyway. */
 @keyframes kb-show{to{visibility:visible}}
 @keyframes kb-fade-in{from{opacity:0}}
 html.kb-placing main,html.kb-placing .toc{visibility:hidden; animation:kb-show 0s 2s forwards}
