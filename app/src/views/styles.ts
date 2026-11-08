@@ -550,16 +550,16 @@ html.has-tabs .toc{top:var(--tabs-h); max-height:calc(100vh - var(--tabs-h)); pa
   html.has-tabs{--tabs-h:104px}
   .tab-strip{align-items:flex-end; padding:0 12px 10px}
 }
-/* A page put back where it was read stays out of sight until it is there
-   (TABS_SCRIPT), then fades in, unless it is the page the reader was just
-   on; should the script never get that far, it shows anyway. */
+/* A page opened from another fades in (TABS_SCRIPT). One put back where it
+   was read stays out of sight until it is there, and fades in then; should
+   the script never get that far, it shows anyway. */
 @keyframes kb-show{to{visibility:visible}}
 @keyframes kb-fade-in{from{opacity:0}}
 html.kb-placing main,html.kb-placing .toc{visibility:hidden; animation:kb-show 0s 2s forwards}
-html.kb-placed main,html.kb-placed .toc{animation:kb-fade-in .14s ease-out}
+html.kb-arrived main,html.kb-arrived .toc{animation:kb-fade-in .14s ease-out}
 @media (prefers-reduced-motion:reduce){
   .tab-strip.is-entering,.tab-strip.is-leaving,.tab.is-new,.tab.is-closing,
-  html.kb-placed main,html.kb-placed .toc{animation:none}
+  html.kb-arrived main,html.kb-arrived .toc{animation:none}
   html.tabs-animate body,html.tabs-animate .toc,html.tabs-animate .sidebar{transition:none}
 }
 .help-dialog{

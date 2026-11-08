@@ -233,7 +233,8 @@ export const TAB_MODEL = `
  * get the browser's own restore, which stays per history entry. The page is
  * kept out of sight until it is in place, then held there while late images
  * and diagrams settle: put back after it had painted, it slid down from the
- * top in a run of jumps.
+ * top in a run of jumps. It fades in once there, as every page opened from
+ * another does as it loads.
  */
 const TABS_SCRIPT = `
 (() => {
@@ -589,7 +590,20 @@ ${TAB_MODEL}
     },
   };
 
-  if (strip.hasAttribute("data-no-scroll-memory")) return;
+  // A page opened from another fades in (kb-arrived): at once, or, when it
+  // is put back where it was read, once it is there. A reload shows the page
+  // it showed, and so does a form that returns to it; the reader saw it a
+  // moment ago, and fading it in again blinked it (feedback #50).
+  const cameBack = document.referrer === location.href;
+  const opened = (navType() === "navigate" || navType() === "back_forward") && !cameBack;
+  const arrive = () => {
+    if (opened) root.classList.add("kb-arrived");
+  };
+
+  if (strip.hasAttribute("data-no-scroll-memory")) {
+    arrive();
+    return;
+  }
 
   const target = scrollFor(read("localStorage", SCROLL_KEY), here);
   // Until the page is back where it was left, that is where it is: leaving
@@ -611,7 +625,10 @@ ${TAB_MODEL}
   );
   window.addEventListener("pagehide", remember);
 
-  if (!placing) return;
+  if (!placing) {
+    arrive();
+    return;
+  }
   // Out of sight (kb-placing) until its images are in and it can be put
   // where it was, then held there: whatever is at the top of the view stays
   // put while a diagram renders above it or the strip slides in, until the
@@ -653,15 +670,11 @@ ${TAB_MODEL}
     if (observer) observer.disconnect();
     for (const type of STOP) window.removeEventListener(type, finish, true);
   };
-  // Back on the page it was on, as after a form that returns to it: the
-  // reader saw it there a moment ago, and fading it in again blinked it
-  // (feedback #50).
-  const cameBack = document.referrer === location.href;
   const place = () => {
     window.scrollTo(0, target);
     reached = window.scrollY >= target - 1;
     root.classList.remove("kb-placing");
-    if (!cameBack) root.classList.add("kb-placed");
+    arrive();
     pickAnchor();
     for (const type of STOP) window.addEventListener(type, finish, { capture: true, passive: true });
     if (typeof ResizeObserver === "function") {

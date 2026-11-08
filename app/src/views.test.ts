@@ -2850,7 +2850,9 @@ test("feedback #29: Cmd/Ctrl+W closes the open tab, but never the last one", () 
     assert.ok(tabs);
     assert.match(tabs, /if \(event\.key\.toLowerCase\(\) !== "w"\) return;\s*event\.preventDefault\(\);\s*if \(state\.tabs\.length > 1\) closeTab\(state\.active\);/);
     // Before the editor's early return, so it closes the editor's tab too.
-    assert.ok(tabs.indexOf('!== "w"') < tabs.indexOf('if (strip.hasAttribute("data-no-scroll-memory")) return;'));
+    const editorReturn = tabs.indexOf('if (strip.hasAttribute("data-no-scroll-memory")) {');
+    assert.ok(editorReturn > 0);
+    assert.ok(tabs.indexOf('!== "w"') < editorReturn);
   }
   assert.match(layout(pageView()), /<dt><kbd>&#8984;<\/kbd> \/ <kbd>Ctrl<\/kbd> \+ <kbd>W<\/kbd><\/dt>\s*<dd>Close the tab you are on, when more than one is open<\/dd>/);
 });
@@ -3063,9 +3065,27 @@ test("feedback #50: the open page is not loaded again to show what it already sh
   // A plain click on a link to it stays put; one to a section of it still goes.
   assert.match(tabs, /if \(event\.button !== 0 \|\| event\.metaKey \|\| event\.ctrlKey \|\| event\.shiftKey \|\| event\.altKey\) return;\s*const link = pageLink\(event\);/);
   assert.match(tabs, /if \(link\.href\.indexOf\("#"\) >= 0 \|\| pathOf\(link\.href\) !== here\) return;\s*event\.preventDefault\(\);/);
-  // Back on it after a form that returns there, it is put in place unfaded.
+  // Back on it after a form that returns there, it is shown unfaded.
   assert.match(tabs, /const cameBack = document\.referrer === location\.href;/);
-  assert.match(tabs, /root\.classList\.remove\("kb-placing"\);\s*if \(!cameBack\) root\.classList\.add\("kb-placed"\);/);
+  assert.match(tabs, /const opened = \(navType\(\) === "navigate" \|\| navType\(\) === "back_forward"\) && !cameBack;/);
+});
+
+test("every page opened from another fades in, as one put back where it was read does", () => {
+  const html = pageHtml();
+  const tabs = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('const SCROLL_KEY = "kb25.scroll"'));
+  assert.ok(tabs);
+  // Opened by a link, a tab, Back or Forward; never a reload.
+  assert.match(tabs, /const arrive = \(\) => \{\s*if \(opened\) root\.classList\.add\("kb-arrived"\);\s*\};/);
+  // At once for a view that keeps no place, and for a page opened afresh...
+  assert.match(tabs, /if \(strip\.hasAttribute\("data-no-scroll-memory"\)\) \{\s*arrive\(\);\s*return;\s*\}/);
+  assert.match(tabs, /if \(!placing\) \{\s*arrive\(\);\s*return;\s*\}/);
+  // ...and only once it is in place for one put back where it was read.
+  assert.match(tabs, /root\.classList\.remove\("kb-placing"\);\s*arrive\(\);/);
+  assert.match(html, /html\.kb-arrived main,html\.kb-arrived \.toc\{animation:kb-fade-in \.14s ease-out\}/);
+  assert.match(html, /html\.kb-arrived main,html\.kb-arrived \.toc\{animation:none\}/);
+  assert.doesNotMatch(html, /kb-placed/);
 });
 
 test("tabs: a new tab shows up once its page has loaded, the strip sliding in for the second", () => {
