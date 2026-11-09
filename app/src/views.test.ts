@@ -2044,6 +2044,92 @@ test("views: a chat turn ending tells the change follower it may reload", () => 
   assert.match(html, /document\.addEventListener\("kb25:chat-idle", apply\)/);
 });
 
+/** What the change follower looks at on a page: a dialog, a text field, or a host with a shadow root. */
+interface FakeNode {
+  tag: "dialog" | "textarea" | "div";
+  open?: boolean;
+  value?: string;
+  shown?: boolean;
+  shadowRoot?: FakeTree;
+}
+
+/** A document or a shadow root holding `nodes`, answering the queries busy() makes of it. */
+class FakeTree {
+  constructor(readonly nodes: FakeNode[]) {}
+  querySelectorAll(selector: string): unknown[] {
+    if (selector === "*") return this.nodes;
+    if (selector === "dialog[open]") return this.nodes.filter((n) => n.tag === "dialog" && n.open);
+    if (selector.startsWith("textarea,")) {
+      return this.nodes
+        .filter((n) => n.tag === "textarea")
+        .map((n) => ({ value: n.value ?? "", defaultValue: "", getClientRects: () => (n.shown ? [{}] : []) }));
+    }
+    return [];
+  }
+  querySelector(selector: string): unknown {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+}
+
+/**
+ * Runs CHANGES_SCRIPT on a page holding `nodes`, sends it a change to the open
+ * page, and says what it did: reloaded, or offered the reload on its card.
+ */
+function changeArrives(nodes: FakeNode[]): "reloaded" | "offered" | "nothing" {
+  const html = following("f.0", () => layout(pageView()));
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes("/_changes"));
+  assert.ok(script, "the page carries the change follower");
+  const card = { dataset: { space: "kb25", slug: "kb25/notes", cursor: "f.0" }, hidden: true, replaceChildren() {} };
+  const tree = new FakeTree(nodes);
+  const doc = {
+    hidden: false,
+    querySelector: (selector: string) => (selector === "[data-changes]" ? card : tree.querySelector(selector)),
+    querySelectorAll: (selector: string) => tree.querySelectorAll(selector),
+    addEventListener() {},
+    createElement: () => ({ append() {}, addEventListener() {} }),
+  };
+  let feed: { onmessage?: (event: object) => void } = {};
+  class FakeEventSource {
+    onmessage?: (event: object) => void;
+    constructor() {
+      feed = this;
+    }
+    close() {}
+  }
+  let reloaded = false;
+  new Function("window", "document", "EventSource", "location", script)(
+    { EventSource: FakeEventSource, getSelection: () => null },
+    doc,
+    FakeEventSource,
+    { reload: () => { reloaded = true; } }
+  );
+  feed.onmessage?.({ lastEventId: "f.1", data: JSON.stringify({ slugs: ["kb25/notes"] }) });
+  return reloaded ? "reloaded" : card.hidden ? "nothing" : "offered";
+}
+
+/** The feedback widget: its dialog and message box, in the shadow root it keeps them in. */
+function feedbackWidget(open: boolean, message = ""): FakeNode {
+  return { tag: "div", shadowRoot: new FakeTree([{ tag: "dialog", open }, { tag: "textarea", value: message, shown: open }]) };
+}
+
+test("views: a page change waits behind the feedback dialog instead of reloading over it", () => {
+  assert.equal(changeArrives([]), "reloaded");
+  assert.equal(changeArrives([{ tag: "dialog", open: true }]), "offered");
+  // The widget's dialog sits in a shadow root, where the page's own query can't see it (feedback #40).
+  assert.equal(changeArrives([feedbackWidget(true, "The sidebar jumps when")]), "offered");
+  assert.equal(changeArrives([feedbackWidget(true)]), "offered");
+  // Closed, it keeps its draft out of sight, which counts for nothing, as a closed dialog's fields do.
+  assert.equal(changeArrives([feedbackWidget(false, "The sidebar jumps when")]), "reloaded");
+  // Text typed in a field in a shadow root nested in another holds the reload too.
+  const nested: FakeNode = {
+    tag: "div",
+    shadowRoot: new FakeTree([{ tag: "div", shadowRoot: new FakeTree([{ tag: "textarea", value: "half a thought", shown: true }]) }]),
+  };
+  assert.equal(changeArrives([nested]), "offered");
+});
+
 test("views: a launcher-started server's corner offers Quit, behind a confirmation", () => {
   for (const html of asDesktop(() => [
     spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),

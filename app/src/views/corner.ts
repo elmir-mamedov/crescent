@@ -411,16 +411,31 @@ const CHANGES_SCRIPT = `
     return pressed || (stop && !stop.hidden) || (update && !update.hidden);
   }
 
+  // The document and every open shadow root in it, nested ones included. The
+  // feedback dialog lives in one, where the document's querySelector can't see
+  // it, so a change reloaded the page over a report being written (feedback #40).
+  function roots() {
+    const found = [document];
+    for (let i = 0; i < found.length; i++) {
+      for (const node of found[i].querySelectorAll("*")) {
+        if (node.shadowRoot) found.push(node.shadowRoot);
+      }
+    }
+    return found;
+  }
+
   // Text not yet sent or saved, an open dialog, or a selection on its way to
   // becoming a note. A field that isn't shown, in a closed dialog, keeps
   // whatever it last held and counts for nothing.
   function busy() {
-    if (document.querySelector("dialog[open]")) return true;
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && selection.toString().trim()) return true;
-    const fields = document.querySelectorAll("textarea, input:not([type]), input[type=text], input[type=search]");
-    for (const field of fields) {
-      if (field.value !== field.defaultValue && field.getClientRects().length) return true;
+    for (const root of roots()) {
+      if (root.querySelector("dialog[open]")) return true;
+      const fields = root.querySelectorAll("textarea, input:not([type]), input[type=text], input[type=search]");
+      for (const field of fields) {
+        if (field.value !== field.defaultValue && field.getClientRects().length) return true;
+      }
     }
     return false;
   }
