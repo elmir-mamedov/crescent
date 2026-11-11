@@ -79,16 +79,13 @@ const DARK_TOKENS = `
   ${labelTokens("dark")}
 `;
 
-export const STYLES = `
-:root{
+/** The light theme's colours: what a light choice turns on. */
+const LIGHT_TOKENS = `
   color-scheme:light;
   --bg:#fff; --fg:#1f2328; --muted:#6b7280; --line:#e5e7eb;
   --accent:#2563eb; --on-accent:#fff; --sidebar:#f7f8fa; --code-bg:#f6f8fa;
   /* The halo around a fresh page's dot in the sidebar: the accent, softened. */
   --fresh-glow:rgba(37,99,235,.55);
-  --maxw:1216px;
-  /* The tab strip's height: the corner's 34px tools with 12px above and below. */
-  --tabs-h:58px;
   --fg-secondary:#374151;
   --surface:#fff; --surface-hover:#eef0f3; --surface-hover-2:#f7f8fa;
   --tabs-bg:rgba(247,248,250,.86); --tab-hover-bg:rgba(15,23,42,.05); --tab-open-bg:#fff;
@@ -132,6 +129,14 @@ export const STYLES = `
   --hl-comment:#6a737d; --hl-keyword:#d73a49; --hl-string:#032f62;
   --hl-number:#005cc5; --hl-title:#6f42c1; --hl-attr:#e36209;
   ${labelTokens("light")}
+`;
+
+export const STYLES = `
+:root{
+  --maxw:1216px;
+  /* The tab strip's height: the corner's 34px tools with 12px above and below. */
+  --tabs-h:58px;
+  ${LIGHT_TOKENS}
 }
 :root[data-theme="dark"]{
   ${DARK_TOKENS}
