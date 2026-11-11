@@ -372,18 +372,18 @@ body.dragging-page .space-current{
 .tree-row:has(>a.active) .tree-menu summary{
   background:linear-gradient(to right, var(--active-fade) 0, var(--active-bg) 18px);
 }
-.tree-menu-pop{
+.tree-menu-pop,.download-menu-pop{
   position:absolute; right:0; top:100%; z-index:10; min-width:150px;
   background:var(--surface); border:1px solid var(--line); border-radius:6px;
   box-shadow:var(--shadow-sm); padding:4px; display:flex; flex-direction:column;
 }
 .tree-menu-pop form{margin:0}
-.tree-menu-pop a,.tree-menu-pop button{
+.tree-menu-pop a,.tree-menu-pop button,.download-menu-pop a,.download-menu-pop button{
   display:block; width:100%; text-align:left; border:0; background:transparent;
   padding:6px 8px; border-radius:4px; color:var(--fg-secondary); font-size:13px; font-weight:600;
   cursor:pointer; font-family:inherit;
 }
-.tree-menu-pop a:hover,.tree-menu-pop button:hover{background:var(--surface-hover); text-decoration:none}
+.tree-menu-pop a:hover,.tree-menu-pop button:hover,.download-menu-pop a:hover,.download-menu-pop button:hover{background:var(--surface-hover); text-decoration:none}
 .content{flex:1; padding:32px 40px; max-width:calc(var(--maxw) + 80px); width:100%}
 /* "On this page". A third flex column so .content keeps its measure, hidden
    whenever the window is too narrow to afford it. min-width:0 and wrapping text
@@ -429,6 +429,19 @@ body.dragging-page .space-current{
 .tags + .updated{margin-top:8px}
 .actions{display:flex; gap:8px; flex:0 0 auto; align-items:center; flex-wrap:wrap}
 .action-form{display:inline-flex; margin:0}
+/* The page's Download menu (views/print.ts): the Markdown file, or a PDF. */
+.download-menu{position:relative}
+.download-menu>summary{list-style:none}
+.download-menu>summary::-webkit-details-marker{display:none}
+.download-menu>summary::marker{content:""}
+.download-menu>summary::after{
+  content:""; width:6px; height:6px; margin:0 1px 3px 9px;
+  border:solid currentColor; border-width:0 1.5px 1.5px 0; transform:rotate(45deg); opacity:.7;
+}
+.download-menu[open]>summary{background:var(--surface-hover-2)}
+.download-menu-pop{top:calc(100% + 4px); min-width:160px}
+/* A diagram drawn light for print (MERMAID_SCRIPT), shown only there. */
+.mermaid-print{display:none}
 .confirm-actions{display:flex; gap:8px; align-items:center; margin-top:16px}
 .session-actions{display:inline-flex; align-items:center; gap:8px; margin:0}
 .session-user{color:var(--muted); font-size:13px}
@@ -1621,6 +1634,10 @@ body.chat-open .tab-strip{right:400px}
   .prose pre{white-space:pre-wrap; overflow-wrap:anywhere; overflow:visible}
   .prose pre.mermaid,.prose .katex-display{overflow:visible}
   .prose pre.mermaid[data-drawn="dark"] svg{filter:invert(1) hue-rotate(180deg)}
+  .prose pre.mermaid[data-print-copy]{display:none}
+  .prose .mermaid-print{display:block; text-align:center}
+  /* A link PRINT_SCRIPT took out, since it leads nowhere in a file. */
+  .prose a[data-unlinked]{color:inherit; border-bottom:0; text-decoration:none}
   .prose :is(h1,h2,h3,h4,h5,h6){break-after:avoid}
   .prose :is(img,svg,.mermaid-frame,.math-block,blockquote,tr){break-inside:avoid}
   /* Remarks, tasks and agent notes are the reader's working marks, not part of
