@@ -14,15 +14,19 @@
 // close button does, and its installer opens the new version's.
 //
 // Links that leave KB25, and links asked for in a new window, open in the
-// default browser. Opening KB25 again brings this window forward. Built by
-// scripts/build-shell.mjs.
+// default browser. Opening KB25 again brings this window forward, and this
+// window says when it has. A KB25.exe that holds the window but neither says so
+// nor has a window that answers is ended, and the new one takes its place.
+// Built by scripts/build-shell.mjs.
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -39,21 +43,109 @@ namespace KB25
         [STAThread]
         static void Main()
         {
-            using (var mutex = new Mutex(true, @"Local\KB25-window", out bool first))
+            var home = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", ".."));
+            // The window belongs to whoever owns this mutex. KB25 0.22.0 and earlier
+            // took it with `new Mutex(true, name, out first)`, which owns it only
+            // when it creates it, so either way round one of them forwards.
+            using (var mutex = new Mutex(false, @"Local\KB25-window"))
             using (var show = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\KB25-show"))
+            using (var shown = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\KB25-shown"))
             {
-                if (!first)
+                if (!Own(mutex, 0))
                 {
                     // Windows lets only the app in front take focus; this one is.
                     AllowSetForegroundWindow(-1);
+                    shown.Reset();
                     show.Set();
-                    return;
+                    if (shown.WaitOne(3000) || !TakeOver(home, mutex)) return;
+                    // The one that held it never took this signal; it isn't for this one.
+                    show.Reset();
                 }
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
-                var home = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", ".."));
-                Application.Run(new KB25Window(home, show));
+                try
+                {
+                    Application.EnableVisualStyles();
+                    Application.SetCompatibleTextRenderingDefault(false);
+                    Application.Run(new KB25Window(home, show, shown));
+                }
+                finally
+                {
+                    mutex.ReleaseMutex();
+                }
             }
+        }
+
+        /// <summary>Own the mutex, as its owner's leaving without letting go also gives it.</summary>
+        static bool Own(Mutex mutex, int timeout)
+        {
+            try { return mutex.WaitOne(timeout); }
+            catch (AbandonedMutexException) { return true; }
+        }
+
+        /// <summary>
+        /// The KB25.exe that owns the mutex did not say it came forward. KB25 0.22.0
+        /// and earlier never say so, so one with a window that answers is left be:
+        /// it came forward all the same. Otherwise end every earlier KB25.exe from
+        /// this install, which has nothing on screen to lose, and own the mutex.
+        /// </summary>
+        static bool TakeOver(string home, Mutex mutex)
+        {
+            var self = Process.GetCurrentProcess();
+            var shells = Path.Combine(home, "shell") + Path.DirectorySeparatorChar;
+            var others = new List<(Process process, string path)>();
+            foreach (var other in Process.GetProcessesByName(self.ProcessName))
+            {
+                try
+                {
+                    // Only earlier ones: two copies opened together then each end
+                    // only the other's earlier one, so at least one of them is left.
+                    if (other.Id == self.Id || other.SessionId != self.SessionId || other.StartTime > self.StartTime) continue;
+                    var path = other.MainModule.FileName;
+                    if (path.StartsWith(shells, StringComparison.OrdinalIgnoreCase)) others.Add((other, path));
+                }
+                catch (Exception) { } // gone already, or not this person's to look into
+            }
+            if (others.Any(other => HasAnsweringWindow(other.process))) return false;
+            foreach (var (process, path) in others)
+            {
+                try
+                {
+                    process.Kill();
+                    process.WaitForExit(5000);
+                    Log(home, $"KB25 window: ended KB25.exe {process.Id} ({path}), which held the window without one on screen");
+                }
+                catch (Exception) { }
+            }
+            return Own(mutex, 5000);
+        }
+
+        /// <summary>A visible window, its loading window or its main one, that answers messages.</summary>
+        static bool HasAnsweringWindow(Process process)
+        {
+            try { return process.MainWindowHandle != IntPtr.Zero && process.Responding; }
+            catch (Exception) { return false; }
+        }
+
+        /// <summary>
+        /// Add a line to kb25.log, where the server writes. Opened for appending
+        /// only, so each line lands at the end however the two interleave.
+        /// </summary>
+        static void Log(string home, string message)
+        {
+            try
+            {
+                using (var file = new FileStream(
+                    Path.Combine(home, "kb25.log"),
+                    FileMode.Append,
+                    FileSystemRights.AppendData,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    4096,
+                    FileOptions.None))
+                using (var writer = new StreamWriter(file))
+                {
+                    writer.WriteLine($"{DateTime.UtcNow:o} {message}");
+                }
+            }
+            catch (Exception) { }
         }
     }
 
@@ -72,13 +164,17 @@ namespace KB25
         // The small loading window, shown until the first page has loaded in this
         // one, which stays hidden until then.
         readonly SplashWindow splash;
-        bool launched, revealed, closing;
+        // Another KB25.exe asks this one to come forward (show), and hears it has (shown).
+        readonly EventWaitHandle show, shown;
+        bool launched, revealed, closing, listening;
 
         string BoundsFile => Path.Combine(home, "window-bounds.txt");
 
-        public KB25Window(string home, EventWaitHandle show)
+        public KB25Window(string home, EventWaitHandle show, EventWaitHandle shown)
         {
             this.home = home;
+            this.show = show;
+            this.shown = shown;
             Text = "Crescent";
             BackColor = Background;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
@@ -94,6 +190,17 @@ namespace KB25
             splash = new SplashWindow(Icon);
             splash.Done += Reveal;
             splash.FormClosed += OnSplashClosed;
+        }
+
+        /// <summary>
+        /// Listen for another KB25.exe once there is a handle to hand its request to
+        /// this window's thread by; one made before then waits in the event.
+        /// </summary>
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            if (listening) return;
+            listening = true;
             var listener = new Thread(() =>
             {
                 while (show.WaitOne())
@@ -327,10 +434,14 @@ namespace KB25
             if (!revealed)
             {
                 splash.Activate();
-                return;
             }
-            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
-            Activate();
+            else
+            {
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+                Activate();
+            }
+            // Run on this window's thread, so it also says that thread still answers.
+            shown.Set();
         }
 
         /// <summary>A message page in KB25's dark colours, for before and between pages.</summary>
