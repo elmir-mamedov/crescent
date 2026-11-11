@@ -14,8 +14,10 @@
 // and its installer opens the new version's.
 //
 // Links that leave KB25, and links asked for in a new window, open in the
-// default browser. Built by scripts/build-shell.mjs, which adds the loading
-// window's page as AppDelegate.splashPage.
+// default browser. A page's Download ▸ PDF, and File ▸ Print, print the page
+// here (PRINT_SCRIPT in views/print.ts gets it ready first): a PDF goes into
+// Downloads the way a download does. Built by scripts/build-shell.mjs, which
+// adds the loading window's page as AppDelegate.splashPage.
 import Cocoa
 import WebKit
 
@@ -29,6 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   /// The server quit first (its power button), so there is nothing to stop.
   private var serverQuit = false
   private var downloads: [ObjectIdentifier: URL] = [:]
+  /// A print is under way, and where its PDF goes when it is Download ▸ PDF.
+  private var printing = false
+  private var printedPDF: URL?
   private var signalSource: DispatchSourceSignal?
   /// KB25's dark background (--bg in views/styles.ts), its default theme.
   private static let background = NSColor(srgbRed: 13 / 255, green: 17 / 255, blue: 23 / 255, alpha: 1)
@@ -192,6 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       injectionTime: .atDocumentStart,
       forMainFrameOnly: true
     ))
+    configuration.userContentController.add(self, name: "kb25Print")
     webView = PageView(frame: .zero, configuration: configuration)
     webView.navigationDelegate = self
     webView.uiDelegate = self
@@ -309,6 +315,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
   func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
     if message.name == "splash", message.body as? String == "done" { reveal() }
+    if message.name == "kb25Print", message.webView === webView, message.frameInfo.isMainFrame,
+      let url = webView.url, isKB25(url),
+      let body = message.body as? [String: Any]
+    {
+      let name = body["name"] as? String ?? ""
+      printPage(toPDF: body["what"] as? String != "print", name: name.isEmpty ? webView.title ?? "" : name)
+    }
   }
 
   /// Hand over from the loading window to the main one.
@@ -417,8 +430,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     suggestedFilename: String,
     completionHandler: @escaping (URL?) -> Void
   ) {
+    let candidate = freshDownload(named: (suggestedFilename as NSString).lastPathComponent)
+    downloads[ObjectIdentifier(download)] = candidate
+    completionHandler(candidate)
+  }
+
+  /// A file in Downloads by this name, numbered if the name is taken.
+  private func freshDownload(named name: String) -> URL {
     let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-    let name = (suggestedFilename as NSString).lastPathComponent
     let base = (name as NSString).deletingPathExtension
     let ext = (name as NSString).pathExtension
     var candidate = folder.appendingPathComponent(name.isEmpty ? "download" : name)
@@ -427,13 +446,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       candidate = folder.appendingPathComponent(ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
       n += 1
     }
-    downloads[ObjectIdentifier(download)] = candidate
-    completionHandler(candidate)
+    return candidate
+  }
+
+  func downloadDidFinish(_ download: WKDownload) {
+    guard let file = downloads.removeValue(forKey: ObjectIdentifier(download)) else { return }
+    announceDownload(file)
   }
 
   /// Bounce the Downloads stack in the Dock, the way Safari shows a finished download.
-  func downloadDidFinish(_ download: WKDownload) {
-    guard let file = downloads.removeValue(forKey: ObjectIdentifier(download)) else { return }
+  private func announceDownload(_ file: URL) {
     DistributedNotificationCenter.default().post(
       name: Notification.Name("com.apple.DownloadFileFinished"),
       object: file.path
@@ -442,6 +464,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
   func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
     downloads.removeValue(forKey: ObjectIdentifier(download))
+  }
+
+  // MARK: Printing
+
+  /// File ▸ Print: a page gets itself ready first (PRINT_SCRIPT) and asks
+  /// for the print back, through the panel; a view without that script, such
+  /// as the editor or a folder, is printed as it is.
+  @objc func printFromMenu(_ sender: Any?) {
+    webView.evaluateJavaScript("typeof kb25Print === \"function\" ? (kb25Print(\"print\"), true) : false") { [weak self] result, _ in
+      guard let self, (result as? Bool) != true else { return }
+      self.printPage(toPDF: false, name: self.webView.title ?? "")
+    }
+  }
+
+  /// Print the page: into a PDF in Downloads (Download ▸ PDF), or through the
+  /// print panel, whose PDF menu saves one too. The page's print stylesheet
+  /// sets the margins, so the paper's own are none. WebKit needs runModal and
+  /// a view the size of the web view: run() printed blank pages without end.
+  private func printPage(toPDF: Bool, name: String) {
+    guard !printing else { return }
+    printing = true
+    let info = NSPrintInfo.shared.copy() as! NSPrintInfo
+    info.horizontalPagination = .fit
+    info.verticalPagination = .automatic
+    info.isHorizontallyCentered = false
+    info.isVerticallyCentered = false
+    info.topMargin = 0
+    info.bottomMargin = 0
+    info.leftMargin = 0
+    info.rightMargin = 0
+    let title = Self.fileName(name)
+    printedPDF = nil
+    if toPDF {
+      let file = freshDownload(named: title + ".pdf")
+      info.jobDisposition = .save
+      info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = file
+      printedPDF = file
+    }
+    let operation = webView.printOperation(with: info)
+    operation.jobTitle = title
+    operation.showsPrintPanel = !toPDF
+    operation.showsProgressPanel = !toPDF
+    operation.view?.frame = webView.bounds
+    operation.runModal(for: window, delegate: self, didRun: #selector(printDidRun(_:success:contextInfo:)), contextInfo: nil)
+  }
+
+  /// The page puts back what it took out for the print. On the next turn: a
+  /// script sent while the print is still winding down never gets an answer.
+  @objc private func printDidRun(_ operation: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
+    let file = success ? printedPDF : nil
+    printedPDF = nil
+    DispatchQueue.main.async {
+      self.printing = false
+      self.webView.evaluateJavaScript("typeof kb25PrintDone === \"function\" && kb25PrintDone()")
+      if let file, FileManager.default.fileExists(atPath: file.path) { self.announceDownload(file) }
+    }
+  }
+
+  /// A page's title as a file's name: nothing that reads as a folder, no
+  /// leading dot that would hide it, and never empty.
+  private static func fileName(_ title: String) -> String {
+    let unsafe = CharacterSet(charactersIn: "/:").union(.controlCharacters)
+    let name = title.components(separatedBy: unsafe).joined(separator: "-")
+      .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+    return name.isEmpty ? "Page" : String(name.prefix(200))
   }
 
   // MARK: Loading
@@ -532,6 +619,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       item("Show All", #selector(NSApplication.unhideAllApplications(_:))),
       .separator(),
       item("Quit Crescent", #selector(NSApplication.terminate(_:)), "q"),
+    ])
+    submenu("File", [
+      item("Print…", #selector(printFromMenu(_:)), "p"),
     ])
     // No Cmd+E here: the page uses it to open the editor.
     submenu("Edit", [
