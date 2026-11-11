@@ -25,7 +25,7 @@ export const MERMAID_SCRIPT = `<script src="/_vendor/mermaid/mermaid.min.js"></s
       if (typeof mermaid === "undefined") return;
       const dark = document.documentElement.dataset.theme === "dark";
       mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "default" });
-      nodes.forEach((n) => { n.textContent = n.dataset.src; n.removeAttribute("data-processed"); });
+      nodes.forEach((n) => { n.textContent = n.dataset.src; n.removeAttribute("data-processed"); n.dataset.drawn = dark ? "dark" : "light"; });
       mermaid.run({ nodes });
     };
     window.__renderMermaid();
