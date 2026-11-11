@@ -9,7 +9,9 @@
 // KB25_UPDATE=1 is the viewer's Update button: it answers no to every question,
 // because an update changes the app and never the choices made at install, and
 // it restarts Crescent on the new version: an open window is closed and opened
-// again, and otherwise the server restarts in the background.
+// again, and otherwise the server restarts in the background. Run by hand, an
+// update closes an open window before it replaces the app, and "Open Crescent
+// now?" opens the new version's.
 import { execFileSync, execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
@@ -90,6 +92,12 @@ async function main() {
     if (await ask("Remove Crescent from this computer?", false)) return uninstall();
   } else {
     await stopServer(p); // an update must not keep serving the old version
+    // Nor keep its window, which would go on running the old version's code
+    // against no server. On Windows a KB25.exe left running also keeps its
+    // shell folder, which installWindowsShell then cannot remove, and the
+    // window's mutex, which turns the new version's window away. The Update
+    // button's run closes it further on, and opens the new one in its place.
+    if (!UPDATING) await closeWindow();
     replaceApp();
     if (installed) recordUpdate(p.updatedFile, installed, version);
     console.log(installed ? `Updated Crescent ${installed} → ${version}.` : `Installed Crescent ${version}.`);
