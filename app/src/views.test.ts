@@ -210,6 +210,20 @@ test("issue #7: a page without a formula loads no KaTeX stylesheet", () => {
   assert.doesNotMatch(html, /_vendor\/katex/);
 });
 
+test("feedback #32: a page prints alone, in the light theme's colours", () => {
+  const html = layout(pageView());
+  const print = html.slice(html.indexOf("@media print{"));
+  assert.notEqual(print, "");
+  // Light whichever theme the page is read in: the dark choice is overridden.
+  assert.match(print, /:root\[data-theme="dark"\][^{]*\{\s*color-scheme:light;\s*--bg:#fff;/);
+  // Only the page itself: the sidebar, tabs, rail, corner and chat are all
+  // children of <body> beside <main>.
+  assert.match(print, /body > :not\(main\)\{display:none !important\}/);
+  assert.match(print, /\.page-head \.actions/);
+  // A diagram still drawn for the dark theme is turned light on paper.
+  assert.match(print, /pre\.mermaid\[data-drawn="dark"\] svg\{filter:invert\(1\) hue-rotate\(180deg\)\}/);
+});
+
 test("issue #3: the page header exposes a Download-as-Markdown link", () => {
   const html = layout(pageView());
   assert.match(
@@ -993,13 +1007,14 @@ test("notes: the switch offers highlight, remark, task — highlight first", () 
 test("notes: tasks are purple, highlights underline yellow, remarks stay teal", () => {
   const html = layout(pageView());
   // Every theme block defines both palettes; one missing them renders unstyled.
-  // Four: light, dark, the OS's dark, and the chat drawer, which is always dark.
-  assert.equal(html.split("--task-bg:").length - 1, 4);
-  assert.equal(html.split("--highlight-bg:").length - 1, 4);
+  // Five: light, dark, the OS's dark, the chat drawer, which is always dark,
+  // and print, which is always light.
+  assert.equal(html.split("--task-bg:").length - 1, 5);
+  assert.equal(html.split("--highlight-bg:").length - 1, 5);
   assert.match(html, /--task-pin:#a855f7/);
   // The highlight pin is the one token that cannot be shared across themes: a
   // yellow dark enough to be seen on white disappears on the dark page.
-  assert.equal(html.split("--highlight-pin:#9aa300").length - 1, 1);
+  assert.equal(html.split("--highlight-pin:#9aa300").length - 1, 2);
   assert.equal(html.split("--highlight-pin:#e2e800").length - 1, 3);
   // The kind's palette rides on the element, so the rules that draw a note are
   // shared and a remark keeps the teal it always had.
@@ -1032,12 +1047,12 @@ test("notes: an agent's note is pink, and a reader can only resolve it", () => {
     "--agent-pin:",
     "--agent-border:",
   ]) {
-    // Light, dark, the OS's dark, and the always-dark chat drawer.
-    assert.equal(html.split(token).length - 1, 4, token + " is not in all four theme blocks");
+    // Light, dark, the OS's dark, the always-dark chat drawer, and print.
+    assert.equal(html.split(token).length - 1, 5, token + " is not in all five theme blocks");
   }
   // Pink is legible on white and on black, so the pin carries one value across
-  // all four — the split the highlight's yellow needs is not needed here.
-  assert.equal(html.split("--agent-pin:#ff2d87").length - 1, 4);
+  // all five — the split the highlight's yellow needs is not needed here.
+  assert.equal(html.split("--agent-pin:#ff2d87").length - 1, 5);
   assert.match(html, /\.note-mark\.is-agent,[^{]+\{\s*--note-bg:var\(--agent-bg\)/);
   // No .note-kind-option, because the switch never offers a kind nobody can
   // write — so the chip needs a name from somewhere other than KINDS.
@@ -2256,8 +2271,8 @@ test("labels: labelsHref carries the space, every label and the query, encoded",
 test("labels: every theme block defines every swatch", () => {
   const html = labelsDashboardLayout(labelsView());
   for (const color of ["gray", "red", "brown"]) {
-    // Light, dark, the OS's dark, and the always-dark chat drawer.
-    assert.equal(html.match(new RegExp(`--label-${color}-bg:`, "g"))?.length, 4, color);
+    // Light, dark, the OS's dark, the always-dark chat drawer, and print.
+    assert.equal(html.match(new RegExp(`--label-${color}-bg:`, "g"))?.length, 5, color);
     assert.match(html, new RegExp(`\\[data-label-color="${color}"\\]\\{--lc-bg:var\\(--label-${color}-bg\\)`));
   }
 });

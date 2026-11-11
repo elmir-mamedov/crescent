@@ -1598,4 +1598,35 @@ body.chat-open .tab-strip{right:400px}
 .chat-setup{display:grid; gap:12px; align-content:start; justify-items:start; padding:18px; color:var(--fg-secondary); font-size:14px; line-height:1.6}
 .chat-setup p{margin:0}
 .chat-setup code{padding:1px 5px; border-radius:4px; background:var(--code-bg); font-size:13px; overflow-wrap:anywhere}
+/* Printing, which is also how a page becomes a PDF (feedback #32): the page
+   alone, without the app around it, in the light theme's colours whichever
+   theme it is read in, since pale ink on white paper is what the dark one
+   leaves. Its tints print rather than being dropped to save ink, so code,
+   tables and labels look as they do on screen. Diagrams are drawn light
+   before a print the page starts itself (PRINT_SCRIPT); one a browser starts
+   from its own menu finds them drawn dark, and turns them light here. */
+@media print{
+  :root,:root[data-theme="dark"],:root:not([data-theme="light"]):not([data-theme="dark"]){
+    ${LIGHT_TOKENS}
+  }
+  @page{margin:16mm 15mm}
+  html,body{background:#fff}
+  body{display:block; min-height:0; padding:0 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  body > :not(main){display:none !important}
+  /* A pixel either side: WebKit lays a print out in whole pixels and scales
+     it to the paper, which shaved the right edge off tables and code. */
+  main.content{max-width:none; padding:0 1px; visibility:visible !important; animation:none !important}
+  .crumbs,.page-head .actions,.notice,.section-link,.diagram-expand,.note-pin,.note-add,.note-popover,.toast{display:none !important}
+  .prose{max-width:none}
+  .prose pre{white-space:pre-wrap; overflow-wrap:anywhere; overflow:visible}
+  .prose pre.mermaid,.prose .katex-display{overflow:visible}
+  .prose pre.mermaid[data-drawn="dark"] svg{filter:invert(1) hue-rotate(180deg)}
+  .prose :is(h1,h2,h3,h4,h5,h6){break-after:avoid}
+  .prose :is(img,svg,.mermaid-frame,.math-block,blockquote,tr){break-inside:avoid}
+  /* Remarks, tasks and agent notes are the reader's working marks, not part of
+     the page; a highlight stays, as the underline it already is. */
+  .prose mark.note-mark:not(.is-highlight){background:none; color:inherit; padding:0}
+  .prose mark.note-mark.is-highlight.is-active{text-decoration-thickness:.14em}
+  ::highlight(kb25-find),::highlight(kb25-find-current){background-color:transparent; color:inherit}
+}
 `;
