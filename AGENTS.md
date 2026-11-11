@@ -41,7 +41,7 @@ For content, use lowercase hyphenated Markdown filenames because paths become UR
 
 ## Testing Guidelines
 
-Tests use Node's built-in runner (`node:test`) executed through `tsx`; run them with `npm test` from `app/`. Test files live next to the code they cover as `src/*.test.ts`, and shared setup (throwaway KB dirs, git identity) is in `src/test-helpers.ts`. No extra dependencies are required. Before submitting code, run `npm run typecheck` and `npm test`, and manually smoke-test key routes with `npm run dev`, on the sample KB.
+Tests use Node's built-in runner (`node:test`) executed through `tsx`; run them with `npm test` from `app/`. Test files live next to the code they cover as `src/*.test.ts`, and shared setup (throwaway KB dirs, git identity) is in `src/test-helpers.ts`. No extra dependencies are required. Before submitting code, run `npm run typecheck` and `npm test`, then try the change by hand on the sample KB, in KB25's native window first, because that is where people use it: start `npm run dev`, then open Crescent Dev (installed once with `npm run app:install`), whose window uses that server, so it runs your latest edits. Opened without `npm run dev`, Crescent Dev starts a server of its own that does not watch, and only picks up a change once the power button has stopped it. Try the change itself and what it touches. A browser at `http://localhost:4000` is the fallback, for where there is no dev window: `app:install` is macOS-only, so on Windows and Linux the browser is the hand test.
 
 ## Commit & Pull Request Guidelines
 
