@@ -29,6 +29,41 @@ export const MERMAID_SCRIPT = `<script src="/_vendor/mermaid/mermaid.min.js"></s
       mermaid.run({ nodes });
     };
     window.__renderMermaid();
+    // Each diagram drawn for the dark theme drawn again in the light one, into
+    // a copy beside it that only print shows (PRINT_SCRIPT), so a PDF is light
+    // and the page on screen stays as it is. Off screen while Mermaid measures
+    // it, since it cannot lay out a diagram that is not shown.
+    let round = 0;
+    window.__drawMermaidForPrint = async () => {
+      if (typeof mermaid === "undefined") return;
+      round += 1;
+      const stage = document.createElement("div");
+      stage.style.cssText = "position:fixed; left:-10000px; top:0; width:1200px; visibility:hidden";
+      document.body.append(stage);
+      mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default" });
+      try {
+        for (const [i, n] of nodes.entries()) {
+          let copy = n.previousElementSibling;
+          if (!copy || !copy.classList.contains("mermaid-print")) {
+            copy = document.createElement("div");
+            copy.className = "mermaid-print";
+            n.before(copy);
+          }
+          n.removeAttribute("data-print-copy");
+          copy.textContent = "";
+          if (n.dataset.drawn !== "dark") continue;
+          try {
+            const { svg } = await mermaid.render("kb25-print-" + round + "-" + i, n.dataset.src, stage);
+            copy.innerHTML = svg;
+            n.setAttribute("data-print-copy", "");
+          } catch (e) {}
+        }
+      } finally {
+        stage.remove();
+        const dark = document.documentElement.dataset.theme === "dark";
+        mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "default" });
+      }
+    };
   })();
 </script>`;
 

@@ -226,10 +226,160 @@ test("feedback #32: a page prints alone, in the light theme's colours", () => {
 
 test("issue #3: the page header exposes a Download-as-Markdown link", () => {
   const html = layout(pageView());
+  assert.match(html, /<a href="\/_download\/kb25\/notes" download>Markdown \(\.md\)<\/a>/);
+});
+
+test("feedback #32: Download in the page header is a menu: the Markdown file or a PDF", () => {
+  const html = layout(pageView());
   assert.match(
     html,
-    /class="button secondary" href="\/_download\/kb25\/notes" download>Download<\/a>/
+    /<details class="download-menu" data-download-menu>\s*<summary class="button secondary">Download<\/summary>\s*<div class="download-menu-pop">\s*<a href="\/_download\/kb25\/notes" download>Markdown \(\.md\)<\/a>\s*<button type="button" data-download-pdf>PDF \(\.pdf\)<\/button>/
   );
+});
+
+/** A link as PRINT_SCRIPT sees one: its attributes. */
+class FakeLink {
+  private readonly attrs: Map<string, string>;
+  constructor(href: string) {
+    this.attrs = new Map([["href", href]]);
+  }
+  getAttribute(name: string): string | null {
+    return this.attrs.get(name) ?? null;
+  }
+  setAttribute(name: string, value: string): void {
+    this.attrs.set(name, value);
+  }
+  removeAttribute(name: string): void {
+    this.attrs.delete(name);
+  }
+}
+
+type PrintWindow = {
+  kb25Print: (what: string) => Promise<void>;
+  kb25PrintDone: () => void;
+  [key: string]: unknown;
+};
+
+/**
+ * Runs PRINT_SCRIPT on the page kb25/notes holding links to `hrefs`: in
+ * Crescent's macOS window, which takes the print over, when `shell` is set,
+ * and otherwise in a browser whose print() is `print`.
+ */
+function printRig(
+  hrefs: string[],
+  options: { shell?: boolean; print?: (fire: (type: string) => void) => void } = {}
+) {
+  const html = layout(pageView());
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes("kb25Print"));
+  assert.ok(script, "the page carries the print script");
+  const links = hrefs.map((href) => new FakeLink(href));
+  const main = {
+    querySelector: (selector: string) => (selector === ".page-head h1" ? { textContent: " Notes " } : null),
+    querySelectorAll: (selector: string) =>
+      selector === "a[href]" ? links.filter((link) => link.getAttribute("href") !== null) : [],
+  };
+  const doc = {
+    title: "Notes · KB",
+    querySelector: (selector: string) => (selector === "main.content" ? main : null),
+  };
+  type Listener = { type: string; fn: () => void; once: boolean };
+  const listeners: Listener[] = [];
+  const fire = (type: string) => {
+    for (const listener of [...listeners]) {
+      if (listener.type !== type) continue;
+      if (listener.once) listeners.splice(listeners.indexOf(listener), 1);
+      listener.fn();
+    }
+  };
+  const posted: unknown[] = [];
+  const win = { print: () => options.print?.(fire) } as unknown as PrintWindow;
+  if (options.shell) {
+    win.webkit = { messageHandlers: { kb25Print: { postMessage: (message: unknown) => posted.push(message) } } };
+  }
+  new Function("window", "document", "location", "addEventListener", "removeEventListener", script)(
+    win,
+    doc,
+    new URL("http://localhost:4000/kb25/notes"),
+    (type: string, fn: () => void, opts?: { once?: boolean }) => listeners.push({ type, fn, once: !!opts?.once }),
+    (type: string, fn: () => void) => {
+      const at = listeners.findIndex((listener) => listener.type === type && listener.fn === fn);
+      if (at >= 0) listeners.splice(at, 1);
+    }
+  );
+  return { win, doc, posted, fire, hrefs: () => links.map((link) => link.getAttribute("href")) };
+}
+
+test("feedback #32: a PDF keeps only the links that still lead somewhere from a file", async () => {
+  const hrefs = [
+    "/kb25/other",
+    "/id:abc123#part",
+    "sibling-page",
+    "/kb25/_assets/plot.png",
+    "/kb25/notes",
+    "https://example.com/",
+    "mailto:someone@example.com",
+    "#usage",
+    "/kb25/notes#usage",
+  ];
+  const rig = printRig(hrefs, { shell: true });
+  await rig.win.kb25Print("pdf");
+  // The macOS window is handed the print, under the page's own title.
+  assert.deepEqual(rig.posted, [{ what: "pdf", name: "Notes" }]);
+  // Other pages of the KB, and its files, become plain text; a link out of the
+  // KB, and one to a section of this page, which a PDF can follow, are kept.
+  assert.deepEqual(rig.hrefs(), [
+    null,
+    null,
+    null,
+    null,
+    null,
+    "https://example.com/",
+    "mailto:someone@example.com",
+    "#usage",
+    "/kb25/notes#usage",
+  ]);
+  // The window says when the print is over, and every link comes back.
+  rig.win.kb25PrintDone();
+  assert.deepEqual(rig.hrefs(), hrefs);
+});
+
+test("feedback #32: a browser prints the PDF under the page's title, then puts the page back", async () => {
+  let during: { title: string; hrefs: (string | null)[] } | undefined;
+  const rig = printRig(["/kb25/other", "https://example.com/"], {
+    print: (fire) => {
+      fire("beforeprint");
+      during = { title: rig.doc.title, hrefs: rig.hrefs() };
+      fire("afterprint");
+    },
+  });
+  await rig.win.kb25Print("pdf");
+  // A browser's dialog names the PDF after the title, so it is the page's alone.
+  assert.deepEqual(during, { title: "Notes", hrefs: [null, "https://example.com/"] });
+  assert.equal(rig.doc.title, "Notes · KB");
+  assert.deepEqual(rig.hrefs(), ["/kb25/other", "https://example.com/"]);
+});
+
+test("feedback #32: a diagram drawn dark is drawn light for print, into a copy beside it", () => {
+  const html = layout(pageView({ contentHtml: '<pre class="mermaid">graph TD; A-->B</pre>' }));
+  assert.match(html, /window\.__drawMermaidForPrint = async/);
+  assert.match(html, /if \(n\.dataset\.drawn !== "dark"\) continue;/);
+  // On paper the copy stands in for the diagram; on screen it never shows.
+  assert.match(html, /\.prose pre\.mermaid\[data-print-copy\]\{display:none\}/);
+  assert.match(html, /\.mermaid-print\{display:none\}/);
+});
+
+test("feedback #32: a print that never starts, or one the browser starts itself, leaves the links", async () => {
+  // A window that cannot print says nothing at all.
+  const rig = printRig(["/kb25/other"], { print: () => {} });
+  await rig.win.kb25Print("pdf");
+  assert.deepEqual(rig.hrefs(), ["/kb25/other"]);
+  // The browser's own Print takes the links out for as long as it prints.
+  rig.fire("beforeprint");
+  assert.deepEqual(rig.hrefs(), [null]);
+  rig.fire("afterprint");
+  assert.deepEqual(rig.hrefs(), ["/kb25/other"]);
 });
 
 test("issue #3: the sidebar ⋯ menu exposes a Download link", () => {

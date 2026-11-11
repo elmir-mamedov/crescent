@@ -9,6 +9,7 @@ import { renderHead } from "./head.js";
 import { escapeHtml, slugPath } from "./html.js";
 import { labelChips } from "./labels.js";
 import { NOTES_SCRIPT } from "./notes.js";
+import { downloadMenu, PRINT_SCRIPT } from "./print.js";
 import { SIDEBAR_RENDER_HOLD, sidebarHtml } from "./sidebar.js";
 import { tabStrip } from "./tabs.js";
 import { FOLDER_ICON, MOVE_SCRIPT, renderTree } from "./tree.js";
@@ -157,9 +158,7 @@ export function layout(v: PageView): string {
       ? ""
       : `<a class="button secondary" href="/_diff${slugPath(v.activeSlug)}">Diff</a>`;
   const downloadLink =
-    v.canEdit === false || !v.activeSlug
-      ? ""
-      : `<a class="button secondary" href="/_download${slugPath(v.activeSlug)}" download>Download</a>`;
+    v.canEdit === false || !v.activeSlug ? "" : downloadMenu(v.activeSlug);
   const copyLink =
     v.canEdit === false || !v.activeSlug ? "" : copyLinkButton(v.activeSlug);
   const archiveAction =
@@ -218,6 +217,7 @@ ${FIND_BAR}
 <script>${FIND_SCRIPT}</script>
 <script>${EDIT_SHORTCUT_SCRIPT}</script>
 <script>${COPY_LINK_SCRIPT}</script>
+<script>${PRINT_SCRIPT}</script>
 ${toc ? `<script>${TOC_SCRIPT}</script>` : ""}
 ${notesData ? `<script>${NOTES_SCRIPT}</script>` : ""}
 <script>${MOVE_SCRIPT}</script>
