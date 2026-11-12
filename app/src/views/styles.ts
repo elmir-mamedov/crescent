@@ -384,7 +384,12 @@ body.dragging-page .space-current{
   cursor:pointer; font-family:inherit;
 }
 .tree-menu-pop a:hover,.tree-menu-pop button:hover,.download-menu-pop a:hover,.download-menu-pop button:hover{background:var(--surface-hover); text-decoration:none}
-.content{flex:1; padding:32px 40px; max-width:calc(var(--maxw) + 80px); width:100%}
+/* min-width:0 is load-bearing, as on .toc: a flex item is never narrower than
+   its content, so without it the widest thing on a page (a code block, a
+   table) sets the column's width and the whole page scrolls sideways, pushing
+   "On this page" out of the window, instead of that one thing scrolling
+   inside the column. */
+.content{flex:1; min-width:0; padding:32px 40px; max-width:calc(var(--maxw) + 80px); width:100%}
 /* "On this page". A third flex column so .content keeps its measure, hidden
    whenever the window is too narrow to afford it. min-width:0 and wrapping text
    are load-bearing: body is a flex row, so an unbreakable line in here would
