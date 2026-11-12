@@ -135,4 +135,6 @@ in [`AGENTS.md`](AGENTS.md).
 ## License
 
 Crescent is licensed under the [Apache License 2.0](LICENSE); see also
-[`NOTICE`](NOTICE).
+[`NOTICE`](NOTICE). The software by others that it includes is listed, with
+the text of each license, in `THIRD_PARTY_NOTICES.txt`, in the `app` folder
+of an installed copy (see [Installation](#installation)).

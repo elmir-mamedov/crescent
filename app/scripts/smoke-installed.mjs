@@ -1,9 +1,10 @@
 // Release CI only: checks a KB25 that install.sh / install.ps1 has just
 // installed with KB25_YES=1 KB25_NO_BROWSER=1. The viewer must answer without
 // a login, the chat must report its engines, the MCP server must list its
-// tools, the launcher must exist, KB25's window must start the server, close
-// with the power button, stop the server when it quits and restart on an
-// update, and removal must clean up while leaving the pages alone.
+// tools, the licenses must be there, the launcher must exist, KB25's window
+// must start the server, close with the power button, stop the server when it
+// quits and restart on an update, and removal must clean up while leaving the
+// pages alone.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -72,7 +73,17 @@ mcp.kill();
 assert.ok(tools && tools.length >= 18, `expected the MCP tools, got ${tools?.length}`);
 console.log(`mcp: ${tools.length} tools`);
 
-// 4. The launcher is where Spotlight / the Start menu look for it, and the
+// 4. Crescent's license, and the licenses of what others wrote, went in with it.
+const app = path.join(home, "app");
+assert.match(fs.readFileSync(path.join(app, "LICENSE"), "utf8"), /Apache License\s+Version 2\.0/);
+assert.match(fs.readFileSync(path.join(app, "NOTICE"), "utf8"), /^Crescent\r?\n/);
+const notices = fs.readFileSync(path.join(app, "THIRD_PARTY_NOTICES.txt"), "utf8");
+for (const name of ["fastify", "mermaid", "chevrotain", "katex", "Microsoft.Web.WebView2"]) {
+  assert.match(notices, new RegExp(`^${name.replace(/\./g, "\\.")} `, "m"), `THIRD_PARTY_NOTICES.txt leaves out ${name}`);
+}
+console.log(`licenses: LICENSE, NOTICE and THIRD_PARTY_NOTICES.txt (${notices.length} characters)`);
+
+// 5. The launcher is where Spotlight / the Start menu look for it, and the
 // update replaced the one KB25 0.12.0 and earlier left (release.yml plants it).
 const launcher = isWindows
   ? path.join(process.env.APPDATA, "Microsoft", "Windows", "Start Menu", "Programs", "Crescent.lnk")
@@ -82,7 +93,7 @@ const oldLauncher = path.join(path.dirname(launcher), isWindows ? "KB25.lnk" : "
 assert.ok(!fs.existsSync(oldLauncher), `the update left ${oldLauncher}`);
 console.log(`launcher: ${launcher}`);
 
-// 5. KB25's window: the native app (shell/) starts the server and opens it;
+// 6. KB25's window: the native app (shell/) starts the server and opens it;
 // the power button closes it; quitting it, as Cmd+Q or the close button does,
 // stops the server.
 const server = `http://localhost:${env.PORT}`;
@@ -203,7 +214,7 @@ await fetch(`${server}/_quit`, { method: "POST" });
 await until(() => !running(restarted), "the power button closes the restarted window");
 console.log("window: an update restarts it on the new version");
 
-// 6. Removal takes everything but the pages.
+// 7. Removal takes everything but the pages.
 execFileSync(node, [path.join(home, "app", "installer", "setup.mjs")], {
   env: { ...process.env, KB25_UNINSTALL: "1" },
   stdio: "inherit",
