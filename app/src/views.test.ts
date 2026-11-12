@@ -1269,6 +1269,13 @@ test("notes: the pin finds a legal host inside list and table blocks", () => {
   assert.match(html, /if \(tag === "TABLE"\) return block\.querySelector\("th, td"\)/);
 });
 
+test("feedback #39: a wide page scrolls inside the column, never the whole page sideways", () => {
+  const html = layout(pageView());
+  // The column may be narrower than its widest content, so that content
+  // scrolls inside it and "On this page" stays in the window.
+  assert.match(html, /\.content\{flex:1; min-width:0;/);
+});
+
 test("dashboard: the corner button links to the space being viewed", () => {
   const html = layout(pageView());
   assert.match(html, /class="dash-button" href="\/_dashboard\?space=kb25"/);
