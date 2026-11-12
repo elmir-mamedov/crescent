@@ -74,6 +74,27 @@ export function recordUpdate(file, from, to) {
   }
 }
 
+/** Marks a skill folder as ours, so removal never deletes someone's own skill. */
+const SKILL_MARKER = ".installed-by-kb25";
+
+/** Whether `dir` holds the page-writing skill an earlier install put there. */
+export function isOurSkill(dir) {
+  return fs.existsSync(path.join(dir, SKILL_MARKER));
+}
+
+/**
+ * Copy the page-writing skill from `source` into `dir`, replacing the copy an
+ * earlier install left, so the skill tracks the installed version. A skill of
+ * the person's own by that name, one without our marker, is left alone.
+ */
+export function copySkill(source, dir) {
+  if (!fs.existsSync(source)) return;
+  if (fs.existsSync(dir) && !isOurSkill(dir)) return;
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.cpSync(source, dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, SKILL_MARKER), "");
+}
+
 /** KEY=value lines, the same shape the server's loadEnvFile reads. */
 export function readEnvFile(file) {
   const env = {};
