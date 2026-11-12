@@ -2092,15 +2092,31 @@ function swipeRig(shell: unknown) {
       }
     }
   };
-  /** One run of wheel events, 16 ms apart, each moving (dx, dy). */
-  const run = (count: number, dx: number, dy: number, over: FakeElement = page, inverted = true) => {
-    for (let i = 0; i < count; i++) {
-      listeners.get("wheel")?.({ deltaX: dx, deltaY: dy, target: over, ctrlKey: false, defaultPrevented: false, webkitDirectionInvertedFromDevice: inverted });
+  /** Wheel events 16 ms apart, each moving (dx, dy) by one of `moves`. */
+  const swipe = (moves: [number, number][], over: FakeElement = page, inverted = true) => {
+    for (const [dx, dy] of moves) {
+      listeners.get("wheel")?.({ deltaX: dx, deltaY: dy, timeStamp: now, target: over, ctrlKey: false, defaultPrevented: false, webkitDirectionInvertedFromDevice: inverted });
       tick(16);
     }
   };
-  return { went, style, wide, tick, run, listeners };
+  /** One run of wheel events, 16 ms apart, each moving (dx, dy). */
+  const run = (count: number, dx: number, dy: number, over: FakeElement = page, inverted = true) =>
+    swipe(Array.from({ length: count }, () => [dx, dy] as [number, number]), over, inverted);
+  /** Time spent in the back/forward cache, where no timer runs. */
+  const away = (ms: number) => {
+    now += ms;
+  };
+  return { went, style, wide, tick, run, swipe, away, listeners };
 }
+
+/** Momentum from `speed`, slowing as a trackpad's does, for `count` events. */
+function coast(speed: number, count: number): [number, number][] {
+  return Array.from({ length: count }, (_, i) => [Math.round(speed * 0.94 ** i), 0] as [number, number]);
+}
+
+/** A swipe from a standstill, as a trackpad sends one (feedback #65): fingers right, for Back. */
+const SET_OFF: [number, number][] = [[-5, 0], [-16, 2], [-53, 2], [-93, 2], [-95, -1], [-146, 0]];
+const fingersLeft = (moves: [number, number][]) => moves.map(([dx, dy]) => [-dx, dy] as [number, number]);
 
 test("feedback #26, #27: in the window, a sideways swipe goes back or forward at once, once", () => {
   const rig = swipeRig({ swipe: true });
@@ -2141,6 +2157,42 @@ test("feedback #26, #27: a page opening on the tail of a swipe waits for it to e
   rig.tick(300);
   rig.run(30, -8, 0);
   assert.deepEqual(rig.went, ["back"]);
+});
+
+test("feedback #65: a swipe made on the momentum of the one before goes at once, either way", () => {
+  // The page opened on a swipe back, whose momentum runs on; the fingers
+  // come down, stopping it, and swipe back again.
+  const rig = swipeRig({ swipe: true });
+  rig.swipe(coast(-130, 12));
+  rig.tick(40);
+  rig.swipe(SET_OFF);
+  assert.deepEqual(rig.went, ["back"]);
+  // The page that opens, put back from the cache on the momentum of that
+  // one, goes forward the same way.
+  rig.listeners.get("pageshow")?.({ persisted: true });
+  rig.swipe(coast(-150, 20));
+  rig.tick(40);
+  rig.swipe(fingersLeft(SET_OFF));
+  assert.deepEqual(rig.went, ["back", "forward"]);
+});
+
+test("feedback #65: momentum goes nowhere, held up by a busy page or put back from the cache", () => {
+  // A busy page holds the events back, then has them all at once.
+  const rig = swipeRig({ swipe: true });
+  rig.swipe(coast(-130, 10));
+  rig.tick(40);
+  rig.swipe([[-200, 0], ...coast(-65, 30)]);
+  assert.deepEqual(rig.went, []);
+  // A page left on a swipe and put back later, on the momentum of another,
+  // measures that momentum by nothing it saw before it went.
+  const left = swipeRig({ swipe: true });
+  left.tick(300);
+  left.swipe(SET_OFF);
+  assert.deepEqual(left.went, ["back"]);
+  left.away(2000);
+  left.listeners.get("pageshow")?.({ persisted: true });
+  left.swipe(coast(-60, 20));
+  assert.deepEqual(left.went, ["back"]);
 });
 
 test("feedback #26, #27: only Crescent's window, swiping with two fingers, gets the swipe", () => {
