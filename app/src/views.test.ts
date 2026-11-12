@@ -1278,6 +1278,9 @@ test("feedback #39: a wide page scrolls inside the column, never the whole page 
   assert.match(html, /\.content\{flex:1; min-width:0;/);
   assert.match(html, /\.prose \.table-scroll\{overflow-x:auto\}/);
   assert.match(html, /\.prose\{max-width:var\(--maxw\); overflow-wrap:break-word\}/);
+  // The page's buttons wrap once the title can give up no more room.
+  assert.match(html, /\.page-head > :first-child\{flex:1 1 0\}/);
+  assert.match(html, /\.actions\{[^}]*flex:0 1 auto/);
 });
 
 test("dashboard: the corner button links to the space being viewed", () => {
