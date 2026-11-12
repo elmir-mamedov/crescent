@@ -4,7 +4,7 @@
  * edit history, and deleting.
  */
 import type { FastifyInstance } from "fastify";
-import { downloadFilename, isFolderPage, type CreatePageMutation, type DeleteMutation } from "../content.js";
+import { downloadFilename, downloadMarkdown, isFolderPage, type CreatePageMutation, type DeleteMutation } from "../content.js";
 import { parseWordDiff } from "../diff.js";
 import type { PageSave, Written } from "../kb-writes.js";
 import { deleteLayout, diffLayout, notFound, type ViewNotice } from "../views.js";
@@ -253,7 +253,7 @@ export function registerPageRoutes(app: FastifyInstance, ctx: ServerContext): vo
     return reply.redirect(pagePath(savedSlug));
   });
 
-  // Download a page's raw Markdown (frontmatter included) as an attachment.
+  // Download a page's Markdown as an attachment, without its metadata.
   app.get("/_download/*", async (req, reply) => {
     const slug = (req.params as { "*": string })["*"] ?? "";
     // A folder is a pure container — there is no document to download.
@@ -278,7 +278,7 @@ export function registerPageRoutes(app: FastifyInstance, ctx: ServerContext): vo
         `attachment; filename="${downloadFilename(page.slug)}"`
       )
       .type("text/markdown; charset=utf-8")
-      .send(page.raw);
+      .send(downloadMarkdown(page.raw));
   });
 
   // Word-level diff of a page's edit history; ?rev=N steps back (0 = latest edit).
