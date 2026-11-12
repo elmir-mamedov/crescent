@@ -12,11 +12,17 @@
 // its entry's folder (../public, ../node_modules/mermaid/dist,
 // ../node_modules/katex/dist, ../node_modules/@elmir-mamedov/feedback/dist,
 // ../../.env) resolve unchanged.
+//
+// It carries Crescent's LICENSE and NOTICE, and THIRD_PARTY_NOTICES.txt, the
+// licenses of everything in it that others wrote (src/third-party-notices.ts,
+// which this imports, so it runs through tsx). A package copied as it is below
+// must be in that module's COPIED too.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { releaseComponents, renderNotices } from "../src/third-party-notices.ts";
 import { buildMacShell, buildWindowsShell } from "./build-shell.mjs";
 
 const appDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -38,13 +44,16 @@ const common = {
     js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
   },
   logLevel: "warning",
+  // What each bundle took in, for the notices, with paths relative to app/.
+  metafile: true,
+  absWorkingDir: appDir,
 };
-await build({
+const server = await build({
   ...common,
   entryPoints: [path.join(appDir, "src", "server.ts")],
   outfile: path.join(out, "server", "server.mjs"),
 });
-await build({
+const mcp = await build({
   ...common,
   entryPoints: [path.join(appDir, "src", "mcp.ts")],
   outfile: path.join(out, "server", "mcp.mjs"),
@@ -90,6 +99,16 @@ if (!macShell || !windowsShell) {
 copy(macShell, path.join("shell", "mac", "KB25"));
 copy(windowsShell, path.join("shell", "windows"));
 copy(path.join(appDir, "skills"), "skills");
+// Crescent's license, and the licenses of what others wrote: the packages the
+// bundles took in, those copied above and what their prebuilt files carry,
+// and the NuGet packages KB25.exe ships with, which its build's restore lists.
+for (const file of ["LICENSE", "NOTICE"]) copy(path.join(appDir, "..", file), file);
+const notices = releaseComponents({
+  appDir,
+  metafiles: [server.metafile, mcp.metafile],
+  nugetAssets: path.join(appDir, "shell", "windows", "obj", "project.assets.json"),
+});
+fs.writeFileSync(path.join(out, "THIRD_PARTY_NOTICES.txt"), renderNotices(notices));
 fs.writeFileSync(path.join(out, "VERSION"), `${version}\n`);
 
 execFileSync("zip", ["-r", "-q", "-X", path.join(distDir, "kb25.zip"), ".", "-x", "*.DS_Store"], {
