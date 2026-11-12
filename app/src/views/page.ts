@@ -219,6 +219,7 @@ ${FIND_BAR}
 <script>${COPY_LINK_SCRIPT}</script>
 <script>${PRINT_SCRIPT}</script>
 ${toc ? `<script>${TOC_SCRIPT}</script>` : ""}
+${v.contentHtml.includes('class="section-link"') ? `<script>${SECTION_FLASH_SCRIPT}</script>` : ""}
 ${notesData ? `<script>${NOTES_SCRIPT}</script>` : ""}
 <script>${MOVE_SCRIPT}</script>
 ${v.contentHtml.includes('class="mermaid"') ? `${DIAGRAM_VIEWER}\n${MERMAID_SCRIPT}` : ""}
@@ -613,6 +614,86 @@ const TOC_SCRIPT = `
   window.addEventListener("scroll", schedule, { passive: true });
   window.addEventListener("resize", schedule);
   window.addEventListener("hashchange", schedule);
+})();
+`;
+
+/**
+ * Lights the heading a section link leads to for two seconds (feedback #64),
+ * so the eye finds where the jump landed: a heading that ends up mid-window,
+ * because the page runs out below it, is otherwise easy to lose.
+ *
+ * A click on a link into this page does it — an entry in the "On this page"
+ * rail, a link in the body, a Cmd-click, which stays on this page — and so does
+ * arriving from another page by a link to one of this one's sections. Clicks
+ * rather than `hashchange`, because clicking the section the address already
+ * names jumps there again without one, and because Back and Forward also change
+ * the hash: they put the reader back where they were, which is not a section
+ * they asked for. A reload, likewise, shows what it showed.
+ *
+ * A heading's own `#` is left out: it copies the section's link, which its
+ * tint and the toast already confirm, and the reader is looking at the heading.
+ */
+export const SECTION_FLASH_SCRIPT = `
+(() => {
+  const article = document.querySelector("article.prose");
+  if (!article) return;
+  const HOLD = 2000;
+
+  // The heading a fragment names, looked up the way the browser finds where to
+  // scroll: the fragment as it is, then percent-decoded, which is how a
+  // non-ASCII anchor arrives.
+  function headingFor(hash) {
+    if (!hash || hash.length < 2) return null;
+    const raw = hash.slice(1);
+    let el = document.getElementById(raw);
+    if (!el) {
+      try {
+        el = document.getElementById(decodeURIComponent(raw));
+      } catch (e) {
+        el = null;
+      }
+    }
+    if (!el || !article.contains(el)) return null;
+    return /^H[1-6]$/.test(el.tagName) ? el : null;
+  }
+
+  function flash(heading) {
+    if (!heading) return;
+    window.clearTimeout(heading.__flashTimer);
+    // Off and on again, with a layout read between, so a second click inside
+    // the two seconds starts the glow over rather than letting it run out.
+    heading.classList.remove("is-flashed");
+    void heading.offsetWidth;
+    heading.classList.add("is-flashed");
+    heading.__flashTimer = window.setTimeout(() => heading.classList.remove("is-flashed"), HOLD);
+  }
+
+  function navType() {
+    try {
+      const nav = performance.getEntriesByType("navigation")[0];
+      return nav ? nav.type : "navigate";
+    } catch (e) {
+      return "navigate";
+    }
+  }
+
+  if (navType() === "navigate") flash(headingFor(location.hash));
+
+  document.addEventListener("click", (event) => {
+    if (event.button !== 0 || event.shiftKey || event.altKey) return;
+    const target = event.target;
+    const link = target && target.closest ? target.closest("a[href]") : null;
+    if (!link || (link.target && link.target !== "_self")) return;
+    let url = null;
+    try {
+      url = new URL(link.href, location.href);
+    } catch (e) {
+      return;
+    }
+    if (url.origin !== location.origin || url.pathname !== location.pathname || url.search !== location.search) return;
+    const heading = headingFor(url.hash);
+    if (heading && !heading.contains(link)) flash(heading);
+  });
 })();
 `;
 
