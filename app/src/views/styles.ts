@@ -717,7 +717,7 @@ html.has-find.has-tabs .toc{padding-top:58px}
   /* No travel when less motion was asked for — fade in place instead. */
   .toast{transform:translate(-50%,0); transition:opacity .12s ease}
 }
-.prose{max-width:var(--maxw)}
+.prose{max-width:var(--maxw); overflow-wrap:break-word}
 .prose h1,.prose h2,.prose h3{line-height:1.25; margin-top:1.6em}
 .prose h2{font-size:22px; border-bottom:1px solid var(--line); padding-bottom:.2em}
 .prose h3{font-size:18px}

@@ -1277,6 +1277,7 @@ test("feedback #39: a wide page scrolls inside the column, never the whole page 
   // scrolls inside it and "On this page" stays in the window.
   assert.match(html, /\.content\{flex:1; min-width:0;/);
   assert.match(html, /\.prose \.table-scroll\{overflow-x:auto\}/);
+  assert.match(html, /\.prose\{max-width:var\(--maxw\); overflow-wrap:break-word\}/);
 });
 
 test("dashboard: the corner button links to the space being viewed", () => {
