@@ -1911,6 +1911,166 @@ test("the section glyph is drawn by CSS so it stays out of the heading text", ()
   assert.match(layout(pageView()), /\.section-link::before\{content:"#"\}/);
 });
 
+const SECTION_HTML = '<h2 id="usage">Usage<a class="section-link" href="#usage"></a></h2>';
+
+/** An element of the page SECTION_FLASH_SCRIPT runs on. */
+class FlashElement {
+  parent: FlashElement | null = null;
+  readonly classes = new Set<string>();
+  readonly classList = {
+    add: (name: string) => void this.classes.add(name),
+    remove: (...names: string[]) => names.forEach((name) => this.classes.delete(name)),
+  };
+  constructor(
+    readonly tagName: string,
+    readonly id = "",
+    public href = "",
+    public target = ""
+  ) {}
+  get offsetWidth() {
+    return 600;
+  }
+  in(parent: FlashElement) {
+    this.parent = parent;
+    return this;
+  }
+  contains(other: FlashElement | null) {
+    for (let el = other; el; el = el.parent) if (el === this) return true;
+    return false;
+  }
+  closest(selector: string) {
+    assert.equal(selector, "a[href]");
+    for (let el: FlashElement | null = this; el; el = el.parent) if (el.tagName === "A") return el;
+    return null;
+  }
+}
+
+/**
+ * SECTION_FLASH_SCRIPT on /kb25/notes, opened at `hash` by a navigation of
+ * type `nav`. The article holds an h2 `usage` with its own `#`, an h3 with a
+ * Chinese anchor and a paragraph `intro`; an h2 `outside` is elsewhere on the
+ * page.
+ */
+function flashRig(options: { hash?: string; nav?: string } = {}) {
+  const html = layout(pageView({ contentHtml: SECTION_HTML }));
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes("is-flashed"));
+  assert.ok(script, "a page with sections carries the flash script");
+
+  const article = new FlashElement("ARTICLE");
+  const usage = new FlashElement("H2", "usage").in(article);
+  const chinese = new FlashElement("H3", "一句话").in(article);
+  const intro = new FlashElement("P", "intro").in(article);
+  const outside = new FlashElement("H2", "outside");
+  const own = new FlashElement("A", "", "http://localhost:4000/kb25/notes#usage").in(usage);
+  const byId = new Map([usage, chinese, intro, outside].map((el) => [el.id, el]));
+  let onClick: ((event: object) => void) | null = null;
+  const doc = {
+    querySelector: (selector: string) => (selector === "article.prose" ? article : null),
+    getElementById: (id: string) => byId.get(id) ?? null,
+    addEventListener: (type: string, fn: (event: object) => void) => {
+      if (type === "click") onClick = fn;
+    },
+  };
+
+  let now = 0;
+  let nextTimer = 1;
+  const timers = new Map<number, { at: number; run: () => void }>();
+  const win = {
+    setTimeout: (run: () => void, ms: number) => {
+      timers.set(nextTimer, { at: now + ms, run });
+      return nextTimer++;
+    },
+    clearTimeout: (id: number) => void timers.delete(id),
+  };
+  const location = new URL(`http://localhost:4000/kb25/notes${options.hash ?? ""}`);
+  const performance = { getEntriesByType: () => [{ type: options.nav ?? "navigate" }] };
+  new Function("window", "document", "location", "performance", script)(win, doc, location, performance);
+
+  return {
+    usage,
+    chinese,
+    intro,
+    outside,
+    own,
+    /** A link elsewhere on the page — the rail, the body — to `href`. */
+    link: (href: string, target = "") => new FlashElement("A", "", new URL(href, location).href, target),
+    click(link: FlashElement, init: object = {}) {
+      assert.ok(onClick, "the script listens for clicks");
+      onClick({ button: 0, shiftKey: false, altKey: false, metaKey: false, target: link, ...init });
+    },
+    tick(ms: number) {
+      now += ms;
+      for (const [id, timer] of [...timers]) {
+        if (timer.at > now) continue;
+        timers.delete(id);
+        timer.run();
+      }
+    },
+    lit: (el: FlashElement) => el.classes.has("is-flashed"),
+  };
+}
+
+test("feedback #64: a link to a section lights its heading for two seconds", () => {
+  const rig = flashRig();
+  rig.click(rig.link("#usage"));
+  assert.ok(rig.lit(rig.usage), "a rail entry lights the heading it leads to");
+  rig.tick(1999);
+  assert.ok(rig.lit(rig.usage));
+  rig.tick(1);
+  assert.ok(!rig.lit(rig.usage), "and it goes out after two seconds");
+
+  // The address names that section by now, so the click changes no hash; it
+  // still lights it, and one inside the two seconds starts them over.
+  rig.click(rig.link("#usage"));
+  rig.tick(1500);
+  rig.click(rig.link("#usage"));
+  rig.tick(1500);
+  assert.ok(rig.lit(rig.usage), "a second click starts the two seconds over");
+  rig.tick(500);
+  assert.ok(!rig.lit(rig.usage));
+
+  // A link spelled with the page's own path is a link into it too, and a
+  // non-ASCII anchor comes percent-encoded.
+  rig.click(rig.link(`/kb25/notes#${encodeURIComponent("一句话")}`));
+  assert.ok(rig.lit(rig.chinese));
+  // A Cmd-click on one stays on this page (TABS_SCRIPT), so it lights as well.
+  rig.click(rig.link("#usage"), { metaKey: true });
+  assert.ok(rig.lit(rig.usage));
+});
+
+test("feedback #64: only a heading of this page, reached by a plain click, lights", () => {
+  const rig = flashRig();
+  rig.click(rig.own);
+  assert.ok(!rig.lit(rig.usage), "a heading's own # copies its link and leaves it alone");
+  rig.click(rig.link("#intro"));
+  assert.ok(!rig.lit(rig.intro), "an anchor that is no heading");
+  rig.click(rig.link("#outside"));
+  assert.ok(!rig.lit(rig.outside), "a heading outside the page's text");
+  rig.click(rig.link("/kb25/other#usage"));
+  rig.click(rig.link("#usage"), { shiftKey: true });
+  rig.click(rig.link("#usage", "_blank"));
+  rig.click(rig.link("#usage"), { button: 1 });
+  assert.ok(!rig.lit(rig.usage), "another page, or a link opened elsewhere");
+});
+
+test("feedback #64: a page opened by a link to one of its sections lights it", () => {
+  assert.ok(flashRig({ hash: "#usage" }).usage.classes.has("is-flashed"));
+  const chinese = flashRig({ hash: `#${encodeURIComponent("一句话")}` }).chinese;
+  assert.ok(chinese.classes.has("is-flashed"), "a non-ASCII anchor");
+  // A reload shows what it showed, and Back puts the reader where they were.
+  assert.ok(!flashRig({ hash: "#usage", nav: "reload" }).usage.classes.has("is-flashed"));
+  assert.ok(!flashRig({ hash: "#usage", nav: "back_forward" }).usage.classes.has("is-flashed"));
+});
+
+test("feedback #64: the flash script ships only with headings to light", () => {
+  assert.doesNotMatch(layout(pageView()), /is-flashed"/);
+  const html = layout(pageView({ contentHtml: SECTION_HTML }));
+  assert.match(html, /classList\.add\("is-flashed"\)/);
+  assert.match(html, /\.is-flashed\{[^}]*animation:section-flash 2s/);
+});
+
 test("a real element id wins over the note-fragment handler", () => {
   const html = layout(pageView({ notes: [] }));
   assert.match(html, /if \(location\.hash\.length > 1 && document\.getElementById\(location\.hash\.slice\(1\)\)\) return;/);
