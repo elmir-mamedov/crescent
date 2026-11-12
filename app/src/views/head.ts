@@ -148,13 +148,23 @@ const THEME_SCRIPT = `
  * swipes between pages with two fingers. A browser swipes the way it does,
  * sets nothing, and gets none of this.
  *
- * A swipe is one run of wheel events with no pause in it, momentum included.
- * It counts when its first movement is mostly sideways, nothing under the
- * pointer can still scroll that way (a wide table, a code block), and it
- * goes on far enough. Then it goes back, for fingers moving right, or
- * forward, once, and the rest of the run is let go. A page that opens on
- * the tail of a run waits for it to end. The root's sideways rubber band
- * goes too, since nothing slides any more.
+ * A swipe is one run of wheel events, momentum included, which ends at a
+ * pause or where the fingers come down again. It counts when its first
+ * movement is mostly sideways, nothing under the pointer can still scroll
+ * that way (a wide table, a code block), and it goes on far enough. Then it
+ * goes back, for fingers moving right, or forward, once, and the rest of
+ * the run is let go. A page that opens on the tail of a run waits for it to
+ * end. The root's sideways rubber band goes too, since nothing slides any
+ * more.
+ *
+ * Fingers coming down stop the momentum, and a swipe made then starts from
+ * a standstill: a gap in the events, every 16 ms till then, and then
+ * hardly any movement. Momentum never slows by half from one event to the
+ * next, and a gap in it, while the page is busy, ends in more movement,
+ * not less. With only the pause to end a run, a swipe made on the momentum
+ * of the one before, which carries on for seconds, was taken for more of
+ * it, and so was each one after it, until the fingers rested (feedback
+ * #65). The momentum of a page put back from the cache starts it over.
  */
 const SWIPE_SCRIPT = `
 (() => {
@@ -163,18 +173,24 @@ const SWIPE_SCRIPT = `
   const DECIDE = 12;
   const GO = 90;
   const PAUSE = 250;
+  const TOUCH = 30;
   // "wait" for a pause; "" to judge the next run; then "swipe", "scroll" or "done".
   let mode = "wait";
   let dx = 0;
   let dy = 0;
+  // When the last wheel event in the run came, and how far it moved.
+  let lastAt = 0;
+  let lastMove = 0;
   let timer = 0;
+  const begin = (next) => {
+    mode = next;
+    dx = 0;
+    dy = 0;
+    lastMove = 0;
+  };
   const rest = () => {
     window.clearTimeout(timer);
-    timer = window.setTimeout(() => {
-      mode = "";
-      dx = 0;
-      dy = 0;
-    }, PAUSE);
+    timer = window.setTimeout(() => begin(""), PAUSE);
   };
   rest();
   document.documentElement.style.overscrollBehaviorX = "none";
@@ -194,6 +210,10 @@ const SWIPE_SCRIPT = `
     "wheel",
     (event) => {
       rest();
+      const move = Math.abs(event.deltaX) + Math.abs(event.deltaY);
+      if (event.timeStamp - lastAt >= TOUCH && move < lastMove / 2) begin("");
+      lastAt = event.timeStamp;
+      lastMove = move;
       if (mode === "wait" || mode === "scroll" || mode === "done") return;
       // A pinch, a scroll something on the page has taken, such as the
       // diagram viewer's, or one over a dialog: the feedback dialog draws
@@ -223,7 +243,7 @@ const SWIPE_SCRIPT = `
   // Put back from the back/forward cache, perhaps by the run still going.
   window.addEventListener("pageshow", (event) => {
     if (!event.persisted) return;
-    mode = "wait";
+    begin("wait");
     rest();
   });
 })();
