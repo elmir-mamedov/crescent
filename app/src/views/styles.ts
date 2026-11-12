@@ -795,6 +795,10 @@ html.has-find.has-tabs .toc{padding-top:58px}
 .prose .math-block .katex-display{margin:0}
 .prose blockquote{margin:1em 0; padding:.4em 1em; color:var(--muted);
   border-left:3px solid var(--line)}
+/* A table wider than the column scrolls inside its own .table-scroll, which
+   the renderer puts around every table (see markdown.ts for the .table-wrap
+   around that). */
+.prose .table-scroll{overflow-x:auto}
 .prose table{border-collapse:collapse; width:100%}
 .prose th,.prose td{border:1px solid var(--line); padding:6px 10px; text-align:left}
 /* height:auto keeps a width-sized image undistorted when max-width shrinks it. */
@@ -1637,7 +1641,7 @@ body.chat-open .tab-strip{right:400px}
   .crumbs,.page-head .actions,.notice,.section-link,.diagram-expand,.note-pin,.note-add,.note-popover,.toast{display:none !important}
   .prose{max-width:none}
   .prose pre{white-space:pre-wrap; overflow-wrap:anywhere; overflow:visible}
-  .prose pre.mermaid,.prose .katex-display{overflow:visible}
+  .prose pre.mermaid,.prose .katex-display,.prose .table-scroll{overflow:visible}
   .prose pre.mermaid[data-drawn="dark"] svg{filter:invert(1) hue-rotate(180deg)}
   .prose pre.mermaid[data-print-copy]{display:none}
   .prose .mermaid-print{display:block; text-align:center}
