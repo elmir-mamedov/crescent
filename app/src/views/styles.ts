@@ -1643,6 +1643,9 @@ body.chat-open .tab-strip{right:400px}
      it to the paper, which shaved the right edge off tables and code. */
   main.content{max-width:none; padding:0 1px; visibility:visible !important; animation:none !important}
   .crumbs,.page-head .actions,.notice,.section-link,.diagram-expand,.note-pin,.note-add,.note-popover,.toast{display:none !important}
+  /* Labels, tags and the Updated line are the KB's metadata, not the page
+     (feedback #59); the meta line stays, empty, for the gap under the title. */
+  .page-head .meta > *{display:none !important}
   .prose{max-width:none}
   .prose pre{white-space:pre-wrap; overflow-wrap:anywhere; overflow:visible}
   .prose pre.mermaid,.prose .katex-display,.prose .table-scroll{overflow:visible}
