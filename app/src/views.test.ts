@@ -220,6 +220,8 @@ test("feedback #32: a page prints alone, in the light theme's colours", () => {
   // children of <body> beside <main>.
   assert.match(print, /body > :not\(main\)\{display:none !important\}/);
   assert.match(print, /\.page-head \.actions/);
+  // Labels, tags and the Updated line stay off the paper (feedback #59).
+  assert.match(print, /\.page-head \.meta > \*\{display:none !important\}/);
   // A diagram still drawn for the dark theme is turned light on paper.
   assert.match(print, /pre\.mermaid\[data-drawn="dark"\] svg\{filter:invert\(1\) hue-rotate\(180deg\)\}/);
 });
