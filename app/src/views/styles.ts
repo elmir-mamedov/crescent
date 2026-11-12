@@ -426,13 +426,17 @@ body.dragging-page .space-current{
 .crumbs{color:var(--muted); font-size:13px; margin-bottom:18px}
 .crumbs .sep{color:var(--line); margin:0 2px}
 .page-head{display:flex; justify-content:space-between; gap:20px; align-items:flex-start}
+/* The title takes what the buttons leave and gives it up first, down to its
+   longest word; only then do the buttons shrink, wrapping onto another row
+   rather than running off the right edge. */
+.page-head > :first-child{flex:1 1 0}
 .page-head h1{font-size:30px; line-height:1.2; margin:0 0 8px}
 .meta{margin:0 0 24px}
 .tags{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
 .tag{background:var(--surface-hover); color:var(--fg-secondary); font-size:12px; padding:2px 8px; border-radius:999px}
 .updated{color:var(--muted); font-size:12px}
 .tags + .updated{margin-top:8px}
-.actions{display:flex; gap:8px; flex:0 0 auto; align-items:center; flex-wrap:wrap}
+.actions{display:flex; gap:8px; flex:0 1 auto; align-items:center; flex-wrap:wrap}
 .action-form{display:inline-flex; margin:0}
 /* The page's Download menu (views/print.ts): the Markdown file, or a PDF. */
 .download-menu{position:relative}
