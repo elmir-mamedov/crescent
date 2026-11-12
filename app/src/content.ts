@@ -1726,6 +1726,27 @@ export function downloadFilename(slug: string): string {
   return `${leaf || "page"}.md`;
 }
 
+/**
+ * A page as the Markdown file Download hands out (feedback #59): the page as
+ * it reads, without the frontmatter that keeps its metadata. Its id, tags,
+ * labels, order and the rest are KB25's bookkeeping and mean nothing in a file
+ * that has left it. The title, which the frontmatter held, leads the file as
+ * its heading, as it leads the page and its PDF. A header that cannot be read
+ * has no telling where it ends, so that file goes out as it is.
+ */
+export function downloadMarkdown(raw: string): string {
+  let source: { data: Record<string, unknown>; body: string };
+  try {
+    source = parseFrontmatter(raw);
+  } catch {
+    return raw;
+  }
+  const title = typeof source.data.title === "string" ? source.data.title.replace(/\s+/g, " ").trim() : "";
+  const body = source.body.replace(/^(?:[ \t]*\n)+/, "");
+  const text = title ? `# ${title}\n\n${body}` : body;
+  return text.endsWith("\n") ? text : `${text}\n`;
+}
+
 /** Normalise CRLF/CR line endings to LF so saves compare and store consistently. */
 function normalizeEol(value: string): string {
   return value.replace(/\r\n?/g, "\n");
