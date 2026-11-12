@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Cloudflare Worker that files KB25 feedback as issues in a private GitHub repo.",
+  "license": "Apache-2.0",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

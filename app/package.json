@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Lean viewer/editor for the markdown knowledge base.",
+  "license": "Apache-2.0",
   "scripts": {
     "predev": "tsx src/dev-reset.ts --if-missing",
     "dev": "tsx watch src/server.ts",
