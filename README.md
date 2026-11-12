@@ -131,3 +131,8 @@ Reports written while offline are sent once a connection is available.
 
 The application is in [`app/`](app/README.md), and repository guidelines are
 in [`AGENTS.md`](AGENTS.md).
+
+## License
+
+Crescent is licensed under the [Apache License 2.0](LICENSE); see also
+[`NOTICE`](NOTICE).
