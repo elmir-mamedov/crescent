@@ -20,7 +20,9 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import {
+  copySkill,
   isMac,
+  isOurSkill,
   isWindows,
   paths,
   powershell,
@@ -70,8 +72,6 @@ const SKILL_DIR = path.join(os.homedir(), ".claude", "skills", "kb-page-authorin
 const PORT_FROM = 25250;
 /** Where KB25 0.5.0 and earlier started it, which collided with those dev servers. */
 const OLD_PORT_FROM = 4000;
-/** Marks a skill folder as ours, so removal never deletes someone's own skill. */
-const SKILL_MARKER = ".installed-by-kb25";
 
 try {
   await main();
@@ -530,7 +530,14 @@ function claude(args) {
 }
 
 async function connectClaudeCode() {
-  if (claude(["--version"]) === null) return;
+  if (claude(["--version"]) === null) {
+    // An update started from Crescent's window runs with the server's PATH,
+    // which seldom has ~/.local/bin, where Claude Code installs itself. The
+    // skill an earlier run copied in was copied once Claude Code was found and
+    // connected, so it is refreshed even when Claude Code isn't found now.
+    if (isOurSkill(SKILL_DIR)) installSkill();
+    return;
+  }
   if (claude(["mcp", "get", "kb25"])?.includes(p.mcp)) {
     console.log("Claude Code is already connected to Crescent.");
   } else {
@@ -546,19 +553,14 @@ async function connectClaudeCode() {
 
 /** The page-writing skill, refreshed on every run so it tracks the installed version. */
 function installSkill() {
-  const source = path.join(p.app, "skills", "kb-page-authoring");
-  if (!fs.existsSync(source)) return;
-  if (fs.existsSync(SKILL_DIR) && !fs.existsSync(path.join(SKILL_DIR, SKILL_MARKER))) return;
-  fs.rmSync(SKILL_DIR, { recursive: true, force: true });
-  fs.cpSync(source, SKILL_DIR, { recursive: true });
-  fs.writeFileSync(path.join(SKILL_DIR, SKILL_MARKER), "");
+  copySkill(path.join(p.app, "skills", "kb-page-authoring"), SKILL_DIR);
 }
 
 function disconnectClaudeCode() {
   if (claude(["mcp", "get", "kb25"])?.includes(p.mcp)) {
     claude(["mcp", "remove", "--scope", "user", "kb25"]);
   }
-  if (fs.existsSync(path.join(SKILL_DIR, SKILL_MARKER))) {
+  if (isOurSkill(SKILL_DIR)) {
     fs.rmSync(SKILL_DIR, { recursive: true, force: true });
   }
 }
