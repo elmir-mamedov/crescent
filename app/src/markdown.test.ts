@@ -398,6 +398,20 @@ test("escaping table pipes leaves a block's source anchor pointing at the stored
   assert.equal(hash, sourceBlocks(body)[0].hash);
 });
 
+test("a table scrolls inside its own box, and the note anchor sits around that", () => {
+  const body = "Intro.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n";
+  const html = render(body);
+  const table = sourceBlocks(body)[1];
+  // The anchor goes on .table-wrap, outside .table-scroll, so a note's pin
+  // hanging in the gutter is not clipped by the scroller.
+  assert.match(
+    html,
+    new RegExp(`<div class="table-wrap" data-src-line="2" data-src-hash="${table.hash}"><div class="table-scroll">\\n<table>\\n`)
+  );
+  assert.match(html, /<\/table>\n<\/div><\/div>\n/);
+  assert.doesNotMatch(html, /<table [^>]/);
+});
+
 test("images render without size attributes by default", () => {
   const html = render("![Diagram](_assets/pic.png)");
   assert.match(html, /<img src="\/kb25\/_assets\/pic\.png" alt="Diagram">/);

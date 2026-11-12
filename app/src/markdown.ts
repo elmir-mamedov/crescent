@@ -1229,6 +1229,14 @@ export function createRenderer(
     return anchor && html.startsWith("<pre") ? `<pre${anchor}${html.slice(4)}` : html;
   };
 
+  // A table wider than the column scrolls sideways inside .table-scroll rather
+  // than widening the page. The note anchor moves out to .table-wrap, around
+  // the scroller, because a note's pin hangs in the gutter to the block's left
+  // and anything inside a scroller is clipped to it.
+  md.renderer.rules.table_open = (tokens, idx, _options, _env, self) =>
+    `<div class="table-wrap"${self.renderAttrs(tokens[idx])}><div class="table-scroll">\n<table>\n`;
+  md.renderer.rules.table_close = () => "</table>\n</div></div>\n";
+
   // Table rows are cut into cells before any inline rule runs, so a wiki-link's
   // `|` has to be escaped in the source or it reads as a cell boundary. Runs
   // ahead of `block` for that reason, and stashes what it was given so the
