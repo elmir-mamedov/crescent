@@ -1262,11 +1262,13 @@ test("notes: the kind switch gets its own row, so no kind is clipped", () => {
   assert.match(html, /\.note-composer-actions,\.note-card-actions\{[^}]*flex-wrap:wrap/);
 });
 
-test("notes: the pin finds a legal host inside list and table blocks", () => {
+test("notes: the pin finds a legal host inside list blocks", () => {
   const html = layout(pageView());
-  // A <button> is invalid as a direct child of <ul>/<ol>/<table>.
+  // A <button> is invalid as a direct child of <ul>/<ol>. A table's block is
+  // the .table-wrap around it, which takes the pin itself, outside the scroller
+  // that would clip it.
   assert.match(html, /if \(tag === "UL" \|\| tag === "OL"\) return block\.querySelector\("li"\)/);
-  assert.match(html, /if \(tag === "TABLE"\) return block\.querySelector\("th, td"\)/);
+  assert.doesNotMatch(html, /tag === "TABLE"/);
 });
 
 test("feedback #39: a wide page scrolls inside the column, never the whole page sideways", () => {
@@ -1274,6 +1276,7 @@ test("feedback #39: a wide page scrolls inside the column, never the whole page 
   // The column may be narrower than its widest content, so that content
   // scrolls inside it and "On this page" stays in the window.
   assert.match(html, /\.content\{flex:1; min-width:0;/);
+  assert.match(html, /\.prose \.table-scroll\{overflow-x:auto\}/);
 });
 
 test("dashboard: the corner button links to the space being viewed", () => {
