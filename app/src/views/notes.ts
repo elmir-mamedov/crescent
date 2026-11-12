@@ -129,14 +129,14 @@ export const NOTES_SCRIPT = `
 
   /**
    * Where a block's pin can legally live. A <button> is not valid as a direct
-   * child of <ul>/<ol>/<table>, so it goes in the first item or cell instead —
-   * which changes nothing about where it appears, because the pin positions
-   * against the nearest positioned ancestor and that is still the block.
+   * child of <ul>/<ol>, so it goes in the first item instead — which changes
+   * nothing about where it appears, because the pin positions against the
+   * nearest positioned ancestor and that is still the block. A table's block is
+   * the .table-wrap around it, which takes the pin directly.
    */
   function pinHost(block) {
     const tag = block.tagName;
     if (tag === "UL" || tag === "OL") return block.querySelector("li") || block;
-    if (tag === "TABLE") return block.querySelector("th, td") || block;
     return block;
   }
 
