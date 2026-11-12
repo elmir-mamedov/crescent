@@ -51,6 +51,7 @@ const DARK_TOKENS = `
   --tabs-bg:rgba(11,14,20,.84); --tab-hover-bg:rgba(240,246,252,.06); --tab-open-bg:#1c2129;
   --tab-open-shadow:0 0 0 1px rgba(240,246,252,.09), 0 1px 3px rgba(0,0,0,.45);
   --active-bg:#1f2d44; --selected-bg:#253a5e;
+  --section-flash:#47c274; --section-flash-glow:rgba(71,194,116,.4);
   --mark-bg:#5c4708; --mark-bg-strong:#7a5f0a; --mark-fg:#f5d67b;
   --note-bg:#134e4a; --note-bg-strong:#115e59; --note-fg:#99f6e4;
   --note-pin:#2dd4bf; --note-border:#0f766e;
@@ -91,6 +92,8 @@ const LIGHT_TOKENS = `
   --tabs-bg:rgba(247,248,250,.86); --tab-hover-bg:rgba(15,23,42,.05); --tab-open-bg:#fff;
   --tab-open-shadow:0 0 0 1px rgba(15,23,42,.07), 0 1px 2px rgba(15,23,42,.08), 0 2px 6px rgba(15,23,42,.04);
   --active-bg:#e7efff; --selected-bg:#dbeafe;
+  /* The green the heading a section link led to lights up in. */
+  --section-flash:#119c57; --section-flash-glow:rgba(17,156,87,.2);
   --mark-bg:#fde68a; --mark-bg-strong:#fcd34d; --mark-fg:#713f12;
   /* A note is teal by default, which is what a remark keeps… */
   --note-bg:#ccfbf1; --note-bg-strong:#99f6e4; --note-fg:#115e59;
@@ -744,6 +747,18 @@ html.has-find.has-tabs .toc{padding-top:58px}
 .section-link.copied{opacity:1; color:var(--success-fg)}
 .section-link.copy-failed{opacity:1; color:var(--error-fg)}
 @media (hover:none){.section-link{opacity:.5}}
+/* The heading a section link led to (SECTION_FLASH_SCRIPT): its letters light
+   up green, with a soft glow, hold, and go back to their own colour, over two
+   seconds. The first and last frames are left to the heading's own colour, so
+   it fades from and back to whatever that is. Less motion: green for the two
+   seconds, without the fades. */
+.prose :is(h1,h2,h3,h4,h5,h6).is-flashed{animation:section-flash 2s ease-in-out}
+@keyframes section-flash{
+  15%,65%{color:var(--section-flash); text-shadow:0 0 .45em var(--section-flash-glow)}
+}
+@media (prefers-reduced-motion:reduce){
+  .prose :is(h1,h2,h3,h4,h5,h6).is-flashed{animation:none; color:var(--section-flash)}
+}
 .prose p,.prose ul,.prose ol{margin:.7em 0}
 .prose code{background:var(--code-bg); padding:.15em .35em; border-radius:4px;
   font-size:.88em; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
@@ -1655,6 +1670,7 @@ body.chat-open .tab-strip{right:400px}
   /* A link PRINT_SCRIPT took out, since it leads nowhere in a file. */
   .prose a[data-unlinked]{color:inherit; border-bottom:0; text-decoration:none}
   .prose :is(h1,h2,h3,h4,h5,h6){break-after:avoid}
+  .prose :is(h1,h2,h3,h4,h5,h6).is-flashed{animation:none; color:inherit}
   .prose :is(img,svg,.mermaid-frame,.math-block,blockquote,tr){break-inside:avoid}
   /* Remarks, tasks and agent notes are the reader's working marks, not part of
      the page; a highlight stays, as the underline it already is. */
