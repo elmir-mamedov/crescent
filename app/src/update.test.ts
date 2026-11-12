@@ -307,7 +307,11 @@ test("on Windows the update runs install.ps1 in a hidden PowerShell", async () =
 /** installer/common.mjs, plain JS outside tsc's reach, loaded by URL. */
 async function installerCommon() {
   const url = new URL("../installer/common.mjs", import.meta.url).href;
-  return (await import(url)) as { recordUpdate(file: string, from: string, to: string): void };
+  return (await import(url)) as {
+    recordUpdate(file: string, from: string, to: string): void;
+    copySkill(source: string, dir: string): void;
+    isOurSkill(dir: string): boolean;
+  };
 }
 
 const MESSAGES = {
@@ -413,6 +417,44 @@ test("the installer records an update, keeping where an unseen one started", asy
     assert.deepEqual(await read(), { from: "0.23.0", to: "0.24.0" });
     // Nowhere to write: the update goes on without its card.
     assert.doesNotThrow(() => recordUpdate(path.join(tmp.dir, "missing", "updated.json"), "0.1.0", "0.2.0"));
+  } finally {
+    await tmp.cleanup();
+  }
+});
+
+test("the installer copies its skill in, refreshes its own copy, and leaves a person's own alone", async () => {
+  const tmp = await makeTempKb();
+  try {
+    const { copySkill, isOurSkill } = await installerCommon();
+    const source = path.join(tmp.dir, "release", "kb-page-authoring");
+    const dir = path.join(tmp.dir, "skills", "kb-page-authoring");
+    const read = () => fs.readFile(path.join(dir, "SKILL.md"), "utf8");
+    await fs.mkdir(source, { recursive: true });
+
+    await fs.writeFile(path.join(source, "SKILL.md"), "0.22.0");
+    copySkill(source, dir);
+    assert.equal(await read(), "0.22.0");
+    assert.equal(isOurSkill(dir), true);
+
+    // An update brings a newer skill, and a file the old one had goes with it.
+    await fs.writeFile(path.join(dir, "old.md"), "dropped");
+    await fs.writeFile(path.join(source, "SKILL.md"), "0.23.0");
+    copySkill(source, dir);
+    assert.equal(await read(), "0.23.0");
+    await assert.rejects(fs.stat(path.join(dir, "old.md")));
+
+    // A release without the skill changes nothing.
+    copySkill(path.join(tmp.dir, "release", "missing"), dir);
+    assert.equal(await read(), "0.23.0");
+
+    // A skill the person wrote under the same name isn't ours to replace.
+    const own = path.join(tmp.dir, "own", "kb-page-authoring");
+    await fs.mkdir(own, { recursive: true });
+    await fs.writeFile(path.join(own, "SKILL.md"), "mine");
+    assert.equal(isOurSkill(own), false);
+    copySkill(source, own);
+    assert.equal(await fs.readFile(path.join(own, "SKILL.md"), "utf8"), "mine");
+    assert.equal(isOurSkill(path.join(tmp.dir, "nowhere")), false);
   } finally {
     await tmp.cleanup();
   }
