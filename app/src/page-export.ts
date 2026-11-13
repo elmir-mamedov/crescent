@@ -3,6 +3,7 @@
  * it carries the page as it reads and none of KB25's own bookkeeping.
  */
 import { parseFrontmatter } from "./frontmatter.js";
+import { stripNotes } from "./notes.js";
 
 /**
  * Filename for a page downloaded as Markdown: its slug leaf + ".md". Slug
@@ -22,6 +23,10 @@ export function downloadFilename(slug: string): string {
  * that has left it. The title, which the frontmatter held, leads the file as
  * its heading, as it leads the page and its PDF. A header that cannot be read
  * has no telling where it ends, so that file goes out as it is.
+ *
+ * The inline notes go too (feedback #60): tasks, remarks, highlights and the
+ * agent's notes are the readers' working marks on the page, with who left them
+ * and when, which its PDF leaves out as well.
  */
 export function downloadMarkdown(raw: string): string {
   let source: { data: Record<string, unknown>; body: string };
@@ -31,7 +36,6 @@ export function downloadMarkdown(raw: string): string {
     return raw;
   }
   const title = typeof source.data.title === "string" ? source.data.title.replace(/\s+/g, " ").trim() : "";
-  const body = source.body.replace(/^(?:[ \t]*\n)+/, "");
-  const text = title ? `# ${title}\n\n${body}` : body;
-  return text.endsWith("\n") ? text : `${text}\n`;
+  const body = stripNotes(source.body).replace(/^(?:[ \t]*\n)+/, "").trimEnd();
+  return `${[title && `# ${title}`, body].filter(Boolean).join("\n\n")}\n`;
 }
