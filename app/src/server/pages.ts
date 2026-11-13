@@ -254,7 +254,8 @@ export function registerPageRoutes(app: FastifyInstance, ctx: ServerContext): vo
     return reply.redirect(pagePath(savedSlug));
   });
 
-  // Download a page's Markdown as an attachment, without its metadata.
+  // Download a page's Markdown as an attachment, without its metadata, notes
+  // or links into the KB.
   app.get("/_download/*", async (req, reply) => {
     const slug = (req.params as { "*": string })["*"] ?? "";
     // A folder is a pure container — there is no document to download.
@@ -265,7 +266,11 @@ export function registerPageRoutes(app: FastifyInstance, ctx: ServerContext): vo
         .type("text/html")
         .send(notFound(siteTitle, slug.replace(/^\/+/, ""), spaces, username));
     }
-    const page = await content.loadRaw(slug);
+    const [page, titles, ids] = await Promise.all([
+      content.loadRaw(slug),
+      content.titleIndex(),
+      content.idIndex(),
+    ]);
     if (!page) {
       const spaces = await content.spaces();
       return reply
@@ -273,13 +278,18 @@ export function registerPageRoutes(app: FastifyInstance, ctx: ServerContext): vo
         .type("text/html")
         .send(notFound(siteTitle, slug.replace(/^\/+/, ""), spaces, username));
     }
+    const markdown = downloadMarkdown(page.raw, {
+      slug: page.slug,
+      resolveTitle: (s) => titles.get(s),
+      resolveIdSlug: (id) => ids.get(id),
+    });
     return reply
       .header(
         "content-disposition",
         `attachment; filename="${downloadFilename(page.slug)}"`
       )
       .type("text/markdown; charset=utf-8")
-      .send(downloadMarkdown(page.raw));
+      .send(markdown);
   });
 
   // Word-level diff of a page's edit history; ?rev=N steps back (0 = latest edit).
