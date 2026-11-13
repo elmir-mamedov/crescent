@@ -4,7 +4,8 @@
  * edit history, and deleting.
  */
 import type { FastifyInstance } from "fastify";
-import { downloadFilename, downloadMarkdown, isFolderPage, type CreatePageMutation, type DeleteMutation } from "../content.js";
+import { isFolderPage, type CreatePageMutation, type DeleteMutation } from "../content.js";
+import { downloadFilename, downloadMarkdown } from "../page-export.js";
 import { parseWordDiff } from "../diff.js";
 import type { PageSave, Written } from "../kb-writes.js";
 import { deleteLayout, diffLayout, notFound, type ViewNotice } from "../views.js";
