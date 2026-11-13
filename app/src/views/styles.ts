@@ -581,8 +581,8 @@ html.has-tabs .toc{top:var(--tabs-h); max-height:calc(100vh - var(--tabs-h)); pa
   .tab-strip{align-items:flex-end; padding:0 12px 10px}
 }
 /* A page opened from another fades in (TABS_SCRIPT). One put back where it
-   was read stays out of sight until it is there, and fades in then; should
-   the script never get that far, it shows anyway. */
+   was read, or opened at a section, stays out of sight until it is there, and
+   fades in then; should the script never get that far, it shows anyway. */
 @keyframes kb-show{to{visibility:visible}}
 @keyframes kb-fade-in{from{opacity:0}}
 html.kb-placing main,html.kb-placing .toc{visibility:hidden; animation:kb-show 0s 2s forwards}

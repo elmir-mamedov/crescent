@@ -231,10 +231,12 @@ export const TAB_MODEL = `
  * read in any (scrollRemember). One comes back only when a page is opened
  * afresh: a #section link goes to its section, and Back, Forward and a reload
  * get the browser's own restore, which stays per history entry. The page is
- * kept out of sight until it is in place, then held there while late images
- * and diagrams settle: put back after it had painted, it slid down from the
- * top in a run of jumps. It fades in once there, as every page opened from
- * another does as it loads.
+ * kept out of sight until it is in place, back where it was read or at the
+ * section a link named, then held there while late images and diagrams
+ * settle: put back after it had painted, it slid down from the top in a run of
+ * jumps, and opened at a section it showed its top until it had loaded, then
+ * jumped there (feedback #68). It fades in once in place, as every page opened
+ * from another does as it loads.
  */
 const TABS_SCRIPT = `
 (() => {
@@ -606,9 +608,15 @@ ${TAB_MODEL}
   }
 
   const target = scrollFor(read("localStorage", SCROLL_KEY), here);
-  // Until the page is back where it was left, that is where it is: leaving
-  // before then must not keep the top of it instead.
-  let placing = target > 0 && navType() === "navigate" && !location.hash;
+  // Opened by a link to one of its sections, a page goes to that section
+  // instead, and is kept out of sight until it is there too: the browser
+  // scrolls to a section only once the page has loaded, so its top showed
+  // until then and the page jumped down (feedback #68). A #note- link is left
+  // to NOTES_SCRIPT, which opens the note where it is.
+  const toSection = navType() === "navigate" && location.hash.length > 1 && !/^#note-/.test(location.hash);
+  // Until the page is in place, its place is the one it had: leaving before
+  // then must not keep the top of it instead.
+  let placing = navType() === "navigate" && (toSection || (target > 0 && !location.hash));
   const remember = () => {
     const y = placing ? target : Math.round(window.scrollY);
     const keep = state.tabs.map((t) => t.url);
@@ -639,6 +647,28 @@ ${TAB_MODEL}
   let anchor = null;
   let anchorTop = 0;
   let reached = false;
+  // The element the #section names, looked up the way the browser finds where
+  // to scroll: the fragment as it is, then percent-decoded, which is how a
+  // non-ASCII anchor arrives. None leaves the page where it is, at its top.
+  let section = null;
+  const findSection = () => {
+    const raw = location.hash.slice(1);
+    let el = document.getElementById(raw);
+    if (!el) {
+      try {
+        el = document.getElementById(decodeURIComponent(raw));
+      } catch {
+        el = null;
+      }
+    }
+    return el;
+  };
+  // Where the browser would put it: at the top of the window, below the tab
+  // strip and the heading's own margin (scroll-padding, scroll-margin), or as
+  // near as the page's length lets it come.
+  const toTheSection = () => {
+    if (section && section.isConnected) section.scrollIntoView({ block: "start" });
+  };
   const pickAnchor = () => {
     const line = parseFloat(getComputedStyle(root).scrollPaddingTop) || 0;
     anchor = null;
@@ -653,6 +683,9 @@ ${TAB_MODEL}
   };
   const hold = () => {
     if (!placing) return;
+    // A section stays at the top, as the browser keeps one it went to, and
+    // comes up to it once the page has grown long enough to let it.
+    if (section) return toTheSection();
     if (!reached) {
       // The page was too short to get there; it has grown, so try again.
       window.scrollTo(0, target);
@@ -671,8 +704,14 @@ ${TAB_MODEL}
     for (const type of STOP) window.removeEventListener(type, finish, true);
   };
   const place = () => {
-    window.scrollTo(0, target);
-    reached = window.scrollY >= target - 1;
+    if (toSection) {
+      section = findSection();
+      toTheSection();
+      reached = true;
+    } else {
+      window.scrollTo(0, target);
+      reached = window.scrollY >= target - 1;
+    }
     root.classList.remove("kb-placing");
     arrive();
     pickAnchor();
