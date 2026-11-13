@@ -228,14 +228,14 @@ test("feedback #32: a page prints alone, in the light theme's colours", () => {
 
 test("issue #3: the page header exposes a Download-as-Markdown link", () => {
   const html = layout(pageView());
-  assert.match(html, /<a href="\/_download\/kb25\/notes" download>Markdown \(\.md\)<\/a>/);
+  assert.match(html, /<a href="\/_download\/kb25\/notes" download>Markdown \(\.md \/ \.zip\)<\/a>/);
 });
 
 test("feedback #32: Download in the page header is a menu: the Markdown file or a PDF", () => {
   const html = layout(pageView());
   assert.match(
     html,
-    /<details class="download-menu" data-download-menu>\s*<summary class="button secondary">Download<\/summary>\s*<div class="download-menu-pop">\s*<a href="\/_download\/kb25\/notes" download>Markdown \(\.md\)<\/a>\s*<button type="button" data-download-pdf>PDF \(\.pdf\)<\/button>/
+    /<details class="download-menu" data-download-menu>\s*<summary class="button secondary">Download<\/summary>\s*<div class="download-menu-pop">\s*<a href="\/_download\/kb25\/notes" download>Markdown \(\.md \/ \.zip\)<\/a>\s*<button type="button" data-download-pdf>PDF \(\.pdf\)<\/button>/
   );
 });
 
