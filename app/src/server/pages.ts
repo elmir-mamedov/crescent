@@ -5,7 +5,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import { isFolderPage, type CreatePageMutation, type DeleteMutation } from "../content.js";
-import { downloadFilename, downloadMarkdown } from "../page-export.js";
+import { downloadPage } from "../page-export.js";
 import { parseWordDiff } from "../diff.js";
 import type { PageSave, Written } from "../kb-writes.js";
 import { deleteLayout, diffLayout, notFound, type ViewNotice } from "../views.js";
@@ -255,7 +255,7 @@ export function registerPageRoutes(app: FastifyInstance, ctx: ServerContext): vo
   });
 
   // Download a page's Markdown as an attachment, without its metadata, notes
-  // or links into the KB.
+  // or links into the KB; with the files it uses, as a zip.
   app.get("/_download/*", async (req, reply) => {
     const slug = (req.params as { "*": string })["*"] ?? "";
     // A folder is a pure container — there is no document to download.
@@ -278,18 +278,15 @@ export function registerPageRoutes(app: FastifyInstance, ctx: ServerContext): vo
         .type("text/html")
         .send(notFound(siteTitle, slug.replace(/^\/+/, ""), spaces, username));
     }
-    const markdown = downloadMarkdown(page.raw, {
+    const download = await downloadPage(content, page.raw, {
       slug: page.slug,
       resolveTitle: (s) => titles.get(s),
       resolveIdSlug: (id) => ids.get(id),
     });
     return reply
-      .header(
-        "content-disposition",
-        `attachment; filename="${downloadFilename(page.slug)}"`
-      )
-      .type("text/markdown; charset=utf-8")
-      .send(markdown);
+      .header("content-disposition", `attachment; filename="${download.filename}"`)
+      .type(download.contentType)
+      .send(download.body);
   });
 
   // Word-level diff of a page's edit history; ?rev=N steps back (0 = latest edit).

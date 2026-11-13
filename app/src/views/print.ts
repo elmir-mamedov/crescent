@@ -2,7 +2,8 @@ import { slugPath } from "./html.js";
 
 /**
  * A page as a PDF (feedback #32). Download in the page's header is a menu:
- * the Markdown file, or the page as a PDF, which is the page printed — the
+ * the Markdown file (a zip of it and its images when it shows any, written by
+ * page-export.ts), or the page as a PDF, which is the page printed — the
  * print stylesheet (views/styles.ts) keeps the page alone and light, and
  * whatever prints it makes the PDF: a browser's print dialog, or Crescent's
  * macOS window, which writes it into Downloads itself (shell/mac/KB25.swift).
@@ -13,7 +14,7 @@ export function downloadMenu(slug: string): string {
   return `<details class="download-menu" data-download-menu>
     <summary class="button secondary">Download</summary>
     <div class="download-menu-pop">
-      <a href="/_download${slugPath(slug)}" download>Markdown (.md)</a>
+      <a href="/_download${slugPath(slug)}" download>Markdown (.md / .zip)</a>
       <button type="button" data-download-pdf>PDF (.pdf)</button>
     </div>
   </details>`;
