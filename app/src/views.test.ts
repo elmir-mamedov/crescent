@@ -3561,7 +3561,7 @@ test("tabs: a place comes back only for a page opened afresh, without a #section
     .map((m) => m[1])
     .find((s) => s.includes('const SCROLL_KEY = "kb25.scroll"'));
   assert.ok(tabs);
-  assert.match(tabs, /let placing = target > 0 && navType\(\) === "navigate" && !location\.hash;/);
+  assert.match(tabs, /let placing = navType\(\) === "navigate" && \(toSection \|\| \(target > 0 && !location\.hash\)\);/);
   assert.doesNotMatch(tabs, /scrollRestoration/, "Back and reload keep the browser's own restore");
   // Leaving before the page is back in place keeps the place, not the top.
   assert.match(tabs, /const y = placing \? target : Math\.round\(window\.scrollY\);/);
@@ -3575,6 +3575,26 @@ test("tabs: a place comes back only for a page opened afresh, without a #section
   // Then held: what is at the top of the view stays there as the page grows.
   assert.match(tabs, /const moved = anchor\.getBoundingClientRect\(\)\.top - anchorTop;\s*if \(Math\.abs\(moved\) >= 1\) window\.scrollBy\(0, moved\);/);
   assert.doesNotMatch(pageHtml(), /scroll-behavior/);
+});
+
+test("feedback #68: a page opened by a link to a section shows first at that section", () => {
+  const tabs = [...pageHtml().matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('const SCROLL_KEY = "kb25.scroll"'));
+  assert.ok(tabs);
+  // Opened by a link (or into a new tab) at a section, but not at a note,
+  // which NOTES_SCRIPT opens where it is; Back, Forward and a reload keep the
+  // browser's own restore.
+  assert.match(tabs, /const toSection = navType\(\) === "navigate" && location\.hash\.length > 1 && !\/\^#note-\/\.test\(location\.hash\);/);
+  // Out of sight like a page put back where it was read, then taken to the
+  // section the way the browser would take it: below the tab strip and the
+  // heading's margin, both of which scrollIntoView honours.
+  assert.match(tabs, /if \(toSection\) \{\s*section = findSection\(\);\s*toTheSection\(\);\s*reached = true;\s*\} else \{\s*window\.scrollTo\(0, target\);/);
+  assert.match(tabs, /if \(section && section\.isConnected\) section\.scrollIntoView\(\{ block: "start" \}\);/);
+  // Found as the browser finds it: as written, then percent-decoded.
+  assert.match(tabs, /let el = document\.getElementById\(raw\);\s*if \(!el\) \{\s*try \{\s*el = document\.getElementById\(decodeURIComponent\(raw\)\);/);
+  // And kept there while a diagram or image above it settles.
+  assert.match(tabs, /if \(!placing\) return;[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(section\) return toTheSection\(\);/);
 });
 
 test("feedback #50: the open page is not loaded again to show what it already shows", () => {
