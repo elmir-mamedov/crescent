@@ -220,3 +220,10 @@ test("WIDGETS_SCRIPT: a print loads every frame in the light theme, and waits fo
   await rig.print(false);
   for (const frame of rig.frames) assert.deepEqual(frame.posted.at(-1), { kb25: "theme", theme: "dark" });
 });
+
+test("the rules agents are given name every theme variable a widget has, and no other", async () => {
+  const mcp = await fs.readFile(path.join(import.meta.dirname, "mcp.ts"), "utf8");
+  for (const name of WIDGET_VARIABLES) assert.ok(mcp.includes(`\`${name}\``), name);
+  const named = new Set(mcp.match(/--kb-[a-z-]+/g));
+  assert.deepEqual([...named].sort(), [...WIDGET_VARIABLES].sort());
+});
