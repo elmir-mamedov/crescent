@@ -8,6 +8,8 @@ import path from "node:path";
  * runs when it is opened, such as an SVG or an HTML page, would run as KB25:
  * it could read every page, edit or delete them, and start chat turns. So no
  * asset is trusted to be harmless, and these headers make sure none can run.
+ * The one HTML that does run is a page's widget, and only at `/_embed/…`,
+ * inside a sandbox with no network (embedHeaders).
  */
 
 /**
@@ -40,6 +42,46 @@ const INLINE_EXTENSIONS = new Set([
  * (an image or a video document loads its own URL) and inline styles.
  */
 const ASSET_CSP = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'";
+
+/**
+ * Whether an asset is an HTML widget: a figure a page embeds with the image
+ * syntax (`![TCP handshake](_assets/tcp-handshake.html)`), which runs in a
+ * sandboxed frame (views/widgets.ts). Opened as an asset it still downloads.
+ */
+export function isWidgetName(name: string): boolean {
+  return path.extname(name).toLowerCase() === ".html";
+}
+
+/**
+ * The policy a widget is sent under at `/_embed/…` (server/widgets.ts), the
+ * one route that shows a space's HTML as a page. A widget needs its scripts to
+ * move and respond, so it keeps them, but the sandbox gives it an origin of
+ * its own, without Crescent's pages, storage or sign-in, and it may load
+ * nothing and send nothing: no script, style, font or image from anywhere,
+ * Crescent included, and no request. What it uses is written inside the file
+ * (`data:` images and fonts, and a `blob:` it makes itself). Only Crescent's
+ * own pages may frame it, so no other site can show a widget's contents.
+ */
+const EMBED_CSP = [
+  "sandbox allow-scripts",
+  "default-src 'none'",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "img-src data: blob:",
+  "font-src data:",
+  "frame-ancestors 'self'",
+].join("; ");
+
+/** The headers a widget is sent with at `/_embed/…`. */
+export function embedHeaders(): Record<string, string> {
+  return {
+    "content-type": "text/html; charset=utf-8",
+    "content-security-policy": EMBED_CSP,
+    "x-content-type-options": "nosniff",
+    // An agent rewrites a widget in place, so a reload has to show the new one.
+    "cache-control": "no-cache",
+  };
+}
 
 /** The headers an asset is sent with, chosen by its file name. */
 export function assetHeaders(fileName: string): Record<string, string> {
