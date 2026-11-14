@@ -127,6 +127,25 @@ test("an image added and deleted in one turn is not reported; a refused deletion
   assert.deepEqual(changes, []);
 });
 
+test("a written widget or table is a file, an SVG an image; a rewrite in the same turn stays added", () => {
+  const changes = pageChanges([
+    call("kb_write_asset", { space: "demo", name: "tcp.html" }, { written: true, created: true, link: "_assets/tcp.html", path: "demo/_assets/tcp.html" }),
+    call("kb_write_asset", { space: "demo", name: "tcp.html" }, { written: true, created: false, link: "_assets/tcp.html", path: "demo/_assets/tcp.html" }),
+    call("kb_write_asset", { space: "demo", name: "orbit.svg" }, { written: true, created: false, link: "_assets/orbit.svg", path: "demo/_assets/orbit.svg" }),
+    call("kb_write_asset", { space: "demo", name: "x.png" }, "Name the file for what it shows, ending in .html, .svg or .csv", true),
+    call("kb_get_asset", { space: "demo", link: "_assets/tcp.html" }, { link: "_assets/tcp.html", content: "<p></p>" }),
+  ]);
+  assert.deepEqual(changes, [
+    { kind: "added", what: "file", slug: "demo/_assets/tcp.html", title: "tcp.html" },
+    { kind: "updated", what: "image", slug: "demo/_assets/orbit.svg", title: "orbit.svg" },
+  ]);
+});
+
+test("a written file is listed with no link, and kept as the tool reported it", () => {
+  const file = { kind: "added", what: "file", slug: "demo/_assets/tcp.html", title: "tcp.html" } as const;
+  assert.deepEqual(resolveChanges([file], PAGES), [file]);
+});
+
 test("resolving leaves an image as the tool reported it", () => {
   const image = { kind: "added", what: "image", slug: "demo/_assets/plot.png", title: "plot.png" } as const;
   assert.deepEqual(resolveChanges([image], PAGES), [image]);
@@ -204,6 +223,7 @@ test("a message view renders replies and links report entries where the pages ar
           { kind: "deleted", what: "page", slug: "demo/old", title: "Old" },
           { kind: "added", what: "image", slug: "demo/_assets/plot.png", title: "plot.png" },
           { kind: "deleted", what: "image", slug: "demo/_assets/old.png", title: "old.png" },
+          { kind: "updated", what: "file", slug: "demo/_assets/tcp.html", title: "tcp.html" },
         ],
       },
       options
@@ -222,6 +242,7 @@ test("a message view renders replies and links report entries where the pages ar
         { kind: "deleted", what: "page", slug: "demo/old", title: "Old", href: null },
         { kind: "added", what: "image", slug: "demo/_assets/plot.png", title: "plot.png", href: "/_gallery?space=demo" },
         { kind: "deleted", what: "image", slug: "demo/_assets/old.png", title: "old.png", href: null },
+        { kind: "updated", what: "file", slug: "demo/_assets/tcp.html", title: "tcp.html", href: null },
       ],
     }
   );
@@ -248,6 +269,8 @@ test("the activity line says what the turn is doing", () => {
   assert.equal(activityText("mcp__kb25__kb_move_page", { sourceSlug: "demo/a" }), "Moving demo/a…");
   assert.equal(activityText("mcp__kb25__kb_add_image", { file: "/Users/me/analysis/plot.png" }), "Adding the image “plot.png”…");
   assert.equal(activityText("mcp__kb25__kb_delete_image", { link: "_assets/plot.png" }), "Deleting the image “plot.png”…");
+  assert.equal(activityText("mcp__kb25__kb_write_asset", { name: "figures/tcp.html" }), "Writing “tcp.html”…");
+  assert.equal(activityText("mcp__kb25__kb_get_asset", { link: "_assets/tcp.html" }), "Reading “tcp.html”…");
   assert.equal(activityText("Unknown", {}), "Working…");
 });
 

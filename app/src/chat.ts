@@ -659,6 +659,10 @@ export function activityText(name: string, input: Record<string, unknown>): stri
       return `Adding the image ${quoted(str("file").split(/[\\/]/).pop() ?? "")}…`;
     case `${KB}kb_delete_image`:
       return `Deleting the image ${quoted(str("link").split("/").pop() ?? "")}…`;
+    case `${KB}kb_write_asset`:
+      return `Writing ${quoted(str("name").split("/").pop() ?? "")}…`;
+    case `${KB}kb_get_asset`:
+      return `Reading ${quoted(str("link").split("/").pop() ?? "")}…`;
     case `${KB}kb_update_page`:
       return `Updating ${str("slug")}…`;
     case `${KB}kb_add_agent_note`:
@@ -680,11 +684,12 @@ export function activityText(name: string, input: Record<string, unknown>): stri
 }
 
 /**
- * The pages a turn changed, and the images it added or deleted, from its
- * successful kb25 write calls, one entry each in the order first touched. A
- * page created and then edited counts as created; a page created, or an image
- * added, and then deleted is not reported at all; a move carries the entry
- * (and anything filed under it) to the new slug.
+ * The pages a turn changed, and the images and files it added, wrote or
+ * deleted, from its successful kb25 write calls, one entry each in the order
+ * first touched. A page created and then edited counts as created, and a file
+ * added and then written again as added; a page created, or an image added,
+ * and then deleted is not reported at all; a move carries the entry (and
+ * anything filed under it) to the new slug.
  */
 export function pageChanges(calls: { name: string; input: Record<string, unknown>; result?: { isError: boolean; text: string } }[]): PageChange[] {
   const changes: PageChange[] = [];
@@ -737,6 +742,15 @@ export function pageChanges(calls: { name: string; input: Record<string, unknown
       case "kb_add_image": {
         const where = str(result, "path");
         if (result.added === true && where) changes.push({ kind: "added", what: "image", slug: where, title: lastSegment(where) });
+        break;
+      }
+      case "kb_write_asset": {
+        // An SVG is an image the gallery shows; a widget or a table is a file.
+        const where = str(result, "path");
+        if (result.written !== true || !where) break;
+        const what = where.toLowerCase().endsWith(".svg") ? "image" : "file";
+        const kind = result.created === true ? "added" : "updated";
+        if (!at(where)) changes.push({ kind, what, slug: where, title: lastSegment(where) });
         break;
       }
       case "kb_delete_image": {
@@ -830,7 +844,9 @@ export function messageView(
               ? null
               : change.what === "image"
                 ? options.gallery(change.slug.split("/")[0])
-                : options.href(change.slug),
+                : change.what === "file"
+                  ? null
+                  : options.href(change.slug),
         })),
       };
     case "error":
@@ -843,7 +859,7 @@ export function messageView(
  * by id when the change has one (so it follows a later move), else by slug. A
  * deleted page keeps what it had; one that has since vanished keeps its last
  * known slug, with the slug's last segment for a title if it had none. An
- * image is not a page, so it keeps what the tool reported.
+ * image or a file is not a page, so it keeps what the tool reported.
  */
 export function resolveChanges(changes: PageChange[], pages: PageNode[]): PageChange[] {
   const byId = new Map<string, PageNode>();
@@ -853,7 +869,7 @@ export function resolveChanges(changes: PageChange[], pages: PageNode[]): PageCh
     bySlug.set(page.slug, page);
   }
   return changes.map((change) => {
-    if (change.what === "image") return change;
+    if (change.what === "image" || change.what === "file") return change;
     const node =
       change.kind === "deleted" ? undefined : (change.id ? byId.get(change.id) : undefined) ?? bySlug.get(change.slug);
     if (!node) return { ...change, title: change.title || change.slug.split("/").pop() || change.slug };

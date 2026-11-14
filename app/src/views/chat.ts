@@ -392,7 +392,7 @@ export const CHAT_SCRIPT = `
     const list = el("ul", "chat-report-list");
     for (const change of changes) {
       const item = el("li");
-      // What changed picks the row's icon: a page, a folder, a space or an image.
+      // What changed picks the row's icon: a page, a folder, a space, an image or a file.
       item.dataset.what = change.what;
       const verb = VERBS[change.kind] || change.kind;
       item.append(el("span", "chat-report-verb", change.what === "page" ? verb + " " : verb + " " + change.what + " "));
@@ -401,7 +401,8 @@ export const CHAT_SCRIPT = `
         link.href = change.href;
         item.append(link);
       } else {
-        item.append(el("span", "chat-report-gone", change.title));
+        // Nothing to link: a deletion, or a file, which has no page of its own.
+        item.append(el("span", change.kind === "deleted" ? "chat-report-gone" : "", change.title));
       }
       item.append(el("span", "chat-report-slug", change.slug));
       list.append(item);

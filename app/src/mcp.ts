@@ -10,6 +10,7 @@ import * as z from "zod/v4";
 import { Content, flatten, isFolderPage, type PageNode, type TreeFilter } from "./content.js";
 import { makeGit } from "./git.js";
 import { readImageFile } from "./gallery.js";
+import { readTextAsset } from "./text-assets.js";
 import { makeKbWrites } from "./kb-writes.js";
 import { collectNotes } from "./note-index.js";
 import { splitFrontmatter } from "./frontmatter.js";
@@ -804,6 +805,83 @@ server.registerTool(
         ...commitFields(written),
         ...(await writeToken(spaceKey)),
       });
+    } catch (err) {
+      return errorResult(errorMessage(err));
+    }
+  }
+);
+
+server.registerTool(
+  "kb_write_asset",
+  {
+    title: "Write KB Asset",
+    description:
+      "Write a text file into a space's `_assets` folder from its full text, replacing the file of that name if there is one: an HTML widget (`.html`), an SVG drawing (`.svg`) or a CSV table (`.csv`). Returns the `link` a page uses: `![caption](<link>)` shows a widget or a drawing in the page, `[text](<link>)` links a table. To change the file later, read it with kb_get_asset and write it again under the same name; the page needs no edit. The link works on pages of that space only, so write the file into the space of the page that shows it. The name is saved lowercase and hyphenated, so use the `link` this returns. For an image file already on this machine (a PNG, a screenshot), use kb_add_image instead.",
+    inputSchema: {
+      space: z.string().min(1).describe("Key of the space to write into, e.g. kb25."),
+      name: z
+        .string()
+        .min(1)
+        .describe("File name inside `_assets`, named for what it shows and ending in .html, .svg or .csv, e.g. `tcp-handshake.html` or `figures/tcp-handshake.html`."),
+      content: z.string().describe("The file's whole text. It replaces what the file held before."),
+      spaceInstructionsToken: instructionTokenSchema,
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({ space, name, content: text, spaceInstructionsToken }) => {
+    const spaceKey = content.spaceKeyOf(space);
+    const gate = await gateWrite(spaceKey, spaceInstructionsToken);
+    if (gate) return gate;
+
+    try {
+      const written = await writes.writeAsset(spaceKey, name, text);
+      const { mutation } = written;
+      return textResult({
+        written: true,
+        created: mutation.created,
+        link: `_assets/${mutation.path}`,
+        path: git.kbRelPath(mutation.fsPath),
+        ...commitFields(written),
+        ...(await writeToken(spaceKey)),
+      });
+    } catch (err) {
+      return errorResult(errorMessage(err));
+    }
+  }
+);
+
+server.registerTool(
+  "kb_get_asset",
+  {
+    title: "Get KB Asset",
+    description:
+      "Read the text of an HTML widget, SVG drawing or CSV table in a space's `_assets` folder, by the link a page uses for it (e.g. `_assets/tcp-handshake.html`), so you can change it and write it back with kb_write_asset. Images other than SVG can't be read this way.",
+    inputSchema: {
+      space: z.string().min(1).describe("Key of the space the file is in, e.g. kb25."),
+      link: z.string().min(1).describe("The file's link as that space's pages write it, e.g. `_assets/tcp-handshake.html`."),
+    },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({ space, link }) => {
+    const spaceKey = content.spaceKeyOf(space);
+    try {
+      const asset = await readTextAsset(content, spaceKey, link);
+      if (!asset) return errorResult(`There is no file at ${link} in the space "${spaceKey}".`);
+      return textResult(
+        await withInstructions(spaceKey, {
+          link: `_assets/${asset.path}`,
+          path: git.kbRelPath(asset.fsPath),
+          content: asset.text,
+        })
+      );
     } catch (err) {
       return errorResult(errorMessage(err));
     }
