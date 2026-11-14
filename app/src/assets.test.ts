@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assetHeaders } from "./assets.js";
+import { assetHeaders, embedHeaders, isWidgetName } from "./assets.js";
 
 test("assetHeaders: SVG and HTML download, sandboxed, and are never sniffed", () => {
   for (const name of ["diagram.svg", "page.html", "page.htm", "page.xhtml", "data.xml", "script.js"]) {
@@ -29,4 +29,25 @@ test("assetHeaders: images, media and text show in place, still sandboxed", () =
 test("assetHeaders: a PDF shows in place with no policy that would block its viewer", () => {
   assert.deepEqual(assetHeaders("spec.pdf"), { "x-content-type-options": "nosniff" });
   assert.deepEqual(assetHeaders("SPEC.PDF"), { "x-content-type-options": "nosniff" });
+});
+
+test("isWidgetName: an HTML file, in any case; nothing else", () => {
+  for (const name of ["tcp.html", "figures/Wave.HTML"]) assert.equal(isWidgetName(name), true, name);
+  for (const name of ["page.htm", "plot.svg", "html", "tcp.html.txt"]) assert.equal(isWidgetName(name), false, name);
+});
+
+test("embedHeaders: scripts in a sandbox of their own, with no network, framed only by Crescent", () => {
+  const headers = embedHeaders();
+  const csp = headers["content-security-policy"].split("; ");
+  assert.equal(csp[0], "sandbox allow-scripts");
+  assert.ok(csp.includes("default-src 'none'"));
+  assert.ok(csp.includes("frame-ancestors 'self'"));
+  assert.ok(!csp.some((directive) => /allow-same-origin|allow-top-navigation|allow-popups|allow-forms|https?:|'self'.*src/.test(directive)), csp.join("; "));
+  assert.equal(headers["content-type"], "text/html; charset=utf-8");
+  assert.equal(headers["x-content-type-options"], "nosniff");
+  assert.equal(headers["content-disposition"], undefined);
+});
+
+test("assetHeaders: a widget opened as an asset still downloads", () => {
+  assert.equal(assetHeaders("tcp.html")["content-disposition"], "attachment");
 });

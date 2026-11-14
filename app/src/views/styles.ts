@@ -134,6 +134,17 @@ const LIGHT_TOKENS = `
   ${labelTokens("light")}
 `;
 
+/**
+ * A theme's colours by name, `bg` for `--bg`, for what is drawn in Crescent's
+ * colours outside this stylesheet: a widget's frame (views/widgets.ts).
+ */
+export function themeColors(theme: "light" | "dark"): Record<string, string> {
+  const tokens = (theme === "dark" ? DARK_TOKENS : LIGHT_TOKENS).replace(/\/\*[\s\S]*?\*\//g, "");
+  const colors: Record<string, string> = {};
+  for (const [, name, value] of tokens.matchAll(/--([\w-]+):([^;]+);/g)) colors[name] = value.trim();
+  return colors;
+}
+
 export const STYLES = `
 :root{
   --maxw:1216px;
