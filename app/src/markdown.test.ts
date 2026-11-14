@@ -449,6 +449,52 @@ test("external image URLs accept a size and are not asset-rewritten", () => {
   assert.match(html, /width="320"/);
 });
 
+test("an image of an HTML asset is a widget: a sandboxed frame from /_embed, in a figure", () => {
+  const html = render("![TCP *handshake*, step by step](_assets/tcp-handshake.html =x420)");
+  assert.match(
+    html,
+    /^<figure class="widget" data-src-line="0" data-src-hash="[0-9a-f]+"><iframe class="widget-frame" src="\/_embed\/kb25\/_assets\/tcp-handshake\.html" title="TCP handshake, step by step" sandbox="allow-scripts" loading="lazy" height="420"><\/iframe><figcaption>TCP handshake, step by step<\/figcaption><\/figure>\n$/
+  );
+  assert.doesNotMatch(html, /<img|<p|allow-same-origin/);
+});
+
+test("a widget's frame takes =WxH like an image, and no alt text means no caption", () => {
+  const html = render("![](_assets/figures/Wave.HTML =600x300)");
+  assert.match(html, /<figure class="widget"[^>]*><iframe [^>]*src="\/_embed\/kb25\/_assets\/figures\/Wave\.HTML"/);
+  assert.match(html, /title="figures\/Wave\.HTML"/);
+  assert.match(html, /width="600" height="300"/);
+  assert.doesNotMatch(html, /figcaption/);
+});
+
+test("a widget among words, or in a tight list, is a frame without a figure", () => {
+  const inline = render("Before ![Model](_assets/model.html) after.");
+  assert.match(inline, /^<p [^>]*>Before <iframe class="widget-frame" [^>]*title="Model"[^>]*><\/iframe> after\.<\/p>/);
+  assert.doesNotMatch(inline, /figure/);
+  const listed = render("- ![Model](_assets/model.html)\n- next");
+  assert.match(listed, /<li><iframe class="widget-frame" [^>]*><\/iframe><\/li>/);
+  assert.doesNotMatch(listed, /figure/);
+});
+
+test("only an HTML file in the page's own _assets is a widget", () => {
+  for (const src of ["_assets/plot.svg", "_assets/notes.htm", "https://example.com/w.html", "/other/_assets/w.html", "w.html"]) {
+    const html = render(`![W](${src})`);
+    assert.match(html, /<img /, src);
+    assert.doesNotMatch(html, /iframe|figure/, src);
+  }
+});
+
+test("a page outside any space has no widgets: there is no _assets to show them from", () => {
+  const html = createRenderer(() => undefined, "").render("![W](_assets/w.html)");
+  assert.match(html, /<img src="_assets\/w\.html" alt="W">/);
+});
+
+test("a widget's alt text and name are escaped into the frame", () => {
+  const html = render('![a "quoted" <b>](_assets/x%22y.html)');
+  assert.match(html, /title="a &quot;quoted&quot; &lt;b&gt;"/);
+  assert.match(html, /<figcaption>a &quot;quoted&quot; &lt;b&gt;<\/figcaption>/);
+  assert.match(html, /src="\/_embed\/kb25\/_assets\/x%22y\.html"/);
+});
+
 /** A `kb25:note` comment as it appears on disk, with the given text. */
 const noteComment = (id: string, text: string, quote?: string) =>
   ["<!-- kb25:note id=" + id + " kind=task", ...(quote ? ["> " + quote, ""] : []), text, "-->"].join(
