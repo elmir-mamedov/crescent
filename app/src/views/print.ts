@@ -26,7 +26,8 @@ export function downloadMenu(slug: string): string {
  * as plain text; a link that leaves the KB, and one to a section of this page,
  * which a PDF can follow, are kept. Before a print the page starts itself, each
  * diagram is drawn again in the light theme (`__drawMermaidForPrint`), into a
- * copy only print shows, so the page on screen stays as it is.
+ * copy only print shows, so the page on screen stays as it is, and each
+ * widget loads and turns light (`__widgetsForPrint`) until the print is over.
  *
  * `kb25Print(what)` starts one: "pdf" from Download ▸ PDF, "print" from the
  * macOS window's File ▸ Print. In that window the page hands the print over
@@ -74,6 +75,7 @@ export const PRINT_SCRIPT = `
   let title = null;
   function end() {
     relink();
+    if (typeof window.__widgetsForPrint === "function") window.__widgetsForPrint(false);
     if (title !== null) document.title = title;
     title = null;
     own = false;
@@ -85,6 +87,9 @@ export const PRINT_SCRIPT = `
     unlink();
     if (typeof window.__drawMermaidForPrint === "function") {
       try { await window.__drawMermaidForPrint(); } catch (e) {}
+    }
+    if (typeof window.__widgetsForPrint === "function") {
+      try { await window.__widgetsForPrint(true); } catch (e) {}
     }
     if (shell) {
       shell.postMessage({ what: what === "print" ? "print" : "pdf", name });

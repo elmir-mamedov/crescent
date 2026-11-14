@@ -840,6 +840,19 @@ html.has-find.has-tabs .toc{padding-top:58px}
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]):not([data-theme="dark"]) .prose img{background:#f0f3f6; padding:8px; border-radius:6px; filter:brightness(.9)}
 }
+/* A widget (views/widgets.ts): a frame the width of the column, or of its
+   =Wx, starting at its =xH or 320px, until it says how tall it is. It draws
+   its own background in the theme it is sent, so it gets no light panel.
+   A selection dragged across the page passes over it rather than tinting it
+   like text: it can't be selected, and WebKit, which tints a frame in a
+   selection anyway, tints it clear. Its caption is still text, and a note on
+   the widget sits there. */
+.prose figure.widget{margin:.7em 0}
+.prose .widget-frame{display:block; max-width:100%; border:0; user-select:none; -webkit-user-select:none}
+.prose .widget-frame::selection{background:transparent}
+.prose .widget-frame:not([width]){width:100%}
+.prose .widget-frame:not([height]){height:320px}
+.prose figure.widget figcaption{margin-top:6px; color:var(--muted); font-size:14px}
 .wikilink{border-bottom:1px dotted var(--accent)}
 /* Inline notes.
    Only annotated blocks become positioning contexts, so an unannotated page
@@ -1682,7 +1695,7 @@ body.chat-open .tab-strip{right:400px}
   .prose a[data-unlinked]{color:inherit; border-bottom:0; text-decoration:none}
   .prose :is(h1,h2,h3,h4,h5,h6){break-after:avoid}
   .prose :is(h1,h2,h3,h4,h5,h6).is-flashed{animation:none; color:inherit}
-  .prose :is(img,svg,.mermaid-frame,.math-block,blockquote,tr){break-inside:avoid}
+  .prose :is(img,svg,.mermaid-frame,.math-block,.widget,blockquote,tr){break-inside:avoid}
   /* Remarks, tasks and agent notes are the reader's working marks, not part of
      the page; a highlight stays, as the underline it already is. */
   .prose mark.note-mark:not(.is-highlight){background:none; color:inherit; padding:0}

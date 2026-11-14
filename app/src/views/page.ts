@@ -13,6 +13,7 @@ import { downloadMenu, PRINT_SCRIPT } from "./print.js";
 import { SIDEBAR_RENDER_HOLD, sidebarHtml } from "./sidebar.js";
 import { tabStrip } from "./tabs.js";
 import { FOLDER_ICON, MOVE_SCRIPT, renderTree } from "./tree.js";
+import { WIDGETS_SCRIPT } from "./widgets.js";
 
 /**
  * A page as the reader sees it (layout), and the views drawn the same way: a
@@ -223,6 +224,7 @@ ${v.contentHtml.includes('class="section-link"') ? `<script>${SECTION_FLASH_SCRI
 ${notesData ? `<script>${NOTES_SCRIPT}</script>` : ""}
 <script>${MOVE_SCRIPT}</script>
 ${v.contentHtml.includes('class="mermaid"') ? `${DIAGRAM_VIEWER}\n${MERMAID_SCRIPT}` : ""}
+${v.contentHtml.includes('class="widget-frame"') ? `<script>${WIDGETS_SCRIPT}</script>` : ""}
 </body>
 </html>`;
 }

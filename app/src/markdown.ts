@@ -8,6 +8,7 @@ import katex from "katex";
 // Registers `\ce{…}` and `\pu{…}` for chemical equations and units.
 import "katex/contrib/mhchem";
 import { createHash } from "node:crypto";
+import { isWidgetName } from "./assets.js";
 import { normalizeQuote, parseNotes, type Note } from "./notes.js";
 
 /**
@@ -689,6 +690,41 @@ function rewriteAssetUrl(url: string, spaceKey: string): string {
   return `/${spaceKey}/${url}`;
 }
 
+/** Whether an image's portable target is an HTML widget in the page's own `_assets/`. */
+function isWidgetSrc(src: string): boolean {
+  return src.startsWith("_assets/") && isWidgetName(src.replace(/[?#].*$/, ""));
+}
+
+/** A percent-encoded path as it reads, or as it is when it does not decode. */
+function safeDecode(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * Mark each paragraph that holds one widget and nothing else, which renders
+ * as a figure rather than a paragraph. A paragraph a tight list hides draws no
+ * element of its own to turn into one, so its widget is a plain frame.
+ */
+function markWidgetFigures(state: StateCore): void {
+  const tokens = state.tokens;
+  for (let i = 0; i + 2 < tokens.length; i += 1) {
+    const [open, inline, close] = [tokens[i], tokens[i + 1], tokens[i + 2]];
+    if (open.type !== "paragraph_open" || open.hidden || inline.type !== "inline" || close.type !== "paragraph_close") {
+      continue;
+    }
+    const parts = (inline.children ?? []).filter(
+      (child) => child.type !== "softbreak" && !(child.type === "text" && !child.content.trim())
+    );
+    const image = parts.length === 1 && parts[0].type === "image" ? parts[0] : null;
+    if (!image || !isWidgetSrc(image.attrGet("src") ?? "")) continue;
+    for (const token of [open, close, image]) token.meta = { ...(token.meta ?? {}), widgetFigure: true };
+  }
+}
+
 /**
  * Wrap a markdown-it render rule so a named attribute (`src`/`href`) is passed
  * through {@link rewriteAssetUrl} before the default renderer runs. Preserves
@@ -1312,6 +1348,48 @@ export function createRenderer(
   const spaceKey = currentSlug.split("/")[0] ?? "";
   rewriteAttr(md, "image", "src", spaceKey);
   rewriteAttr(md, "link_open", "href", spaceKey);
+
+  // An image of an HTML file in the space's `_assets/` is a widget: a frame
+  // showing it sandboxed from `/_embed/…` (views/widgets.ts), sized the way an
+  // image is, with `=WxH`, for a start. Alone in its paragraph it is a figure,
+  // with the alt text for a caption, and it keeps the paragraph's source
+  // anchor, so a note can sit on it. After the rewrite above, so that it
+  // reads the portable `_assets/…` form.
+  if (spaceKey) {
+    md.core.ruler.push("kb25_widget", markWidgetFigures);
+    const image = md.renderer.rules.image!;
+    md.renderer.rules.image = (tokens, idx, options, env, self) => {
+      const token = tokens[idx];
+      const src = token.attrGet("src") ?? "";
+      if (!isWidgetSrc(src)) return image(tokens, idx, options, env, self);
+      const alt = self.renderInlineAsText(token.children ?? [], options, env);
+      const attrs: [string, string][] = [
+        ["class", "widget-frame"],
+        ["src", `/_embed/${encodeURIComponent(spaceKey)}/${src}`],
+        ["title", alt || token.attrGet("title") || safeDecode(src.slice("_assets/".length))],
+        ["sandbox", "allow-scripts"],
+        ["loading", "lazy"],
+      ];
+      for (const name of ["width", "height"]) {
+        const value = token.attrGet(name);
+        if (value) attrs.push([name, value]);
+      }
+      const frame = `<iframe ${attrs.map(([name, value]) => `${name}="${md.utils.escapeHtml(value)}"`).join(" ")}></iframe>`;
+      return token.meta?.widgetFigure && alt ? `${frame}<figcaption>${md.utils.escapeHtml(alt)}</figcaption>` : frame;
+    };
+    const paragraphOpen =
+      md.renderer.rules.paragraph_open ??
+      ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
+    const paragraphClose =
+      md.renderer.rules.paragraph_close ??
+      ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
+    md.renderer.rules.paragraph_open = (tokens, idx, options, env, self) =>
+      tokens[idx].meta?.widgetFigure
+        ? `<figure class="widget"${self.renderAttrs(tokens[idx])}>`
+        : paragraphOpen(tokens, idx, options, env, self);
+    md.renderer.rules.paragraph_close = (tokens, idx, options, env, self) =>
+      tokens[idx].meta?.widgetFigure ? "</figure>\n" : paragraphClose(tokens, idx, options, env, self);
+  }
 
   // [[slug]] or [[slug|Label]] wiki-links, resolved before normal links.
   md.inline.ruler.before("link", "wikilink", (state, silent) => {
