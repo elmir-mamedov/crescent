@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>A particle in a box</title>
+<style>
+  .controls{display:flex; flex-wrap:wrap; gap:8px 20px; align-items:center; margin-bottom:6px; font-size:14px; color:var(--kb-muted)}
+  .controls label{display:flex; align-items:center; gap:8px}
+  .controls output{color:var(--kb-fg); font-family:var(--kb-mono)}
+  input[type=range]{accent-color:var(--kb-accent); width:150px}
+  button{border:1px solid var(--kb-line); background:var(--kb-surface); color:var(--kb-fg); border-radius:6px; padding:2px 12px; cursor:pointer}
+  svg{display:block; width:100%; height:auto}
+  .wall{fill:var(--kb-surface); stroke:var(--kb-line)}
+  .axis{stroke:var(--kb-line); stroke-dasharray:4 4}
+  .density{fill:var(--kb-accent); opacity:.18}
+  .wave{fill:none; stroke:var(--kb-accent); stroke-width:2.5; stroke-linejoin:round}
+  .node{fill:var(--kb-bg); stroke:var(--kb-orange); stroke-width:2}
+  .label{font-size:13px; fill:var(--kb-muted)}
+  .key{display:flex; flex-wrap:wrap; gap:4px 18px; font-size:13px; color:var(--kb-muted)}
+  .swatch{display:inline-block; width:14px; height:3px; margin-right:6px; vertical-align:middle; background:var(--kb-accent)}
+  .swatch.soft{height:10px; opacity:.3}
+  .ring{display:inline-block; width:8px; height:8px; margin-right:6px; vertical-align:middle; border:2px solid var(--kb-orange); border-radius:50%}
+</style>
+</head>
+<body>
+<div class="controls">
+  <label for="n">Level <output id="n-out">n = 1</output></label>
+  <input id="n" type="range" min="1" max="6" value="1" aria-label="Level n">
+  <span>Energy <output id="e-out">E₁</output></span>
+  <button id="play" type="button">Pause</button>
+</div>
+<svg id="plot" viewBox="0 0 600 230" role="img" aria-label="The wavefunction of a particle in a box at the chosen level">
+  <rect class="wall" x="0" y="10" width="34" height="200"></rect>
+  <rect class="wall" x="566" y="10" width="34" height="200"></rect>
+  <line class="axis" x1="34" y1="120" x2="566" y2="120"></line>
+  <path id="density" class="density"></path>
+  <path id="wave" class="wave"></path>
+  <g id="nodes"></g>
+  <text class="label" x="40" y="226">x = 0</text>
+  <text class="label" x="560" y="226" text-anchor="end">x = L</text>
+</svg>
+<div class="key">
+  <span><span class="swatch"></span>The wave, Re ψ(x, t), oscillating</span>
+  <span><span class="swatch soft"></span>Where the particle is likely to be, |ψ|², which stays still</span>
+  <span><span class="ring"></span>Nodes, where it is never found</span>
+</div>
+<script>
+(() => {
+  const LEFT = 34, RIGHT = 566, MID = 120, AMP = 92, STEPS = 240;
+  const slider = document.getElementById("n");
+  const wave = document.getElementById("wave");
+  const density = document.getElementById("density");
+  const nodes = document.getElementById("nodes");
+  const play = document.getElementById("play");
+  const sub = (n) => String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[d]);
+  let n = 1;
+  let running = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let t = 0;
+  let last = null;
+
+  const xAt = (u) => LEFT + u * (RIGHT - LEFT);
+
+  function drawStill() {
+    let d = `M${LEFT},${MID}`;
+    for (let i = 0; i <= STEPS; i++) {
+      const u = i / STEPS;
+      d += ` L${xAt(u).toFixed(1)},${(MID - AMP * Math.sin(n * Math.PI * u) ** 2).toFixed(1)}`;
+    }
+    density.setAttribute("d", d + ` L${RIGHT},${MID} Z`);
+    nodes.replaceChildren();
+    for (let k = 1; k < n; k++) {
+      const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      dot.setAttribute("class", "node");
+      dot.setAttribute("cx", xAt(k / n).toFixed(1));
+      dot.setAttribute("cy", MID);
+      dot.setAttribute("r", 5);
+      nodes.append(dot);
+    }
+    document.getElementById("n-out").textContent = `n = ${n}`;
+    document.getElementById("e-out").textContent = n === 1 ? "E₁" : `E${sub(n)} = ${n * n} E₁`;
+  }
+
+  function drawWave() {
+    // Each level turns at a rate set by its energy, E_n ∝ n², slowed to be seen.
+    const phase = Math.cos(0.6 * n * n * t);
+    let d = "";
+    for (let i = 0; i <= STEPS; i++) {
+      const u = i / STEPS;
+      d += `${i ? " L" : "M"}${xAt(u).toFixed(1)},${(MID - AMP * Math.sin(n * Math.PI * u) * phase).toFixed(1)}`;
+    }
+    wave.setAttribute("d", d);
+  }
+
+  function frame(now) {
+    if (last !== null) t += (now - last) / 1000;
+    last = now;
+    drawWave();
+    if (running) requestAnimationFrame(frame);
+    else last = null;
+  }
+
+  slider.addEventListener("input", () => {
+    n = Number(slider.value);
+    drawStill();
+    drawWave();
+  });
+  play.addEventListener("click", () => {
+    running = !running;
+    play.textContent = running ? "Pause" : "Play";
+    if (running) requestAnimationFrame(frame);
+  });
+
+  play.textContent = running ? "Pause" : "Play";
+  drawStill();
+  drawWave();
+  if (running) requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
