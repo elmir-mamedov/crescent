@@ -79,13 +79,13 @@ export function imageType(name: string): string | undefined {
 }
 
 /** The space's `_assets` folder, or null when the key cannot name a space. */
-function assetsDir(content: Content, spaceKey: string): string | null {
+export function assetsDir(content: Content, spaceKey: string): string | null {
   const dir = content.spaceDir(spaceKey);
   return dir ? path.join(dir, "_assets") : null;
 }
 
 /** True for a real folder, never one reached through a symbolic link. */
-async function isRealDir(dir: string): Promise<boolean> {
+export async function isRealDir(dir: string): Promise<boolean> {
   try {
     return (await fs.lstat(dir)).isDirectory();
   } catch {
@@ -138,15 +138,22 @@ export function imageFileName(name: string, type: string): string | null {
     if (!byType) return null;
     ext = byType === ".jpeg" ? ".jpg" : byType;
   }
-  const base = plain
-    .slice(0, plain.length - path.extname(plain).length)
+  const base = cleanFileBase(plain.slice(0, plain.length - path.extname(plain).length));
+  return `${base || "image"}${ext}`;
+}
+
+/**
+ * A file or folder name as `_assets` keeps it, extension aside: lowercase and
+ * hyphenated, an accent keeping its letter, and "" when nothing is left.
+ */
+export function cleanFileBase(name: string): string {
+  return name
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .slice(0, MAX_BASE_LENGTH)
     .replace(/^-+|-+$/g, "");
-  return `${base || "image"}${ext}`;
 }
 
 /** Why an upload is refused before anything is written, or null when every file can be saved. */
