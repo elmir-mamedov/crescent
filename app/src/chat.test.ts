@@ -277,6 +277,8 @@ test("the activity line says what the turn is doing", () => {
 test("the system prompt keeps the hand-off and the explicit-request rule", () => {
   assert.match(CHAT_PROMPT, /do not summarise them, list them, link them/);
   assert.match(CHAT_PROMPT, /<kb25-attachments>[^\n]*kb_add_image[^\n]*paperclip/);
+  // A figure is Markdown's first, and an SVG or a widget written as a file, never HTML in the page.
+  assert.match(CHAT_PROMPT, /mermaid diagram or math first[^\n]*kb_write_asset[^\n]*Never put HTML in a page/);
   assert.match(CHAT_PROMPT, /even "from the ground up", is a chat request/);
   assert.match(CHAT_PROMPT, /Write to KB/);
 });
