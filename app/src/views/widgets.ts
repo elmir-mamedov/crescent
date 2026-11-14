@@ -126,3 +126,65 @@ export function widgetDocument(source: string): string {
 <script>${WIDGET_SCRIPT}</script>
 ${own}`;
 }
+
+/**
+ * The page's side, on a page that shows a widget: it sizes each frame to the
+ * height the widget reports, up to MAX_HEIGHT, and tells each frame the theme
+ * when it starts and whenever the reader switches it. A message counts only
+ * from one of this page's own frames, found by the window it came from, since
+ * a sandboxed frame's origin is opaque and names nothing.
+ *
+ * `__widgetsForPrint(true)` is what a print waits for (PRINT_SCRIPT): every
+ * frame loaded, a lazy one included, and in the light theme a print wears,
+ * for two seconds at most; `__widgetsForPrint(false)` puts the theme back.
+ */
+export const WIDGETS_SCRIPT = `
+(() => {
+  const MAX_HEIGHT = 5000;
+  const root = document.documentElement;
+  const frames = () => Array.from(document.querySelectorAll("iframe.widget-frame"));
+  let printing = false;
+  const theme = () => (printing || root.dataset.theme === "light" ? "light" : "dark");
+  const tell = (frame) => {
+    if (frame.contentWindow) frame.contentWindow.postMessage({ kb25: "theme", theme: theme() }, "*");
+  };
+  const waiting = new Map();
+
+  addEventListener("message", (event) => {
+    const data = event.data;
+    if (!data || typeof data.kb25 !== "string") return;
+    const frame = frames().find((candidate) => candidate.contentWindow === event.source);
+    if (!frame) return;
+    if (data.kb25 === "ready") {
+      tell(frame);
+    } else if (data.kb25 === "height") {
+      if (typeof data.height === "number" && data.height > 0) {
+        frame.style.height = Math.min(Math.ceil(data.height), MAX_HEIGHT) + "px";
+      }
+    } else if (data.kb25 === "themed" && data.theme === theme()) {
+      const done = waiting.get(frame);
+      waiting.delete(frame);
+      if (done) done();
+    }
+  });
+
+  new MutationObserver(() => frames().forEach(tell)).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+
+  window.__widgetsForPrint = (on) => {
+    printing = on;
+    if (!on) {
+      waiting.clear();
+      frames().forEach(tell);
+      return Promise.resolve();
+    }
+    const themed = frames().map((frame) => new Promise((resolve) => {
+      waiting.set(frame, resolve);
+      frame.loading = "eager";
+      tell(frame);
+    }));
+    const timeout = new Promise((resolve) => setTimeout(resolve, 2000));
+    // A moment after the last answer, for the frames to paint in it.
+    return Promise.race([Promise.all(themed), timeout]).then(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  };
+})();
+`;

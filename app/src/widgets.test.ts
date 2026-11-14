@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import { Content } from "./content.js";
 import { WIDGET_SIZE_LIMIT, registerWidgetRoutes } from "./server/widgets.js";
 import { makeTempKb, trySymlink } from "./test-helpers.js";
-import { WIDGET_VARIABLES, widgetDocument } from "./views/widgets.js";
+import { WIDGETS_SCRIPT, WIDGET_VARIABLES, widgetDocument } from "./views/widgets.js";
 
 /** A server with only the widget route, on a throwaway KB with one space, "Docs". */
 async function withServer(
@@ -121,4 +121,102 @@ test("embed route: a widget too big to read whole is refused", async () => {
     assert.equal(res.statusCode, 413);
     assert.equal(res.headers["content-security-policy"], undefined);
   });
+});
+
+/** The preamble's own script, out of a widget's document. */
+function preambleScript(): string {
+  return /<script>([\s\S]*?)<\/script>/.exec(widgetDocument(""))![1];
+}
+
+test("widgetDocument: the preamble's script parses", () => {
+  assert.doesNotThrow(() => new Function(preambleScript()));
+});
+
+type Message = { data: unknown; source: unknown };
+
+/**
+ * Runs WIDGETS_SCRIPT on a page holding `count` widget frames, each with a
+ * window that records what the page posts it.
+ */
+function pageRig(count: number) {
+  const root = { dataset: { theme: "dark" } as Record<string, string> };
+  const frames = Array.from({ length: count }, () => {
+    const posted: unknown[] = [];
+    return { style: {} as Record<string, string>, loading: "lazy", contentWindow: { postMessage: (data: unknown) => posted.push(data) }, posted };
+  });
+  let onMessage: (event: Message) => void = () => {};
+  let onTheme: () => void = () => {};
+  const win: Record<string, unknown> = {};
+  new Function("window", "document", "addEventListener", "MutationObserver", "setTimeout", WIDGETS_SCRIPT)(
+    win,
+    { documentElement: root, querySelectorAll: (selector: string) => (selector === "iframe.widget-frame" ? frames : []) },
+    (type: string, fn: (event: Message) => void) => {
+      if (type === "message") onMessage = fn;
+    },
+    class {
+      constructor(fn: () => void) {
+        onTheme = fn;
+      }
+      observe() {}
+    },
+    // The pause after the last answer passes at once; the give-up time never does.
+    (fn: () => void, ms: number) => {
+      if (ms < 1000) fn();
+    }
+  );
+  const from = (frame: (typeof frames)[number], data: unknown) => onMessage({ data, source: frame.contentWindow });
+  const switchTheme = (theme: string) => {
+    root.dataset.theme = theme;
+    onTheme();
+  };
+  return { frames, from, switchTheme, onMessage: (event: Message) => onMessage(event), print: win.__widgetsForPrint as (on: boolean) => Promise<void> };
+}
+
+test("WIDGETS_SCRIPT: a frame that starts is told the theme, and again when it changes", () => {
+  const rig = pageRig(2);
+  rig.from(rig.frames[0], { kb25: "ready" });
+  assert.deepEqual(rig.frames[0].posted, [{ kb25: "theme", theme: "dark" }]);
+  assert.deepEqual(rig.frames[1].posted, []);
+  rig.switchTheme("light");
+  assert.deepEqual(rig.frames[0].posted.at(-1), { kb25: "theme", theme: "light" });
+  assert.deepEqual(rig.frames[1].posted, [{ kb25: "theme", theme: "light" }]);
+});
+
+test("WIDGETS_SCRIPT: a frame is as tall as it says, within bounds", () => {
+  const rig = pageRig(1);
+  const [frame] = rig.frames;
+  rig.from(frame, { kb25: "height", height: 412.4 });
+  assert.equal(frame.style.height, "413px");
+  rig.from(frame, { kb25: "height", height: 0 });
+  rig.from(frame, { kb25: "height", height: "900" });
+  assert.equal(frame.style.height, "413px");
+  rig.from(frame, { kb25: "height", height: 1e9 });
+  assert.equal(frame.style.height, "5000px");
+});
+
+test("WIDGETS_SCRIPT: a message from anything but one of the page's frames is ignored", () => {
+  const rig = pageRig(1);
+  rig.onMessage({ data: { kb25: "height", height: 700 }, source: {} });
+  rig.onMessage({ data: { kb25: "ready" }, source: null });
+  assert.equal(rig.frames[0].style.height, undefined);
+  assert.deepEqual(rig.frames[0].posted, []);
+});
+
+test("WIDGETS_SCRIPT: a print loads every frame in the light theme, and waits for them to wear it", async () => {
+  const rig = pageRig(2);
+  let printed = false;
+  const ready = rig.print(true).then(() => (printed = true));
+  for (const frame of rig.frames) {
+    assert.equal(frame.loading, "eager");
+    assert.deepEqual(frame.posted.at(-1), { kb25: "theme", theme: "light" });
+  }
+  rig.from(rig.frames[0], { kb25: "themed", theme: "light" });
+  rig.from(rig.frames[1], { kb25: "themed", theme: "dark" }); // an answer to an older message
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(printed, false);
+  rig.from(rig.frames[1], { kb25: "themed", theme: "light" });
+  await ready;
+  assert.equal(printed, true);
+  await rig.print(false);
+  for (const frame of rig.frames) assert.deepEqual(frame.posted.at(-1), { kb25: "theme", theme: "dark" });
 });

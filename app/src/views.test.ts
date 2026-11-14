@@ -1734,6 +1734,20 @@ test("space instructions: the hint states it is hidden and LLM-read-only", () =>
  * the cheapest guard that catches it.
  */
 const MERMAID_PAGE = '<p>Before.</p>\n<pre class="mermaid">flowchart LR\n  A --&gt; B</pre>\n';
+const WIDGET_PAGE =
+  '<figure class="widget"><iframe class="widget-frame" src="/_embed/kb25/_assets/w.html" title="W" sandbox="allow-scripts" loading="lazy"></iframe><figcaption>W</figcaption></figure>\n';
+
+test("a page with a widget gets the script that sizes and themes it; one without does not", () => {
+  assert.match(layout(pageView({ contentHtml: WIDGET_PAGE })), /window\.__widgetsForPrint = /);
+  assert.doesNotMatch(layout(pageView()), /__widgetsForPrint = /);
+});
+
+test("a selection dragged across a page passes over a widget: its frame can't be selected or tinted", () => {
+  const html = layout(pageView({ contentHtml: WIDGET_PAGE }));
+  assert.match(html, /\.prose \.widget-frame\{[^}]*user-select:none; -webkit-user-select:none/);
+  assert.match(html, /\.prose \.widget-frame::selection\{background:transparent\}/);
+  assert.doesNotMatch(html, /figcaption\{[^}]*user-select/);
+});
 
 test("feedback #33: a page with a diagram gets the viewer that opens it large", () => {
   const html = layout(pageView({ contentHtml: MERMAID_PAGE }));
@@ -1795,6 +1809,7 @@ test("views: every inline script in every layout parses as JavaScript", () => {
     ["page", layout(pageView())],
     ["page-toc", layout(pageView({ sections: sections() }))],
     ["page-mermaid", layout(pageView({ contentHtml: MERMAID_PAGE }))],
+    ["page-widget", layout(pageView({ contentHtml: WIDGET_PAGE }))],
     ["folder", folderLayout({ ...pageView(), children: [] } as unknown as FolderView)],
     ["dashboard", dashboardLayout(dashboardView())],
     ["dashboards", dashboardsLayout(dashboardsView())],
