@@ -24,12 +24,12 @@ import type { EngineId } from "./agent-cli.js";
  */
 export interface PageChange {
   kind: "created" | "updated" | "moved" | "renamed" | "archived" | "restored" | "deleted" | "noted" | "added";
-  what: "page" | "folder" | "space" | "image";
+  what: "page" | "folder" | "space" | "image" | "file";
   /** Stable page id, when the tool reported one; links resolve through it. */
   id?: string;
   /**
-   * Where it is now — or was, for a deletion. An image's is its path in the
-   * KB, `<space>/_assets/plot.png`.
+   * Where it is now — or was, for a deletion. An image's or a file's is its
+   * path in the KB, `<space>/_assets/plot.png`.
    */
   slug: string;
   title: string;

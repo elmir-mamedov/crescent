@@ -1,12 +1,13 @@
 /**
  * Every write to the knowledge base, each with the commit that records it.
  *
- * `Content`, `labels.ts`, `gallery.ts` and `space-instructions.ts` change files
- * and hand back the paths they touched; recording those paths in git, and saying
- * in the commit subject what happened, is this module's job. The web server and
- * the MCP server both write through it, so the same write commits the same
- * paths under the same subject whichever of them made it. Only the `via` suffix
- * differs: it names who wrote (`web`, `mcp`, `chat`).
+ * `Content`, `labels.ts`, `gallery.ts`, `text-assets.ts` and
+ * `space-instructions.ts` change files and hand back the paths they touched;
+ * recording those paths in git, and saying in the commit subject what
+ * happened, is this module's job. The web server and the MCP server both write
+ * through it, so the same write commits the same paths under the same subject
+ * whichever of them made it. Only the `via` suffix differs: it names who wrote
+ * (`web`, `mcp`, `chat`).
  *
  * A write that fails throws, and nothing was written. A write whose commit fails
  * has still landed on disk, so it resolves with `commitError` set instead: the
@@ -37,6 +38,7 @@ import {
   type LabelMutation,
 } from "./labels.js";
 import { ensureSpaceInstructions, type EnsureInstructionsResult } from "./space-instructions.js";
+import { writeTextAsset, type WrittenTextAsset } from "./text-assets.js";
 
 export interface Written<M> {
   mutation: M;
@@ -361,6 +363,15 @@ export function makeKbWrites({ content, git, via }: KbWritesDeps) {
       if (!mutation) return null;
       if (mutation.linkedFrom.length) return { mutation, commit: null };
       return record(mutation, [mutation.fsPath], `Delete ${git.kbRelPath(mutation.fsPath)}`);
+    },
+
+    /**
+     * Write a widget, a drawing or a table into a space's `_assets/` from its
+     * text, replacing the file of that name, and commit it.
+     */
+    async writeAsset(spaceKey: string, name: string, text: string): Promise<Written<WrittenTextAsset>> {
+      const mutation = await writeTextAsset(content, spaceKey, name, text);
+      return record(mutation, [mutation.fsPath], `${mutation.created ? "Add" : "Update"} ${git.kbRelPath(mutation.fsPath)}`);
     },
   };
 }

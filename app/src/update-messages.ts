@@ -11,4 +11,6 @@
 export const UPDATE_MESSAGES: Readonly<Record<string, string>> = {
   "0.21.1":
     "If you use Crescent from the Claude app or Claude Code, restart it to use this version there: quit the Claude app completely and open it again, and start a new Claude Code session. Until then, Claude can't add images to your pages.",
+  "0.23.0":
+    "If you use Crescent from the Claude app or Claude Code, restart it to use this version there: quit the Claude app completely and open it again, and start a new Claude Code session. Until then, Claude can't add moving or interactive figures to your pages.",
 };

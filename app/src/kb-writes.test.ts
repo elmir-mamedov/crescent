@@ -212,3 +212,20 @@ test("deleteImage commits the deletion, and commits nothing while a page links t
     assert.equal(await writes.deleteImage("docs", "plot.png"), null);
   });
 });
+
+test("writeAsset commits a new widget as added and a rewrite as updated, and an unchanged one not at all", async () => {
+  await withSpace(async ({ writes, repo }) => {
+    const first = await writes.writeAsset("docs", "TCP Handshake.html", "<p>v1</p>");
+    assert.equal(first.mutation.path, "tcp-handshake.html");
+    assert.ok(first.commit);
+    const second = await writes.writeAsset("docs", "_assets/tcp-handshake.html", "<p>v2</p>");
+    assert.equal(second.mutation.created, false);
+    assert.deepEqual((await subjects(repo)).slice(0, 2), [
+      "Update docs/_assets/tcp-handshake.html via test",
+      "Add docs/_assets/tcp-handshake.html via test",
+    ]);
+    const same = await writes.writeAsset("docs", "tcp-handshake.html", "<p>v2</p>");
+    assert.equal(same.commit, null);
+    assert.equal(await git(repo, "status", "--porcelain"), "");
+  });
+});
