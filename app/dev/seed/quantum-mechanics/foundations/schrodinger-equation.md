@@ -33,6 +33,10 @@ $$
 \phi_n(x) = \sqrt{\frac{2}{L}} \sin\frac{n\pi x}{L}, \qquad E_n = \frac{n^2 \pi^2 \hbar^2}{2 m L^2}, \qquad n = 1, 2, 3, \dots
 $$
 
+Move the slider through the first six levels. The wave swings in place, faster at each level up, as its energy grows with $n^2$, while the probability density $|\psi|^2$ under it stays still. Each level adds one node, a point where the particle is never found.
+
+![A particle in a box: the first six levels](_assets/particle-in-a-box.html =x330)
+
 <!-- kb25:note id=1xqqz0x4 kind=remark at=2026-11-08T10:20:00Z by=admin
 > is not zero
 
