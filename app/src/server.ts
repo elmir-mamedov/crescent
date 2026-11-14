@@ -46,6 +46,7 @@ import { registerSpaceRoutes } from "./server/spaces.js";
 import { registerStaticRoutes } from "./server/static.js";
 import { registerUnreadRoutes } from "./server/unread.js";
 import { registerUpdateRoutes } from "./server/update.js";
+import { registerWidgetRoutes } from "./server/widgets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -210,6 +211,7 @@ registerAuth(app, {
   desktop: DESKTOP,
 });
 await registerStaticRoutes(app, { kbDir: KB_DIR, content, appDir: path.join(__dirname, "..") });
+registerWidgetRoutes(app, ctx);
 registerSpaceRoutes(app, ctx);
 registerPageRoutes(app, ctx);
 registerArchiveRoutes(app, ctx);
