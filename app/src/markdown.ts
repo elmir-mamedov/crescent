@@ -431,7 +431,7 @@ function mathInline(state: StateInline, silent: boolean): boolean {
  * describes: the index of its closing `$`, the TeX between, and whether it is
  * spaced inside its dollars. Undefined when that `$` opens no formula.
  */
-function singleDollar(
+export function singleDollar(
   src: string,
   start: number,
   max: number
