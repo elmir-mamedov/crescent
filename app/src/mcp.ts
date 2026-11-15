@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -20,6 +21,7 @@ import { addAgentNote, resolveAgentNote } from "./note-write.js";
 import { searchPages } from "./search.js";
 import { extractSections } from "./markdown.js";
 import { checkPageMath, type MathCheck } from "./math-normalize.js";
+import { READ_ME_MODULES, readMe } from "./read-me.js";
 import {
   instructionsPayload,
   instructionsReminder,
@@ -356,30 +358,6 @@ function refuseInstructionsPath(slug: string) {
 }
 
 /**
- * What to say once a page is written. The rules for writing pages live in
- * this server rather than in a skill: Cowork and the Claude app take their
- * skills from the person's Claude account, which crescent can't reach, while
- * every client reads this server and every update replaces it. This one is in
- * the two page-writing tools' descriptions, which every client loads before it
- * writes a page, rather than in the server instructions, which Claude Code
- * cuts short (see the note on the server below).
- */
-const PAGE_HAND_OFF =
-  "Once the page is written, hand it back in one line: its title and its path (`/<slug>`), plus one short clause only for something the person needs to know that the page does not show (an assumption you made, a part you left out or could not verify, a page filed somewhere they would not expect). Where the app already shows them what you wrote, as crescent's own chat does, give only that clause, if there is one. Do not restate, summarise or list what the page says, or narrate how you wrote it: the person reads the page itself, and a recap costs them time and checks nothing. If the person also asked something the page does not answer, answer just that part, briefly.";
-
-/**
- * How a page writes math, which the two page-writing tools enforce as well
- * (math-normalize.ts, feedback #76). In full in their descriptions, which an
- * agent has loaded by the time it writes, so that it writes math right the
- * first time rather than learning it from a refusal; the server instructions
- * carry MATH_BRIEF.
- */
-const MATH_BRIEF =
-  "MATH: TeX as `$…$` inline and `$$…$$` on lines of their own, with single backslashes; never `\\(…\\)`, `\\[…\\]` or doubled backslashes. kb_create_page and kb_update_page describe the rest.";
-const MATH_RULE =
-  "MATH: write TeX as `$…$` inline and `$$…$$` on lines of their own, with single backslashes, as in `$780^\\circ\\mathrm{C}$`: never `\\(…\\)` or `\\[…\\]`, never doubled backslashes (`\\\\circ`), never spaces just inside the dollars (`$ x $`). TeX shown as an example rather than typeset goes in a code span. A page write converts those other forms, and is refused while a formula KaTeX can't read, or a TeX command outside any formula, is left: the refusal lists each one with its line, so fix them and send the page again.";
-
-/**
  * crescent's icon, for a client that shows one beside the server. Inline, as
  * the server may be all of crescent that is running, and the icon is the
  * viewer's own (public/, beside server/ in a release as beside src/ here).
@@ -403,13 +381,13 @@ function serverIcons(): Icon[] {
  * own copy as kb25, which nobody sees, and the instructions name crescent
  * there too.
  *
- * The instructions, and each tool's description, are short enough for Claude
- * Code to pass on whole: it cuts a local server's at 4,096 characters, without
- * a word to the agent or the person (2.1.325; CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH
- * raises it), and mcp.test.ts holds every one of them to that. A rule an agent
- * needs as it writes goes in the description of the tool it writes with, which
- * it has always loaded by then, so the instructions keep to what it needs
- * first.
+ * The instructions say only what an agent needs before its first call: that
+ * crescent means these tools, and that read_me comes first. How to work here
+ * is read_me's (read-me.ts). Claude Code passes on only the first 4,096
+ * characters of a local server's instructions, and of each tool's
+ * description, without a word to the agent or the person (2.1.325;
+ * CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH raises it), and mcp.test.ts holds
+ * every one of them to that; a tool's result has no such limit.
  */
 const server = new McpServer(
   {
@@ -422,15 +400,82 @@ const server = new McpServer(
   },
   {
     instructions:
-      "crescent is the person's knowledge base app, and these tools read and write its Markdown pages: when they mention crescent, their knowledge base or their KB, they mean what these tools reach. The KB is organized into spaces: top-level containers, each its own git repo, and the first segment of every page slug — so every page must live inside a space. " +
-      `Every write is auto-committed to its space's repo as \`... via ${COMMIT_VIA}\`.` +
-      " A write whose result carries `commitError` was saved but not committed: the change is in place, so do not repeat it." +
-      " SPACE INSTRUCTIONS: a space may carry standing instructions written by its owner — language, register, formatting, standing domain context — that govern everything you write there and how you answer questions about it. They arrive as a `spaceInstructions` block on the first tool result scoped to that space, and they are binding: follow them in preference to your own defaults, and do not restate or negotiate them. Later results in the same space carry a short block marked `unchanged` with the token but no text — the instructions delivered earlier still apply in full, and if you can no longer see them, call `kb_get_space_instructions` to get them back. Where a space has them, writing into it also requires passing that block's `token` back as the write tool's `spaceInstructionsToken` — so read a space before you write to it. The token changes whenever a person edits the instructions; a refused write returns the current text and a fresh token, so retry once with those. `kb_get_space_instructions` fetches them directly, and `kb_list_spaces` reports which spaces have them. LINKING: every page has a stable `id`, returned by the read and create tools. Prefer a wiki-link by id — `[[id:<id>]]` or `[[id:<id>|Link text]]` — which keeps resolving even after the target is moved or renamed; a slug-based link like `[[space/some/slug]]` or `[text](/space/some/slug)` breaks when the target moves. To point at one section of a page rather than the whole thing, append its anchor: `[[id:<id>#<anchor>]]` or `[[space/some/slug#<anchor>]]`. Anchors come back in `kb_get_page`'s `sections` and on each `kb_search` match — read them, do not guess them from the heading text." +
-      " WRITING PAGES: when the person asks for a page, the page is what they asked for, not your reply. Write as soon as the request is clear enough to act on, since any page can be edited or archived afterwards; ask one short question first only when what the page should cover, or which space or section it belongs in, is genuinely unclear. File it beside similar pages (kb_list_pages, kb_search) rather than inventing new structure. A new page is one kb_create_page call with its title and full body, never an empty page filled in afterwards; to change a page, read it with kb_get_page (format: raw) and send the whole replacement with kb_update_page. Write for a reader landing on the page cold, not as a reply to this conversation: lead with what they need first, under clear headings. A page shows only images in its own space's `_assets/`: add an image file with kb_add_image and use the link it returns, since an image from the web shows only as a link and a `data:` image only as its alt text. " +
-      "Hand it back as the two page-writing tools' descriptions say." +
-      " FIGURES: prose stays Markdown. To show what words can't, try a ```mermaid diagram (flowcharts, sequences, states) or TeX math first. A drawing that neither moves nor responds is an SVG image, `![caption](_assets/name.svg)`; only a figure that has to move or respond (an animation, sliders, a chart that shows values on hover, a quiz) is an HTML widget, one file per figure, `![caption](_assets/name.html =x400)`. Write either with kb_write_asset, whose description has their rules. HTML pasted into a page is not rendered. " +
-      MATH_BRIEF,
+      "crescent is the person's knowledge base app, and these tools read and write its Markdown pages: when they mention crescent, their knowledge base or their KB, they mean what these tools reach." +
+      " Before you use any other crescent tool, call read_me: it is how crescent works and how to behave in it, written by its developers, and it returns the token every other tool requires as `i_have_seen_read_me`. They refuse without it. read_me is in modules, and says which to load before which work.",
   }
+);
+
+/**
+ * The token read_me hands out, which every other tool takes as
+ * `i_have_seen_read_me`: proof that the agent calling has read the guide in
+ * this conversation, since it can have the token from nowhere else. One
+ * server serves one client, so it is made when the server starts, and a
+ * restart or an update makes a new one, which sends the agent back to read
+ * the guide again. crescent's chat starts a server for each turn of a thread
+ * and gives it the thread's own (`threadReadMeToken`), so a thread reads the
+ * guide once.
+ */
+const READ_ME_TOKEN = process.env.KB25_READ_ME_TOKEN || randomBytes(12).toString("base64url");
+
+const READ_ME_FIRST =
+  "Call read_me first, before any other crescent tool: it says how to work with crescent, and returns the token this takes.";
+
+const readMeTokenSchema = z.string({ error: `Refused: no i_have_seen_read_me token. ${READ_ME_FIRST}` }).describe(`Required. ${READ_ME_FIRST}`);
+
+/**
+ * `server.registerTool`, with the read_me gate in front: every tool but
+ * read_me takes the token, and refuses a call without the right one before it
+ * does anything.
+ */
+const registerTool: typeof server.registerTool = (name, config, callback) => {
+  const takesArgs = config.inputSchema !== undefined;
+  const run = callback as (...args: unknown[]) => unknown;
+  return server.registerTool(
+    name,
+    { ...config, inputSchema: { ...(config.inputSchema as object), i_have_seen_read_me: readMeTokenSchema } } as never,
+    (async (args: { i_have_seen_read_me?: string }, extra: unknown) => {
+      if (args.i_have_seen_read_me !== READ_ME_TOKEN) {
+        return errorResult(
+          "Refused: that is not this conversation's read_me token, or crescent has restarted or been updated since it was given. " +
+            "Call read_me again, then make this call with the token it returns as `i_have_seen_read_me`."
+        );
+      }
+      return takesArgs ? run(args, extra) : run(extra);
+    }) as never
+  );
+};
+
+server.registerTool(
+  "read_me",
+  {
+    title: "Read Me First",
+    description:
+      "Call this first, before any other crescent tool, in every conversation: it is how crescent works and how to behave in it, written by its developers, and it returns the token every other tool requires as `i_have_seen_read_me`. " +
+      "The guide is in modules. The first call returns the core; before a kind of work, call this again with `modules` and your token to get its module: `pages` before writing or changing a page, `math` before writing a formula, `figures` before a diagram, drawing, widget or data table, `notes` before working with inline notes.",
+    inputSchema: {
+      modules: z
+        .array(z.enum(READ_ME_MODULES))
+        .optional()
+        .describe("The modules for the work ahead: pages, math, figures, notes. Several at once when the work needs them."),
+      i_have_seen_read_me: z
+        .string()
+        .optional()
+        .describe("Your token, once you have it: the core is then left out. Leave it out to get the core again."),
+    },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({ modules, i_have_seen_read_me }) =>
+    textResult(
+      readMe({
+        modules: modules ?? [],
+        withCore: i_have_seen_read_me !== READ_ME_TOKEN,
+        token: READ_ME_TOKEN,
+        via: COMMIT_VIA,
+      })
+    )
 );
 
 /** What a page write's result says about the math it converted, and the broken math it kept. */
@@ -441,7 +486,7 @@ function mathFields(math: MathCheck): Record<string, string> {
   };
 }
 
-server.registerTool(
+registerTool(
   "kb_list_spaces",
   {
     title: "List KB Spaces",
@@ -473,7 +518,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_get_space_instructions",
   {
     title: "Get Space Instructions",
@@ -511,7 +556,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_list_pages",
   {
     title: "List KB Pages",
@@ -542,7 +587,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_get_page",
   {
     title: "Get KB Page",
@@ -619,7 +664,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_list_notes",
   {
     title: "List KB Notes",
@@ -668,7 +713,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_search",
   {
     title: "Search KB",
@@ -703,15 +748,12 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_create_page",
   {
     title: "Create KB Page",
     description:
-      "Create a new page from a title and Markdown body inside a space or page. Write the whole page in this one call, rather than creating it empty and filling it in with kb_update_page. The title becomes the page slug; a leaf-page parent is auto-promoted into a section. Every page must live inside a space, so the parent is required (a space key like `kb25`, or a deeper page slug); use kb_create_space for a new space. " +
-      PAGE_HAND_OFF +
-      " " +
-      MATH_RULE,
+      "Create a new page from a title and Markdown body inside a space or page. Write the whole page in this one call, rather than creating it empty and filling it in with kb_update_page. The title becomes the page slug; a leaf-page parent is auto-promoted into a section. Every page must live inside a space, so the parent is required (a space key like `kb25`, or a deeper page slug); use kb_create_space for a new space. Load read_me's `pages` module before writing a page, and `math` or `figures` when it has formulas or figures: they have the rules for what to write, and how to hand the page back.",
     inputSchema: {
       parent: z
         .string()
@@ -759,7 +801,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_create_folder",
   {
     title: "Create KB Folder",
@@ -802,7 +844,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_add_image",
   {
     title: "Add KB Image",
@@ -844,7 +886,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_delete_image",
   {
     title: "Delete KB Image",
@@ -895,14 +937,13 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_write_asset",
   {
     title: "Write KB Asset",
     description:
       "Write a text file into a space's `_assets` folder from its full text, replacing the file of that name if there is one: an HTML widget (`.html`), an SVG drawing (`.svg`) or a CSV table (`.csv`). Returns the `link` a page uses: `![caption](<link>)` shows a widget or a drawing in the page, `[text](<link>)` links a table. To change the file later, read it with kb_get_asset and write it again under the same name; the page needs no edit. The link works on pages of that space only, so write the file into the space of the page that shows it. The name is saved lowercase and hyphenated, so use the `link` this returns. For an image file already on this machine (a PNG, a screenshot), use kb_add_image instead." +
-      " An SVG is drawn dark on a light background, since the dark theme shows every image on a light panel, with no `prefers-color-scheme` in it." +
-      " A WIDGET is a small HTML page shown inside the page in a sandboxed frame, for a figure that has to move or respond; a still drawing is an SVG instead. Name it for what it shows. Its rules: (1) Everything in the one file: inline `<style>` and `<script>`, images as `data:` URIs. It runs offline and can load nothing, so no CDN, web font, external image or fetch. (2) Colour it only with the theme's CSS variables, which follow the reader's light or dark theme: `--kb-fg` (text), `--kb-muted` (secondary text), `--kb-bg` (page), `--kb-surface` (panels), `--kb-line` (borders, grid lines), `--kb-accent` and `--kb-on-accent` (text on it), and for series `--kb-blue`, `--kb-green`, `--kb-orange`, `--kb-red`, `--kb-purple`, `--kb-teal`, `--kb-pink`, `--kb-yellow`, `--kb-brown`, `--kb-gray`; set type in `--kb-font` and `--kb-mono`. Never hard-code a colour, and leave the background transparent. A script that draws on a canvas reads them with `getComputedStyle(document.documentElement)` and draws again on the window's `kb25-theme` event. (3) The frame grows to the height of its content, so never size anything to the window (`100vh`); the `=x400` in the page's link is only the height it starts at. (4) It must work in a frame 320px wide. (5) No pop-ups, alerts, forms or links away: the sandbox blocks them.",
+      " Load read_me's `figures` module first: it has the rules an SVG and a widget follow.",
     inputSchema: {
       space: z.string().min(1).describe("Key of the space to write into, e.g. kb25."),
       name: z
@@ -941,7 +982,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_get_asset",
   {
     title: "Get KB Asset",
@@ -974,7 +1015,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_rename_folder",
   {
     title: "Rename KB Folder",
@@ -1015,15 +1056,12 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_update_page",
   {
     title: "Update KB Page",
     description:
-      "Replace a page's entire Markdown source, including frontmatter. The frontmatter must be valid (a title is required), and it must keep the page's existing `id` — that id is what `[[id:<id>]]` links resolve through, so read the current source first with kb_get_page (format: raw) rather than composing frontmatter from scratch. Do not add or reword inline notes as a side effect of an unrelated edit; preserve the ones you were not asked about. To leave an explanation of your own, use kb_add_agent_note rather than writing `<!-- kb25:note ... -->` syntax by hand — a note written by hand gets no id, so nothing can resolve it afterwards. Folders have no body and are rejected — use kb_rename_folder to rename one. " +
-      PAGE_HAND_OFF +
-      " " +
-      MATH_RULE,
+      "Replace a page's entire Markdown source, including frontmatter. The frontmatter must be valid (a title is required), and it must keep the page's existing `id` — that id is what `[[id:<id>]]` links resolve through, so read the current source first with kb_get_page (format: raw) rather than composing frontmatter from scratch. Do not add or reword inline notes as a side effect of an unrelated edit; preserve the ones you were not asked about. To leave an explanation of your own, use kb_add_agent_note rather than writing `<!-- kb25:note ... -->` syntax by hand — a note written by hand gets no id, so nothing can resolve it afterwards. Folders have no body and are rejected — use kb_rename_folder to rename one. Load read_me's `pages` module before changing a page, and `math`, `figures` or `notes` when the change touches formulas, figures or notes: they have the rules for what to write, and how to hand the page back.",
     inputSchema: {
       slug: z.string().describe("Page slug, e.g. engineering/runbooks/deploy."),
       markdown: z.string().describe("Full replacement Markdown source, including YAML frontmatter."),
@@ -1088,7 +1126,7 @@ async function commitNoteWrite(slug: string, header: string, body: string, actio
   return { slug: mutation.slug, path: git.kbRelPath(mutation.fsPath), ...commitFields(written) };
 }
 
-server.registerTool(
+registerTool(
   "kb_add_agent_note",
   {
     title: "Leave an Agent Note",
@@ -1158,7 +1196,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_resolve_agent_note",
   {
     title: "Resolve an Agent Note",
@@ -1204,7 +1242,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_archive_page",
   {
     title: "Archive KB Page",
@@ -1245,7 +1283,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_restore_page",
   {
     title: "Restore KB Page",
@@ -1285,7 +1323,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_move_page",
   {
     title: "Move KB Page",
@@ -1331,7 +1369,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_rename_page",
   {
     title: "Rename KB Page",
@@ -1375,7 +1413,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_delete_page",
   {
     title: "Delete KB Page",
@@ -1417,7 +1455,7 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerTool(
   "kb_create_space",
   {
     title: "Create KB Space",
