@@ -10,7 +10,7 @@ import type { ChatMessage, IncomingImage } from "../chat-store.js";
 import { messageView, type Chat, type ChatMessageView, type RunEvent, type SendInput } from "../chat.js";
 import { flatten } from "../content.js";
 import { GALLERY_BODY_LIMIT, imageType } from "../gallery.js";
-import { createRenderer, linkOutsideImages } from "../markdown.js";
+import { createRenderer } from "../markdown.js";
 import { galleryHref } from "../views.js";
 import type { ServerContext } from "./context.js";
 import { pagePath } from "./http.js";
@@ -82,8 +82,9 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: ServerContex
 
   /**
    * A thread's messages as the drawer shows them, rendered against the KB as
-   * it is now. An image from another site in a reply is shown as a link to it
-   * (linkOutsideImages), so a reply can't send anything there by being shown.
+   * it is now. Like a page, a reply shows only Crescent's own images, and an
+   * image from anywhere else as a link to it (createRenderer), so a reply
+   * can't send anything anywhere by being shown.
    */
   async function chatViews(id: string, messages: ChatMessage[]): Promise<ChatMessageView[]> {
     const [titles, ids, pages] = await Promise.all([
@@ -91,7 +92,7 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: ServerContex
       content.idIndex(),
       content.tree("all").then(flatten),
     ]);
-    const md = linkOutsideImages(createRenderer((s) => titles.get(s), "", (id) => ids.get(id)));
+    const md = createRenderer((s) => titles.get(s), "", (id) => ids.get(id));
     return messages.map((message) =>
       messageView(message, {
         render: (text) => md.render(text),
