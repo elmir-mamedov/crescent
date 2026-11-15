@@ -13,5 +13,6 @@ export const UPDATE_MESSAGES: Readonly<Record<string, string>> = {
     "If you use crescent from the Claude app or Claude Code, restart it to use this version there: quit the Claude app completely and open it again, and start a new Claude Code session. Until then, Claude can't add images to your pages.",
   "0.23.0":
     "If you use crescent from the Claude app or Claude Code, restart it to use this version there: quit the Claude app completely and open it again, and start a new Claude Code session. Until then, Claude can't add moving or interactive figures to your pages.\n\n" +
-    "Claude now learns how to write your pages from crescent itself, in the Claude app as well as in Claude Code, so this update removed the page-writing skill crescent used to keep in Claude Code. If you had changed that skill, it was left as it is, and it won't be updated again: delete the kb-page-authoring folder in .claude/skills, in your home folder, once you no longer need it.",
+    "Claude now learns how to write your pages from crescent itself, in the Claude app as well as in Claude Code, so this update removed the page-writing skill crescent used to keep in Claude Code. If you had changed that skill, it was left as it is, and it won't be updated again: delete the kb-page-authoring folder in .claude/skills, in your home folder, once you no longer need it.\n\n" +
+    "Claude knows crescent by its name from this version on: in the Claude app, its connection, listed as kb25 until now, is called crescent, so Claude may ask you again before it first uses it.",
 };

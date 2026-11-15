@@ -224,7 +224,7 @@ Example Claude / Claude Desktop config:
 ```json
 {
   "mcpServers": {
-    "kb25": {
+    "crescent": {
       "command": "/Users/elmir.mamedov/dev/flux/app/node_modules/.bin/tsx",
       "args": ["/Users/elmir.mamedov/dev/flux/app/src/mcp.ts"],
       "env": {
@@ -238,11 +238,11 @@ Example Claude / Claude Desktop config:
 Example Codex CLI config (`~/.codex/config.toml`):
 
 ```toml
-[mcp_servers.kb25]
+[mcp_servers.crescent]
 command = "/Users/elmir.mamedov/dev/flux/app/node_modules/.bin/tsx"
 args = ["/Users/elmir.mamedov/dev/flux/app/src/mcp.ts"]
 
-[mcp_servers.kb25.env]
+[mcp_servers.crescent.env]
 KB_DIR = "/Users/elmir.mamedov/dev/flux/kb"
 ```
 
