@@ -281,6 +281,14 @@ namespace KB25
             core.DocumentTitleChanged += (sender, e) =>
                 Text = string.IsNullOrEmpty(core.DocumentTitle) ? "Crescent" : core.DocumentTitle;
             core.NavigationStarting += OnNavigationStarting;
+            // A frame is a page's widget (views/widgets.ts), which may show only
+            // what Crescent sends it. Its sandbox can't stop it navigating itself,
+            // so one that tries to load another site, to send it what the widget
+            // holds or to pass that site's page off as Crescent's, stays where it is.
+            core.FrameNavigationStarting += (sender, e) =>
+            {
+                if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) || !IsKB25(uri)) e.Cancel = true;
+            };
             core.NavigationCompleted += OnNavigationCompleted;
             core.NewWindowRequested += (sender, e) =>
             {

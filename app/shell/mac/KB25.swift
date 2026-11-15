@@ -365,13 +365,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
   ) {
     guard let url = action.request.url else { return decisionHandler(.allow) }
-    if action.shouldPerformDownload { return decisionHandler(.download) }
     let mainFrame = action.targetFrame?.isMainFrame ?? true
+    // Only the page itself downloads; a frame has no say in what lands in Downloads.
+    if action.shouldPerformDownload { return decisionHandler(mainFrame ? .download : .cancel) }
     let newWindow = action.modifierFlags.contains(.command) || action.buttonNumber == 2
     if (action.navigationType == .linkActivated && newWindow) || (mainFrame && !isKB25(url)) {
       openElsewhere(url)
       return decisionHandler(.cancel)
     }
+    // A frame is a page's widget (views/widgets.ts), which may show only what
+    // Crescent sends it. Its sandbox can't stop it navigating itself, so one
+    // that tries to load another site, to send it what the widget holds or to
+    // pass that site's page off as Crescent's, stays where it is.
+    if !mainFrame && !isKB25(url) { return decisionHandler(.cancel) }
     decisionHandler(.allow)
   }
 
@@ -412,7 +418,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   ) {
     let disposition = (response.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
     let attachment = disposition.lowercased().hasPrefix("attachment")
-    decisionHandler(!response.canShowMIMEType || attachment ? .download : .allow)
+    let download = !response.canShowMIMEType || attachment
+    // A widget that navigates its frame to a file would otherwise save it into
+    // Downloads with no click: only the page itself downloads.
+    if download && !response.isForMainFrame { return decisionHandler(.cancel) }
+    decisionHandler(download ? .download : .allow)
   }
 
   func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
