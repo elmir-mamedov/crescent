@@ -32,8 +32,8 @@ ${renderHead(`Update · ${escapeHtml(v.siteTitle)}`)}
 <body class="gate-page">
 <main class="gate-panel" data-gate data-current="${escapeHtml(v.current)}" data-latest="${latest}" data-log="${escapeHtml(v.logFile)}" data-instance="${escapeHtml(v.instance)}"${v.updating ? " data-updating" : ""}>
   <img class="gate-icon" src="/kb25.svg" alt="" width="48" height="48" />
-  <h1 data-gate-title>Update Crescent to ${latest}</h1>
-  <p class="gate-text" data-gate-text>A new version is out. Crescent installs every update before it opens, as updates can carry security fixes. It takes a minute or so, and your pages and settings are kept.</p>
+  <h1 data-gate-title>Update crescent to ${latest}</h1>
+  <p class="gate-text" data-gate-text>A new version is out. crescent installs every update before it opens, as updates can carry security fixes. It takes a minute or so, and your pages and settings are kept.</p>
   <a class="gate-notes" href="${escapeHtml(v.notesUrl)}" target="_blank" rel="noopener">What's new in ${latest}</a>
   <div class="gate-progress" data-gate-progress hidden></div>
   <div class="gate-actions" data-gate-actions>
@@ -80,7 +80,7 @@ const GATE_SCRIPT = `
     actions.hidden = !buttons.length;
   }
   const busy = () =>
-    show("Updating Crescent to " + latest + "…", "Crescent opens by itself when it's done. Your pages and settings are kept.", true);
+    show("Updating crescent to " + latest + "…", "crescent opens by itself when it's done. Your pages and settings are kept.", true);
 
   async function getStatus() {
     const res = await fetch("/_update", { headers: { accept: "application/json" }, cache: "no-store" });
@@ -93,7 +93,7 @@ const GATE_SCRIPT = `
       "The update didn't install",
       (reason ? reason + " " : "") +
         "Check the internet connection and try again; details are in " + log + ". " +
-        "Until then, Crescent " + current + " still works, and it asks again the next time it opens.",
+        "Until then, crescent " + current + " still works, and it asks again the next time it opens.",
       false,
       button("Try again", "secondary", install),
       button("Continue with " + current, "primary", () => {

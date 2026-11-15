@@ -55,7 +55,7 @@ test("page policy: an asset keeps its sandbox policy and is refused a frame too"
   });
 });
 
-test("page policy: a widget may still be framed by Crescent's own pages", async () => {
+test("page policy: a widget may still be framed by crescent's own pages", async () => {
   await withServer(async (app) => {
     const res = await app.inject({ url: "/_embed/docs/_assets/w.html" });
     assert.equal(res.statusCode, 200);
@@ -64,7 +64,7 @@ test("page policy: a widget may still be framed by Crescent's own pages", async 
   });
 });
 
-test("page policy: a page loads images, sound, video and fonts from Crescent alone", () => {
+test("page policy: a page loads images, sound, video and fonts from crescent alone", () => {
   const directives = new Map(PAGE_POLICY.split("; ").map((d) => [d.split(" ")[0], d.split(" ").slice(1)] as const));
   assert.deepEqual(directives.get("img-src"), ["'self'", "data:", "blob:"]);
   assert.deepEqual(directives.get("media-src"), ["'self'", "blob:"]);

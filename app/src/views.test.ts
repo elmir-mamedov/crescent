@@ -264,7 +264,7 @@ type PrintWindow = {
 
 /**
  * Runs PRINT_SCRIPT on the page kb25/notes holding links to `hrefs`: in
- * Crescent's macOS window, which takes the print over, when `shell` is set,
+ * crescent's macOS window, which takes the print over, when `shell` is set,
  * and otherwise in a browser whose print() is `print`.
  */
 function printRig(
@@ -2142,7 +2142,7 @@ test("views: after an update the card says so from the server's record, and clos
   const html = layout(pageView());
   const script = html.slice(html.indexOf('const card = document.querySelector("[data-update]")'));
   assert.match(script, /if \(s\.updated\) return updated\(s\);/);
-  assert.match(script, /"Crescent is updated to " \+ u\.to/);
+  assert.match(script, /"crescent is updated to " \+ u\.to/);
   assert.match(script, /"What's new in " \+ u\.to/);
   assert.match(script, /notes\.href = u\.notesUrl;/);
   assert.match(script, /u\.messages\.map\(\(m\) => el\("p", "update-text update-message", label\(m\)\)\)/);
@@ -2168,7 +2168,7 @@ function gateView(overrides: Partial<UpdateGateView> = {}): UpdateGateView {
 
 test("feedback #21: the update gate's only way on is installing, then the app opens on the new version", () => {
   const html = updateGateLayout(gateView());
-  assert.match(html, /<h1 data-gate-title>Update Crescent to 0\.16\.0<\/h1>/);
+  assert.match(html, /<h1 data-gate-title>Update crescent to 0\.16\.0<\/h1>/);
   assert.match(html, /<button type="button" class="button primary" data-gate-install>Install update<\/button>/);
   assert.match(html, /href="https:\/\/example\.test\/releases\/tag\/v0\.16\.0" target="_blank"/);
   // Nothing on the page leads to the app until the script lets it.
@@ -2384,7 +2384,7 @@ test("feedback #65: momentum goes nowhere, held up by a busy page or put back fr
   assert.deepEqual(left.went, ["back"]);
 });
 
-test("feedback #26, #27: only Crescent's window, swiping with two fingers, gets the swipe", () => {
+test("feedback #26, #27: only crescent's window, swiping with two fingers, gets the swipe", () => {
   for (const shell of [undefined, { swipe: false }]) {
     const rig = swipeRig(shell);
     assert.equal(rig.listeners.size, 0);
@@ -2557,7 +2557,7 @@ test("views: a launcher-started server's corner offers Quit, behind a confirmati
     spacesLayout({ siteTitle: "KB", spaces: [], username: "" } as SpacesView),
     layout(pageView()),
   ])) {
-    assert.match(html, /<button type="button" class="quit-button" data-quit-open aria-label="Quit Crescent"/);
+    assert.match(html, /<button type="button" class="quit-button" data-quit-open aria-label="Quit crescent"/);
     assert.match(html, /<dialog class="help-dialog" data-quit-dialog tabindex="-1">/);
     assert.match(html, /data-quit-confirm/);
     assert.match(html, /fetch\("\/_quit", \{ method: "POST" \}\)/);
@@ -3541,7 +3541,7 @@ test("tabs: every view with the corner draws the strip first, hidden until there
   }
 });
 
-test("tabs: only Crescent's own window reopens what it had open", () => {
+test("tabs: only crescent's own window reopens what it had open", () => {
   const strip = (html: string) => html.match(/<nav class="tab-strip"[^>]*>/)?.[0] ?? "";
   assert.doesNotMatch(strip(layout(pageView())), /data-tabs-reopen/);
   assert.match(strip(asDesktop(() => layout(pageView()))), /data-tabs-reopen/);

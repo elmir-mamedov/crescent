@@ -528,7 +528,7 @@ export const CHAT_SCRIPT = `
     const status = await getJson("/_chat/status" + (fresh ? "?fresh=1" : ""));
     if (!status) {
       log.hidden = false;
-      return showError("Crescent didn't answer. Is it still running?");
+      return showError("crescent didn't answer. Is it still running?");
     }
     engines = status.engines || [];
     if (!ready().length) return showSetup();
@@ -683,7 +683,7 @@ export const CHAT_SCRIPT = `
         log.append(problem);
         return scrollDown();
       }
-      return showError(res ? body.error || "That message couldn't be sent." : "Crescent didn't answer. Is it still running?");
+      return showError(res ? body.error || "That message couldn't be sent." : "crescent didn't answer. Is it still running?");
     }
     // Sent, so no longer a draft; until here a failed send leaves it all in place.
     input.value = "";

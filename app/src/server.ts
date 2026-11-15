@@ -67,7 +67,7 @@ if (!install && !envFlag("KB25_DEV_REAL_KB")) {
   const installedKb = installedKbDir();
   if (installedKb && sameDir(installedKb, KB_DIR)) {
     console.error(
-      `${KB_DIR} is where your installed Crescent keeps its pages, and a checkout's ` +
+      `${KB_DIR} is where your installed crescent keeps its pages, and a checkout's ` +
         "server would commit every trial edit to them. Point KB_DIR at another folder " +
         "(npm run dev:reset makes a sample KB in kb/), or set KB25_DEV_REAL_KB=1 to open it anyway."
     );

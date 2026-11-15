@@ -28,14 +28,14 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 export function crossSiteRefusal(req: RequestOrigin): string | null {
   const host = urlHost(`http://${req.host ?? ""}`);
   if (!host || !isLoopbackHost(new URL(`http://${host}`).hostname)) {
-    return "Crescent only answers to localhost.";
+    return "crescent only answers to localhost.";
   }
   if (SAFE_METHODS.has(req.method.toUpperCase())) return null;
   if (req.origin !== undefined) {
-    return urlHost(req.origin) === host ? null : "Crescent refuses changes sent from another site.";
+    return urlHost(req.origin) === host ? null : "crescent refuses changes sent from another site.";
   }
   if (req.secFetchSite && req.secFetchSite !== "same-origin" && req.secFetchSite !== "none") {
-    return "Crescent refuses changes sent from another site.";
+    return "crescent refuses changes sent from another site.";
   }
   return null;
 }

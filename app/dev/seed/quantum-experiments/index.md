@@ -2,7 +2,7 @@
 title: Quantum Experiments
 id: 24ruefywzek7k
 icon: 🔬
-summary: The experiments that forced quantum mechanics on physics. Sample pages for testing Crescent.
+summary: The experiments that forced quantum mechanics on physics. Sample pages for testing crescent.
 ---
 Each idea in [[id:10hyryhp6ed4n|Quantum Mechanics]] began as an experimental result that classical physics couldn't explain. This space describes two of them.
 

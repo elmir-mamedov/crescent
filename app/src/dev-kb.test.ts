@@ -108,7 +108,7 @@ test("resetDevKb never deletes the installed copy's KB, even one it made", async
   try {
     const kbDir = path.join(tmp.dir, "kb");
     await resetDevKb(kbDir, { installedKb: null });
-    await assert.rejects(resetDevKb(kbDir, { installedKb: kbDir }), /installed Crescent/);
+    await assert.rejects(resetDevKb(kbDir, { installedKb: kbDir }), /installed crescent/);
     assert.ok(fs.existsSync(path.join(kbDir, seedSpaces[0], "index.md")));
   } finally {
     await tmp.cleanup();

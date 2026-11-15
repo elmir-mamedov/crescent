@@ -8,9 +8,9 @@
 // opening KB25's window.
 // KB25_UPDATE=1 is the viewer's Update button: it answers no to every question,
 // because an update changes the app and never the choices made at install, and
-// it restarts Crescent on the new version: an open window is closed and opened
+// it restarts crescent on the new version: an open window is closed and opened
 // again, and otherwise the server restarts in the background. Run by hand, an
-// update closes an open window before it replaces the app, and "Open Crescent
+// update closes an open window before it replaces the app, and "Open crescent
 // now?" opens the new version's.
 import { execFileSync, execSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -39,18 +39,25 @@ const staged = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const p = paths();
 const UPDATING = Boolean(process.env.KB25_UPDATE);
 
-const MAC_APP = path.join(os.homedir(), "Applications", "Crescent.app");
+const MAC_APP = path.join(os.homedir(), "Applications", "crescent.app");
 const START_MENU_LINK = path.join(
   process.env.APPDATA ?? "",
   "Microsoft",
   "Windows",
   "Start Menu",
   "Programs",
-  "Crescent.lnk"
+  "crescent.lnk"
 );
 /** What KB25 0.12.0 and earlier named them; an update replaces them with the two above. */
 const OLD_MAC_APP = path.join(os.homedir(), "Applications", "KB25.app");
 const OLD_START_MENU_LINK = path.join(path.dirname(START_MENU_LINK), "KB25.lnk");
+/**
+ * What 0.13.0 to 0.22.0 named them, before crescent was written in lowercase.
+ * A disk that ignores case, as most do, takes either name for the other, so
+ * these go before the two above are written, never after.
+ */
+const CAPITALIZED_MAC_APP = path.join(path.dirname(MAC_APP), "Crescent.app");
+const CAPITALIZED_START_MENU_LINK = path.join(path.dirname(START_MENU_LINK), "Crescent.lnk");
 const CLAUDE_DESKTOP_DIR = isMac
   ? path.join(os.homedir(), "Library", "Application Support", "Claude")
   : path.join(process.env.APPDATA ?? "", "Claude");
@@ -85,11 +92,11 @@ async function main() {
 
   const version = readVersion(staged);
   const installed = staged === p.app ? version : readVersion(p.app);
-  if (UPDATING && !installed) throw new Error("Crescent isn't installed here, so there is nothing to update.");
+  if (UPDATING && !installed) throw new Error("crescent isn't installed here, so there is nothing to update.");
   if (installed === version) {
-    console.log(`Crescent ${version} is already up to date.`);
+    console.log(`crescent ${version} is already up to date.`);
     if (staged !== p.app) fs.rmSync(staged, { recursive: true, force: true });
-    if (await ask("Remove Crescent from this computer?", false)) return uninstall();
+    if (await ask("Remove crescent from this computer?", false)) return uninstall();
   } else {
     await stopServer(p); // an update must not keep serving the old version
     // Nor keep its window, which would go on running the old version's code
@@ -100,7 +107,7 @@ async function main() {
     if (!UPDATING) await closeWindow();
     replaceApp();
     if (installed) recordUpdate(p.updatedFile, installed, version);
-    console.log(installed ? `Updated Crescent ${installed} → ${version}.` : `Installed Crescent ${version}.`);
+    console.log(installed ? `Updated crescent ${installed} → ${version}.` : `Installed crescent ${version}.`);
   }
 
   const kbDir = await ensureSettings();
@@ -117,24 +124,24 @@ async function main() {
     // KB25_NO_BROWSER comes from the window, by way of the server that ran this.
     const { KB25_UPDATE, KB25_NO_BROWSER, ...env } = process.env;
     // An open window would go on running the old version's window until it was
-    // quit. Restart it on the new one, as quitting and opening Crescent would:
+    // quit. Restart it on the new one, as quitting and opening crescent would:
     // its server first, which an update to the same version left running.
     if (window && openWindows().length) {
       await stopServer(p);
       await closeWindow();
       openKb25(window, { ...env, ...moved }, { fresh: true });
-      console.log("Restarted Crescent on the new version.");
+      console.log("Restarted crescent on the new version.");
       return;
     }
     // No window (a browser tab): the server was stopped before the app was
     // swapped; start it again on the new version for the page waiting on it.
     launch({ ...env, ...moved, KB25_NO_BROWSER: "1" });
-    console.log("Starting Crescent again in the background.");
+    console.log("Starting crescent again in the background.");
     return;
   }
-  const where = isMac ? 'Spotlight (Cmd+Space, type "Crescent")' : 'the Start menu (type "Crescent")';
-  console.log(`\nAll set! Open Crescent any time from ${where}.`);
-  if (await ask("Open Crescent now?")) openKb25(window, { ...process.env, ...moved });
+  const where = isMac ? 'Spotlight (Cmd+Space, type "crescent")' : 'the Start menu (type "crescent")';
+  console.log(`\nAll set! Open crescent any time from ${where}.`);
+  if (await ask("Open crescent now?")) openKb25(window, { ...process.env, ...moved });
 }
 
 /** Run the launcher, which starts the server unless it answers already. */
@@ -165,12 +172,13 @@ function openKb25(window, env, { fresh = false } = {}) {
 }
 
 /**
- * The pids of KB25's windows now open. KB25.app's as well: a window opened
- * from it keeps running through the update that replaces it with Crescent.app.
+ * The pids of KB25's windows now open. KB25.app's and Crescent.app's as well:
+ * a window opened from either keeps running, under the name it was opened by,
+ * through the update that replaces it with crescent.app.
  */
 function openWindows() {
   if (isMac) {
-    return [MAC_APP, OLD_MAC_APP].flatMap((bundle) => {
+    return [MAC_APP, CAPITALIZED_MAC_APP, OLD_MAC_APP].flatMap((bundle) => {
       try {
         const out = execFileSync("pgrep", ["-f", path.join(bundle, "Contents", "MacOS", "KB25")], { encoding: "utf8" });
         return out.split("\n").filter(Boolean).map(Number);
@@ -296,8 +304,8 @@ async function ensureSettings() {
   fs.writeFileSync(
     p.envFile,
     [
-      "# Crescent settings, written by the installer and kept across updates.",
-      "# Sign-in is off: Crescent only answers on this computer (localhost).",
+      "# crescent settings, written by the installer and kept across updates.",
+      "# Sign-in is off: crescent only answers on this computer (localhost).",
       `KB_DIR=${kbDir}`,
       `PORT=${await freePort(PORT_FROM)}`,
       "AUTH_DISABLED=1",
@@ -325,7 +333,7 @@ async function moveOffDevPort() {
   await stopServer(p); // an up-to-date copy is still running on the old port
   const next = await freePort(PORT_FROM);
   setEnvValue("PORT", next);
-  console.log(`Crescent moved from port ${port} to ${next}, out of the way of dev servers.`);
+  console.log(`crescent moved from port ${port} to ${next}, out of the way of dev servers.`);
   return port;
 }
 
@@ -337,7 +345,7 @@ async function adoptExistingKb(current) {
       names.length > 4 ? `${names.slice(0, 4).join(", ")} and ${names.length - 4} more` : names.join(", ");
     const count = `${names.length} ${names.length === 1 ? "space" : "spaces"}`;
     console.log(`Found a knowledge base at ${tildify(dir)} (${count}: ${shown}).`);
-    if (await ask("Use it for Crescent?")) return dir;
+    if (await ask("Use it for crescent?")) return dir;
   }
   return null;
 }
@@ -415,6 +423,7 @@ function canListen(port, host) {
  */
 function createLauncher() {
   if (isMac) {
+    removeMacApp(CAPITALIZED_MAC_APP);
     writeMacApp({
       bundle: MAC_APP,
       executable: p.macShell,
@@ -427,6 +436,7 @@ function createLauncher() {
   }
   if (isWindows) {
     const exe = installWindowsShell();
+    fs.rmSync(CAPITALIZED_START_MENU_LINK, { force: true });
     fs.mkdirSync(path.dirname(START_MENU_LINK), { recursive: true });
     powershell(
       [
@@ -495,19 +505,19 @@ async function connectClaudeDesktop() {
   if (!claudeDesktopInstalled()) return;
   const config = readClaudeDesktopConfig();
   if (!config) {
-    console.log("Couldn't read the Claude app's settings file, so Crescent wasn't connected to it.");
+    console.log("Couldn't read the Claude app's settings file, so crescent wasn't connected to it.");
     return;
   }
   const entry = { command: p.node, args: [p.mcp] };
   if (JSON.stringify(config.mcpServers?.kb25) === JSON.stringify(entry)) {
-    console.log("The Claude app is already connected to Crescent.");
+    console.log("The Claude app is already connected to crescent.");
     return;
   }
-  if (!(await ask("Connect Crescent to the Claude app?"))) return;
+  if (!(await ask("Connect crescent to the Claude app?"))) return;
   config.mcpServers = { ...config.mcpServers, kb25: entry };
   fs.mkdirSync(CLAUDE_DESKTOP_DIR, { recursive: true });
   fs.writeFileSync(CLAUDE_DESKTOP_CONFIG, `${JSON.stringify(config, null, 2)}\n`);
-  console.log("Connected. Quit and reopen the Claude app to use Crescent there.");
+  console.log("Connected. Quit and reopen the Claude app to use crescent there.");
 }
 
 function disconnectClaudeDesktop() {
@@ -533,26 +543,26 @@ function claude(args) {
 async function connectClaudeCode() {
   if (claude(["--version"]) === null) return;
   if (claude(["mcp", "get", "kb25"])?.includes(p.mcp)) {
-    console.log("Claude Code is already connected to Crescent.");
+    console.log("Claude Code is already connected to crescent.");
     return;
   }
-  if (!(await ask("Connect Crescent to Claude Code?"))) return;
+  if (!(await ask("Connect crescent to Claude Code?"))) return;
   if (claude(["mcp", "add", "--scope", "user", "kb25", "--", p.node, p.mcp]) === null) {
     console.log("Claude Code didn't accept the connection, so it was skipped.");
     return;
   }
-  console.log("Connected. Start a new Claude Code session to use Crescent there.");
+  console.log("Connected. Start a new Claude Code session to use crescent there.");
 }
 
 /**
  * Releases up to 0.22.0 copied a page-writing skill into Claude Code; the MCP
  * server carries its rules to every client now. The copy goes only when it is
- * provably Crescent's and unchanged (removeShippedSkill), and whether or not
+ * provably crescent's and unchanged (removeShippedSkill), and whether or not
  * claude is found: an update started from the window seldom finds it.
  */
 function removeOldSkill() {
   if (removeShippedSkill(SKILL_DIR)) {
-    console.log("Removed the page-writing skill Crescent used to keep in Claude Code: Claude gets its rules from Crescent now.");
+    console.log("Removed the page-writing skill crescent used to keep in Claude Code: Claude gets its rules from crescent now.");
   }
 }
 
@@ -568,8 +578,10 @@ async function uninstall() {
   const kbDir = readEnvFile(p.envFile).KB_DIR;
   await closeWindow();
   await stopServer(p);
-  if (isMac) [MAC_APP, OLD_MAC_APP].forEach(removeMacApp);
-  if (isWindows) [START_MENU_LINK, OLD_START_MENU_LINK].forEach((link) => fs.rmSync(link, { force: true }));
+  if (isMac) [MAC_APP, CAPITALIZED_MAC_APP, OLD_MAC_APP].forEach(removeMacApp);
+  if (isWindows) {
+    [START_MENU_LINK, CAPITALIZED_START_MENU_LINK, OLD_START_MENU_LINK].forEach((link) => fs.rmSync(link, { force: true }));
+  }
   disconnectClaudeDesktop();
   disconnectClaudeCode();
 
@@ -587,5 +599,5 @@ async function uninstall() {
   } else {
     fs.rmSync(p.home, { recursive: true, force: true });
   }
-  console.log(`Crescent is removed.${kbDir ? ` Your pages are still in ${tildify(kbDir)}.` : ""}`);
+  console.log(`crescent is removed.${kbDir ? ` Your pages are still in ${tildify(kbDir)}.` : ""}`);
 }

@@ -82,12 +82,17 @@ jobs:
       # the server again without asking anything. Posing as 0.0.0 makes the
       # same zip count as an update. A copy of the launcher under its KB25
       # name stands in for one 0.12.0 and earlier left, which the update
-      # must remove.
+      # must remove, and the launcher itself takes the capitalized name it
+      # had through 0.22.0, which the update must write in lowercase again
+      # (renamed by way of another name, which a disk that ignores case
+      # needs for a change of case alone).
       - name: Update without a terminal (macOS)
         if: runner.os == 'macOS'
         run: |
           echo 0.0.0 > "$HOME/Library/Application Support/KB25/app/VERSION"
-          cp -R "$HOME/Applications/Crescent.app" "$HOME/Applications/KB25.app"
+          cp -R "$HOME/Applications/crescent.app" "$HOME/Applications/KB25.app"
+          mv "$HOME/Applications/crescent.app" "$HOME/Applications/renaming.app"
+          mv "$HOME/Applications/renaming.app" "$HOME/Applications/Crescent.app"
           env -u KB25_YES KB25_UPDATE=1 KB25_ZIP="$PWD/release/kb25.zip" bash release/install.sh < /dev/null
       - name: Update without a terminal (Windows)
         if: runner.os == 'Windows'
@@ -95,7 +100,9 @@ jobs:
         run: |
           Set-Content "$env:LOCALAPPDATA\KB25\app\VERSION" '0.0.0'
           $programs = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
-          Copy-Item "$programs\Crescent.lnk" "$programs\KB25.lnk"
+          Copy-Item "$programs\crescent.lnk" "$programs\KB25.lnk"
+          Move-Item "$programs\crescent.lnk" "$programs\renaming.lnk"
+          Move-Item "$programs\renaming.lnk" "$programs\Crescent.lnk"
           Remove-Item Env:KB25_YES
           $env:KB25_UPDATE = '1'
           $env:KB25_ZIP = "$PWD\release\kb25.zip"
@@ -114,6 +121,6 @@ jobs:
       - run: >
           gh release create "$GITHUB_REF_NAME"
           release/kb25.zip release/install.sh release/install.ps1 release/VERSION
-          --repo "$GITHUB_REPOSITORY" --title "Crescent $GITHUB_REF_NAME" --generate-notes
+          --repo "$GITHUB_REPOSITORY" --title "crescent $GITHUB_REF_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

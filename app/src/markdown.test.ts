@@ -1047,7 +1047,7 @@ test("isGalleryImageSrc: an image in a space's _assets/, and nothing else", () =
     "/\\attacker.example/p.png",
     "ht\ttps://attacker.example/p.png",
     "ftp://attacker.example/p.png",
-    // Crescent, but not an image in a gallery: a GET with side effects among them.
+    // crescent, but not an image in a gallery: a GET with side effects among them.
     "/_instructions?space=kb25",
     "/_chat/status?fresh=1",
     "/kb25/_assets/../../_instructions?space=kb25",
