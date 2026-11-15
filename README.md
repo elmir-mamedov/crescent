@@ -99,9 +99,9 @@ images attached to them, are stored in the `.kb25/chat` folder of your
 knowledge base, separate from the spaces.
 
 **Using crescent from Claude.** Once connected during installation, the Claude
-app and Claude Code can search, read and write your pages through the kb25 MCP
-server. Changes made this way are committed like any other edit, and the
-sidebar marks the new pages until you open them.
+app and Claude Code can search, read and write your pages through crescent's
+MCP server, which they list as crescent. Changes made this way are committed
+like any other edit, and the sidebar marks the new pages until you open them.
 
 ## Updating and removing
 

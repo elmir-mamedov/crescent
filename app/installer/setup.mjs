@@ -62,6 +62,14 @@ const CLAUDE_DESKTOP_DIR = isMac
   ? path.join(os.homedir(), "Library", "Application Support", "Claude")
   : path.join(process.env.APPDATA ?? "", "Claude");
 const CLAUDE_DESKTOP_CONFIG = path.join(CLAUDE_DESKTOP_DIR, "claude_desktop_config.json");
+/**
+ * The name crescent's MCP server is registered under in Claude Code and the
+ * Claude app, which they show for it and which their Claude knows it by.
+ * 0.22.0 and earlier registered it as kb25, a name nobody knew, which an
+ * update renames: the person chose to connect it then, so without asking.
+ */
+const MCP_NAME = "crescent";
+const OLD_MCP_NAME = "kb25";
 /** The per-user file src/mcp.ts reads KB_DIR from; the retired kb25 plugin kept it there. */
 const USER_ENV_FILE = path.join(
   process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
@@ -359,7 +367,7 @@ async function adoptExistingKb(current) {
 function existingKbs(current) {
   const named = [
     readEnvFile(USER_ENV_FILE).KB_DIR,
-    readClaudeDesktopConfig()?.mcpServers?.kb25?.env?.KB_DIR,
+    readClaudeDesktopConfig()?.mcpServers?.[OLD_MCP_NAME]?.env?.KB_DIR,
     path.join(os.homedir(), "KB25"),
   ];
   const found = new Set();
@@ -509,21 +517,30 @@ async function connectClaudeDesktop() {
     return;
   }
   const entry = { command: p.node, args: [p.mcp] };
-  if (JSON.stringify(config.mcpServers?.kb25) === JSON.stringify(entry)) {
+  const renaming = config.mcpServers?.[OLD_MCP_NAME]?.command === p.node;
+  if (!renaming && JSON.stringify(config.mcpServers?.[MCP_NAME]) === JSON.stringify(entry)) {
     console.log("The Claude app is already connected to crescent.");
     return;
   }
-  if (!(await ask("Connect crescent to the Claude app?"))) return;
-  config.mcpServers = { ...config.mcpServers, kb25: entry };
+  if (!renaming && !(await ask("Connect crescent to the Claude app?"))) return;
+  // Replacing a kb25 entry, as connecting did when it was the name: this one,
+  // or one written by hand before the installer (existingKbs).
+  const { [OLD_MCP_NAME]: replaced, ...others } = config.mcpServers ?? {};
+  config.mcpServers = { ...others, [MCP_NAME]: entry };
   fs.mkdirSync(CLAUDE_DESKTOP_DIR, { recursive: true });
   fs.writeFileSync(CLAUDE_DESKTOP_CONFIG, `${JSON.stringify(config, null, 2)}\n`);
-  console.log("Connected. Quit and reopen the Claude app to use crescent there.");
+  console.log(
+    renaming
+      ? "Renamed crescent's connection in the Claude app from kb25 to crescent. Quit and reopen the Claude app to use it there."
+      : "Connected. Quit and reopen the Claude app to use crescent there."
+  );
 }
 
 function disconnectClaudeDesktop() {
   const config = readClaudeDesktopConfig();
-  if (config?.mcpServers?.kb25?.command !== p.node) return;
-  delete config.mcpServers.kb25;
+  const ours = [MCP_NAME, OLD_MCP_NAME].filter((name) => config?.mcpServers?.[name]?.command === p.node);
+  if (!ours.length) return;
+  for (const name of ours) delete config.mcpServers[name];
   fs.writeFileSync(CLAUDE_DESKTOP_CONFIG, `${JSON.stringify(config, null, 2)}\n`);
 }
 
@@ -540,18 +557,32 @@ function claude(args) {
   }
 }
 
+/** Whether Claude Code has this install's MCP server under `name`. */
+function claudeCodeHas(name) {
+  return Boolean(claude(["mcp", "get", name])?.includes(p.mcp));
+}
+
 async function connectClaudeCode() {
   if (claude(["--version"]) === null) return;
-  if (claude(["mcp", "get", "kb25"])?.includes(p.mcp)) {
+  const renaming = claudeCodeHas(OLD_MCP_NAME);
+  const connected = claudeCodeHas(MCP_NAME);
+  if (connected && !renaming) {
     console.log("Claude Code is already connected to crescent.");
     return;
   }
-  if (!(await ask("Connect crescent to Claude Code?"))) return;
-  if (claude(["mcp", "add", "--scope", "user", "kb25", "--", p.node, p.mcp]) === null) {
-    console.log("Claude Code didn't accept the connection, so it was skipped.");
+  if (!connected) {
+    if (!renaming && !(await ask("Connect crescent to Claude Code?"))) return;
+    if (claude(["mcp", "add", "--scope", "user", MCP_NAME, "--", p.node, p.mcp]) === null) {
+      console.log("Claude Code didn't accept the connection, so it was skipped.");
+      return;
+    }
+  }
+  if (!renaming) {
+    console.log("Connected. Start a new Claude Code session to use crescent there.");
     return;
   }
-  console.log("Connected. Start a new Claude Code session to use crescent there.");
+  claude(["mcp", "remove", "--scope", "user", OLD_MCP_NAME]);
+  console.log("Renamed crescent's connection in Claude Code from kb25 to crescent. Start a new Claude Code session to use it there.");
 }
 
 /**
@@ -567,8 +598,8 @@ function removeOldSkill() {
 }
 
 function disconnectClaudeCode() {
-  if (claude(["mcp", "get", "kb25"])?.includes(p.mcp)) {
-    claude(["mcp", "remove", "--scope", "user", "kb25"]);
+  for (const name of [MCP_NAME, OLD_MCP_NAME]) {
+    if (claudeCodeHas(name)) claude(["mcp", "remove", "--scope", "user", name]);
   }
   removeShippedSkill(SKILL_DIR);
 }
