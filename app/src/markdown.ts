@@ -465,36 +465,71 @@ function singleDollar(
  * Markdown keeps `\[1\]` or `\[sic\]` from starting a link, and converters such
  * as Pandoc write every bracket that way. A parenthesis rarely needs escaping,
  * so `\(n\)` is taken as it stands.
+ *
+ * The same delimiters doubled, `\\(…\\)` and `\\[…\\]`, are the convention of
+ * sites that run MathJax in the browser, where Markdown eats one backslash
+ * before MathJax sees the formula, and agents write them too (feedback issue
+ * #76). The formula is what such a site would typeset: what is between the
+ * delimiters read as Markdown text, so `\\circ` is `\circ` and `\,` a comma.
+ * Escaping a backslash is also how Markdown shows a literal `\(`, so the
+ * doubled form is taken only when what it holds reads as TeX.
+ *
+ * This is the last form the renderer learns. A page an agent writes through
+ * the MCP server is put into `$…$` and `$$…$$` before it is saved
+ * (math-normalize.ts), and a new way of writing math is handled there, as a
+ * conversion or a refusal the agent can act on, rather than by another rule
+ * here.
  */
 function mathBracketInline(state: StateInline, silent: boolean): boolean {
   const src = state.src;
   const start = state.pos;
   if (src.charCodeAt(start) !== 0x5c /* \ */) return false;
-  const opener = src.charCodeAt(start + 1);
+  const doubled = src.charCodeAt(start + 1) === 0x5c;
+  const open = doubled ? 3 : 2;
+  const opener = src.charCodeAt(start + open - 1);
   const display = opener === 0x5b; /* [ */
   if (!display && opener !== 0x28 /* ( */) return false;
   const closer = display ? 0x5d /* ] */ : 0x29; /* ) */
 
-  let end = -1;
-  for (let pos = start + 2; pos < state.posMax - 1; pos += 1) {
-    if (src.charCodeAt(pos) !== 0x5c) continue;
-    if (src.charCodeAt(pos + 1) === closer) {
-      end = pos;
-      break;
-    }
-    pos += 1; // `\\`, `\{` and the like are TeX's own, never the closer
-  }
+  const end = bracketCloser(src, start + open, state.posMax, closer, doubled);
   if (end < 0) return false;
-  const tex = src.slice(start + 2, end).trim();
-  if (!tex || (display && !readsAsTex(tex))) return false;
+  const inner = src.slice(start + open, end);
+  const tex = (doubled ? unescapeMarkdown(inner) : inner).trim();
+  if (!tex || ((display || doubled) && !readsAsTex(tex))) return false;
 
   if (!silent) {
     const token = state.push("math_inline", "math", 0);
     token.content = tex;
-    token.markup = display ? "\\[" : "\\(";
+    token.markup = src.slice(start, start + open);
   }
-  state.pos = end + 2;
+  state.pos = end + open;
   return true;
+}
+
+/**
+ * Where the `\)` or `\]` (`\\)` or `\\]` when `doubled`) closing a formula
+ * opened before `from` starts, or -1. A backslash and the character after it
+ * are taken together, so `\\`, `\{` and the like are TeX's own, never the
+ * closer.
+ */
+export function bracketCloser(src: string, from: number, max: number, closer: number, doubled: boolean): number {
+  const width = doubled ? 3 : 2;
+  for (let pos = from; pos + width <= max; pos += 1) {
+    if (src.charCodeAt(pos) !== 0x5c) continue;
+    if (doubled ? src.charCodeAt(pos + 1) === 0x5c && src.charCodeAt(pos + 2) === closer : src.charCodeAt(pos + 1) === closer) {
+      return pos;
+    }
+    pos += 1;
+  }
+  return -1;
+}
+
+/**
+ * Text as Markdown reads it, before any other rule: a backslash before ASCII
+ * punctuation escapes it, and every other backslash stays.
+ */
+export function unescapeMarkdown(text: string): string {
+  return text.replace(/\\([!-/:-@[-`{-~])/g, "$1");
 }
 
 /**
@@ -503,7 +538,7 @@ function mathBracketInline(state: StateInline, silent: boolean): boolean {
  * brace, or relation that prose between brackets would not have. A display
  * formula with none of them — a lone `\[x\]` — stays text.
  */
-function readsAsTex(tex: string): boolean {
+export function readsAsTex(tex: string): boolean {
   return /\\[A-Za-z]|[\^_{}=<>+]/.test(tex);
 }
 
@@ -528,38 +563,40 @@ function spacedReadsAsTex(tex: string): boolean {
 }
 
 /** Whether a math token's delimiters ask for display rather than inline. */
-function isDisplayMath(markup: string): boolean {
-  return markup === "$$" || markup === "\\[";
+export function isDisplayMath(markup: string): boolean {
+  return markup === "$$" || markup === "\\[" || markup === "\\\\[";
 }
 
 /**
- * A `$$` or `\[` display formula standing as its own block. The inline rules
- * would take it too, but only while its lines read as a paragraph — a line
- * inside it that starts `- ` or `1. ` would break it into a list first. A blank
- * line ends the search for the closer (TeX refuses one in math anyway), so a
- * formula left unclosed costs a paragraph of raw text rather than the rest of
- * the page.
+ * A `$$`, `\[` or `\\[` display formula standing as its own block. The inline
+ * rules would take it too, but only while its lines read as a paragraph — a
+ * line inside it that starts `- ` or `1. ` would break it into a list first. A
+ * blank line ends the search for the closer (TeX refuses one in math anyway),
+ * so a formula left unclosed costs a paragraph of raw text rather than the rest
+ * of the page.
  */
 function mathBlock(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
   if (state.sCount[startLine] - state.blkIndent >= 4) return false;
   const first = blockLine(state, startLine);
-  // Both pairs are two characters, which the slicing below relies on.
   const delimiters = first.startsWith("$$")
     ? ["$$", "$$"]
     : first.startsWith("\\[")
       ? ["\\[", "\\]"]
-      : undefined;
+      : first.startsWith("\\\\[")
+        ? ["\\\\[", "\\\\]"]
+        : undefined;
   if (!delimiters) return false;
   const [opener, closer] = delimiters;
+  const width = opener.length;
 
   let tex: string;
   let last = startLine;
-  const close = first.indexOf(closer, 2);
+  const close = first.indexOf(closer, width);
   if (close >= 0) {
     // One line, `$$ … $$`. Anything after the closer makes it a paragraph that
     // opens with a formula, which the inline rules handle.
-    if (first.slice(close + 2).trim()) return false;
-    tex = first.slice(2, close);
+    if (first.slice(close + width).trim()) return false;
+    tex = first.slice(width, close);
   } else {
     for (last = startLine + 1; last < endLine; last += 1) {
       const line = blockLine(state, last);
@@ -569,9 +606,12 @@ function mathBlock(state: StateBlock, startLine: number, endLine: number, silent
     if (last >= endLine) return false;
     const between =
       last > startLine + 1 ? [state.getLines(startLine + 1, last, state.blkIndent, false)] : [];
-    tex = [first.slice(2), ...between, blockLine(state, last).trimEnd().slice(0, -2)].join("\n");
+    tex = [first.slice(width), ...between, blockLine(state, last).trimEnd().slice(0, -width)].join("\n");
   }
-  if (!tex.trim() || (opener === "\\[" && !readsAsTex(tex))) return false;
+  // The doubled form's formula is its text as Markdown reads it (see
+  // mathBracketInline).
+  if (opener === "\\\\[") tex = unescapeMarkdown(tex);
+  if (!tex.trim() || (opener !== "$$" && !readsAsTex(tex))) return false;
   if (silent) return true;
 
   const token = state.push("math_block", "math", 0);
