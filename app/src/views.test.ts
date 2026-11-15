@@ -1749,6 +1749,12 @@ test("a selection dragged across a page passes over a widget: its frame can't be
   assert.doesNotMatch(html, /figcaption\{[^}]*user-select/);
 });
 
+test("a widget's frame is hidden until its widget arrives, so a dark page never shows it white", () => {
+  const html = layout(pageView({ contentHtml: WIDGET_PAGE }));
+  assert.match(html, /\.prose \.widget-frame:not\(\.is-loaded\)\{visibility:hidden\}/);
+  assert.match(html, /frame\.classList\.add\("is-loaded"\)/);
+});
+
 test("feedback #33: a page with a diagram gets the viewer that opens it large", () => {
   const html = layout(pageView({ contentHtml: MERMAID_PAGE }));
   assert.match(html, /<template data-diagram-expand-template><button type="button" class="diagram-expand" data-diagram-expand aria-label="Expand diagram" title="Expand diagram"><svg /);

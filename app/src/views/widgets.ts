@@ -139,6 +139,10 @@ ${own}`;
  * from one of this page's own frames, found by the window it came from, since
  * a sandboxed frame's origin is opaque and names nothing.
  *
+ * A frame stays hidden (styles.ts) until it is marked `is-loaded`, at its
+ * first load or first message, whichever comes first: until then it holds the
+ * empty document a browser paints white on a dark page.
+ *
  * A widget's frame loads once. A second load is the widget leaving for
  * another page, which its sandbox can't stop, so the frame is swapped for a
  * line saying so: whatever that page draws never passes for Crescent's. It
@@ -166,6 +170,7 @@ export const WIDGETS_SCRIPT = `
     if (!data || typeof data.kb25 !== "string") return;
     const frame = frames().find((candidate) => candidate.contentWindow === event.source);
     if (!frame) return;
+    frame.classList.add("is-loaded");
     if (data.kb25 === "ready") {
       tell(frame);
     } else if (data.kb25 === "height") {
@@ -188,6 +193,7 @@ export const WIDGETS_SCRIPT = `
     if (!frames().includes(frame)) return;
     if (!loaded.has(frame)) {
       loaded.add(frame);
+      frame.classList.add("is-loaded");
       return;
     }
     const note = document.createElement("p");
