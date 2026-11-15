@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod/v4";
 import { Content, flatten, isFolderPage, type PageNode, type TreeFilter } from "./content.js";
 import { makeGit } from "./git.js";
@@ -52,7 +53,7 @@ const KB_DIR = path.resolve(
 // and a kb_create_space would write into whatever directory this resolved to.
 if (!fs.existsSync(KB_DIR)) {
   console.error(
-    `kb25: no knowledge base at ${KB_DIR}. Set KB_DIR to its absolute path in ` +
+    `crescent: no knowledge base at ${KB_DIR}. Set KB_DIR to its absolute path in ` +
       `${USER_ENV_FILE} or in the environment.`
   );
   process.exit(1);
@@ -364,14 +365,42 @@ function refuseInstructionsPath(slug: string) {
 const PAGE_HAND_OFF =
   "Once the page is written, hand it back in one line: its title and its path (`/<slug>`), plus one short clause only for something the person needs to know that the page does not show (an assumption you made, a part you left out or could not verify, a page filed somewhere they would not expect). Where the app already shows them what you wrote, as crescent's own chat does, give only that clause, if there is one. Do not restate, summarise or list what the page says, or narrate how you wrote it: the person reads the page itself, and a recap costs them time and checks nothing.";
 
+/**
+ * crescent's icon, for a client that shows one beside the server. Inline, as
+ * the server may be all of crescent that is running, and the icon is the
+ * viewer's own (public/, beside server/ in a release as beside src/ here).
+ */
+function serverIcons(): Icon[] {
+  const icons: Icon[] = [];
+  for (const size of [64, 192]) {
+    try {
+      const png = fs.readFileSync(path.join(__dirname, "..", "public", `favicon-${size}x${size}.png`));
+      icons.push({ src: `data:image/png;base64,${png.toString("base64")}`, mimeType: "image/png", sizes: [`${size}x${size}`] });
+    } catch {}
+  }
+  return icons;
+}
+
+/**
+ * The server introduces itself as crescent, the name the person knows the app
+ * by, and the installer registers it with Claude Code and the Claude app under
+ * the same name (installer/setup.mjs), so that the person's Claude takes
+ * "crescent" to mean these tools (feedback #62). The chat drawer attaches its
+ * own copy as kb25, which nobody sees, and the instructions name crescent
+ * there too.
+ */
 const server = new McpServer(
   {
-    name: "kb25",
+    name: "crescent",
+    title: "crescent",
     version: VERSION,
+    description: "The pages of your crescent knowledge base, to read and write.",
+    websiteUrl: "https://github.com/elmir-mamedov/crescent",
+    icons: serverIcons(),
   },
   {
     instructions:
-      "Read and write access to the Markdown knowledge base. The KB is organized into spaces: top-level containers, each its own git repo, and the first segment of every page slug — so every page must live inside a space. " +
+      "crescent is the person's knowledge base app, and these tools read and write its Markdown pages: when they mention crescent, their knowledge base or their KB, they mean what these tools reach. The KB is organized into spaces: top-level containers, each its own git repo, and the first segment of every page slug — so every page must live inside a space. " +
       `Every write is auto-committed to its space's repo as \`... via ${COMMIT_VIA}\`.` +
       " A write whose result carries `commitError` was saved but not committed: the change is in place, so do not repeat it." +
       " SPACE INSTRUCTIONS: a space may carry standing instructions written by its owner — language, register, formatting, standing domain context — that govern everything you write there and how you answer questions about it. They arrive as a `spaceInstructions` block on the first tool result scoped to that space, and they are binding: follow them in preference to your own defaults, and do not restate or negotiate them. Later results in the same space carry a short block marked `unchanged` with the token but no text — the instructions delivered earlier still apply in full, and if you can no longer see them, call `kb_get_space_instructions` to get them back. Where a space has them, writing into it also requires passing that block's `token` back as the write tool's `spaceInstructionsToken` — so read a space before you write to it. The token changes whenever a person edits the instructions; a refused write returns the current text and a fresh token, so retry once with those. `kb_get_space_instructions` fetches them directly, and `kb_list_spaces` reports which spaces have them. LINKING: every page has a stable `id`, returned by the read and create tools. Prefer a wiki-link by id — `[[id:<id>]]` or `[[id:<id>|Link text]]` — which keeps resolving even after the target is moved or renamed; a slug-based link like `[[space/some/slug]]` or `[text](/space/some/slug)` breaks when the target moves. To point at one section of a page rather than the whole thing, append its anchor: `[[id:<id>#<anchor>]]` or `[[space/some/slug#<anchor>]]`. Anchors come back in `kb_get_page`'s `sections` and on each `kb_search` match — read them, do not guess them from the heading text." +

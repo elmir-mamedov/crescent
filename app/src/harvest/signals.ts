@@ -8,15 +8,16 @@ import type { Task } from "./segmenter.js";
 import type { NormalizedTurn, Session } from "./transcript-types.js";
 
 /**
- * KB25's MCP tools reach a transcript under more than one prefix: `kb25`
- * registered directly, and `plugin_kb25_kb25` when the same server arrives
- * through the Claude Code plugin. The server was `flux-kb` before the rename,
- * and transcripts already on disk still carry that prefix, so both are matched.
+ * KB25's MCP tools reach a transcript under more than one prefix: `crescent`
+ * registered directly (`kb25` through 0.22.0), and `plugin_kb25_kb25` when the
+ * same server arrives through the Claude Code plugin. The server was `flux-kb`
+ * before the rename, and transcripts already on disk still carry the older
+ * prefixes, so all of them are matched.
  * Matching only the bare form silently dropped
  * every plugin-routed call from the harvest, which then understated tool usage
  * in exactly the data used to justify tooling changes.
  */
-const KB25_TOOL_PATTERN = /^mcp__(?:plugin_[A-Za-z0-9_]+_)?(?:kb25|flux-kb)__/;
+const KB25_TOOL_PATTERN = /^mcp__(?:plugin_[A-Za-z0-9_]+_)?(?:crescent|kb25|flux-kb)__/;
 
 function isKb25Tool(name: string): boolean {
   return KB25_TOOL_PATTERN.test(name);
