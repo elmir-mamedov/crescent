@@ -278,6 +278,12 @@ namespace KB25
             }
 
             var core = web.CoreWebView2;
+            // The page never zooms (feedback #70, #71): not with Ctrl and the
+            // wheel, Ctrl with + − 0, or a pinch. Ctrl and the wheel still reach
+            // the page, which the diagram viewer (views/diagrams.ts) zooms its
+            // diagram with.
+            core.Settings.IsZoomControlEnabled = false;
+            core.Settings.IsPinchZoomEnabled = false;
             core.DocumentTitleChanged += (sender, e) =>
                 Text = string.IsNullOrEmpty(core.DocumentTitle) ? "Crescent" : core.DocumentTitle;
             core.NavigationStarting += OnNavigationStarting;
@@ -545,6 +551,9 @@ namespace KB25
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 // No reloading it (F5, Ctrl+R), which would start the ticker over.
                 core.Settings.AreBrowserAcceleratorKeysEnabled = false;
+                // Nor zooming it, as the main window doesn't.
+                core.Settings.IsZoomControlEnabled = false;
+                core.Settings.IsPinchZoomEnabled = false;
                 core.NavigationCompleted += (sender, e) => { loaded = true; Flush(); };
                 core.WebMessageReceived += (sender, e) =>
                 {
