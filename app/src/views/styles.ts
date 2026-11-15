@@ -846,9 +846,14 @@ html.has-find.has-tabs .toc{padding-top:58px}
    A selection dragged across the page passes over it rather than tinting it
    like text: it can't be selected, and WebKit, which tints a frame in a
    selection anyway, tints it clear. Its caption is still text, and a note on
-   the widget sits there. */
+   the widget sits there.
+   Until its widget arrives a frame is hidden, and the page shows through:
+   its empty first document is in the light scheme, which a browser backs in
+   a dark page with an opaque white canvas, a white box for as long as a lazy
+   frame takes to load. WIDGETS_SCRIPT shows it. */
 .prose figure.widget{margin:.7em 0}
 .prose .widget-frame{display:block; max-width:100%; border:0; user-select:none; -webkit-user-select:none}
+.prose .widget-frame:not(.is-loaded){visibility:hidden}
 .prose .widget-frame::selection{background:transparent}
 .prose .widget-frame:not([width]){width:100%}
 .prose .widget-frame:not([height]){height:320px}
