@@ -1456,48 +1456,52 @@ export function createRenderer(
     return true;
   });
 
+  // Last, so it judges an image by the address written in the page, before any
+  // rule above rewrites it or turns it into a widget.
+  showOnlyGalleryImages(md);
+
   return md;
 }
 
-/** A base no real address shares, to tell an image's own address from Crescent's. */
-const OWN_BASE = new URL("http://crescent.invalid/page/");
+/** A page's address for an image's to be read against; no real address shares its origin. */
+const GALLERY_BASE = new URL("http://crescent.invalid/space/page");
 
 /**
- * Whether an image's address loads from Crescent itself, or loads nothing: a
- * path on this server (an asset, a gallery image), a relative one, or a
- * `data:` image, the only kind markdown-it lets through. The URL is read the
- * way a browser reads it, so `//host`, `\\host` and a tab hidden in a scheme
- * all count as the other site they lead to.
+ * Whether an image is one of Crescent's own: a file in a space's `_assets/`,
+ * the images its gallery shows, written `_assets/plot.png` or
+ * `/<space>/_assets/plot.png`. The address is read the way a browser reads it,
+ * dot segments and all, so `//host`, `\\host`, a tab hidden in a scheme and
+ * `/<space>/_assets/../../_instructions` each count as where they lead.
  */
-export function isOwnImageSrc(src: string): boolean {
+export function isGalleryImageSrc(src: string): boolean {
   try {
-    const url = new URL(src, OWN_BASE);
-    return url.origin === OWN_BASE.origin || url.protocol === "data:";
+    const url = new URL(src, GALLERY_BASE);
+    return url.origin === GALLERY_BASE.origin && /^\/[^/]+\/_assets\/[^/]/.test(url.pathname);
   } catch {
     return false;
   }
 }
 
 /**
- * Show each image from another site as a link to it instead, on a renderer
- * built by createRenderer: what the chat drawer renders a reply with. A
- * reply is written by an agent, and whatever it reads, a web page or a page
- * pulled into the KB, can tell it what to write. An image the browser loads as
- * soon as the reply shows sends its address, and whatever an agent put in it
- * (the text of any page), to that site with no click and no tool. A link
- * leaves it to the person.
+ * Show only Crescent's own images, on pages and in chat replies alike.
+ * Everything a page or a reply holds is untrusted: a space pulled from
+ * elsewhere, a page or a reply an agent wrote after reading the web. An image
+ * the browser loads as the page opens sends its address, and whatever was put
+ * in it (the text of any page), to wherever it points, with no click. So an
+ * image from anywhere but a space's `_assets/` is shown as a link to its
+ * address, which leaves it to the reader, and a `data:` image as its alt text.
+ * Pages also carry `img-src 'self'` (server/page-policy.ts) behind this.
  */
-export function linkOutsideImages(md: MarkdownIt): MarkdownIt {
+function showOnlyGalleryImages(md: MarkdownIt): void {
   const image = md.renderer.rules.image!;
   md.renderer.rules.image = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
     const src = token.attrGet("src") ?? "";
-    if (isOwnImageSrc(src)) return image(tokens, idx, options, env, self);
-    const alt = self.renderInlineAsText(token.children ?? [], options, env);
-    const href = md.utils.escapeHtml(src);
-    return `<a class="outside-image" href="${href}">${md.utils.escapeHtml(alt || src)}</a>`;
+    if (isGalleryImageSrc(src)) return image(tokens, idx, options, env, self);
+    const alt = md.utils.escapeHtml(self.renderInlineAsText(token.children ?? [], options, env));
+    if (/^data:/i.test(src.trim())) return `<span class="outside-image">${alt}</span>`;
+    return `<a class="outside-image" href="${md.utils.escapeHtml(src)}">${alt || md.utils.escapeHtml(src)}</a>`;
   };
-  return md;
 }
 
 /** One run of a note's words: plain text, or text that stands for a link. */
