@@ -202,7 +202,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     webView.navigationDelegate = self
     webView.uiDelegate = self
     webView.allowsBackForwardNavigationGestures = false
-    webView.allowsMagnification = true
+    // The page never zooms (feedback #70, #71): neither a pinch nor a
+    // two-finger double tap enlarges it, and the View menu has no zoom. A
+    // pinch still reaches the page as gesture events, which the diagram
+    // viewer (views/diagrams.ts) zooms its diagram with.
+    webView.allowsMagnification = false
     if #available(macOS 13.3, *) { webView.isInspectable = true }
     webView.loadHTMLString(Self.page("Starting Crescent…"), baseURL: nil)
 
@@ -593,9 +597,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
   @objc func goBack(_ sender: Any?) { webView.goBack() }
   @objc func goForward(_ sender: Any?) { webView.goForward() }
-  @objc func actualSize(_ sender: Any?) { webView.pageZoom = 1 }
-  @objc func zoomIn(_ sender: Any?) { webView.pageZoom = min(webView.pageZoom + 0.1, 3) }
-  @objc func zoomOut(_ sender: Any?) { webView.pageZoom = max(webView.pageZoom - 0.1, 0.5) }
 
   private func makeMainMenu() -> NSMenu {
     let main = NSMenu()
@@ -650,10 +651,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     ])
     submenu("View", [
       item("Reload Page", #selector(reloadPage(_:)), "r"),
-      .separator(),
-      item("Actual Size", #selector(actualSize(_:)), "0"),
-      item("Zoom In", #selector(zoomIn(_:)), "="),
-      item("Zoom Out", #selector(zoomOut(_:)), "-"),
       .separator(),
       item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
     ])
