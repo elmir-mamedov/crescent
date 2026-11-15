@@ -96,10 +96,11 @@ export const DIAGRAM_MODEL = `
  *
  * Dragging moves the view, and so does scrolling. Scrolling with Cmd/Ctrl
  * held zooms about the pointer, as does a pinch: Chromium sends one as a
- * scroll with Ctrl, Safari as gesture events, which also keep Crescent's
- * macOS window from zooming the whole page. The buttons and + − 0 zoom about
- * the middle, and 0 or the level between them fits it again. Until the reader
- * zooms or drags, the diagram keeps fitting the window as it resizes.
+ * scroll with Ctrl, Safari as gesture events. It is the one thing in
+ * Crescent's windows that zooms, as they never zoom the page itself
+ * (feedback #70, #71). The buttons and + − 0 zoom about the middle, and 0 or
+ * the level between them fits it again. Until the reader zooms or drags, the
+ * diagram keeps fitting the window as it resizes.
  *
  * Zoom stays between 30% and 150% (feedback #37), and the view stays on the
  * diagram (DIAGRAM_MODEL): dragging past its edge stops there.
