@@ -40,6 +40,37 @@ test("feedback #62: the MCP server introduces itself as crescent, with its icon"
   }
 });
 
+test("the instructions and every tool's description fit in what Claude Code passes on", async () => {
+  // Claude Code 2.1.325 cuts a local server's instructions, and each tool's
+  // description, at 4,096 characters, without a word to the agent: a rule past
+  // that never reached it. See the note on the server in mcp.ts.
+  const LIMIT = 4096;
+  const kb = await makeTempKb();
+  const client = new Client({ name: "mcp.test", version: "0" });
+  try {
+    await client.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: ["--import", "tsx", path.join(import.meta.dirname, "mcp.ts")],
+        cwd: path.join(import.meta.dirname, ".."),
+        env: { KB_DIR: kb.dir, XDG_CONFIG_HOME: kb.dir },
+        stderr: "ignore",
+      })
+    );
+    const instructions = client.getInstructions() ?? "";
+    assert.ok(instructions.length <= LIMIT, `the instructions are ${instructions.length} characters, over ${LIMIT}`);
+    const { tools } = await client.listTools();
+    assert.ok(tools.length > 0);
+    for (const tool of tools) {
+      const length = tool.description?.length ?? 0;
+      assert.ok(length <= LIMIT, `${tool.name}'s description is ${length} characters, over ${LIMIT}`);
+    }
+  } finally {
+    await client.close();
+    await kb.cleanup();
+  }
+});
+
 test("feedback #76: a page write puts its math into $…$ and refuses math that won't render", async () => {
   const kb = await makeTempKb();
   const client = new Client({ name: "mcp.test", version: "0" });
