@@ -19,6 +19,7 @@ import { parseNotes, type Note, type NoteKind } from "./notes.js";
 import { addAgentNote, resolveAgentNote } from "./note-write.js";
 import { searchPages } from "./search.js";
 import { extractSections } from "./markdown.js";
+import { checkPageMath, type MathCheck } from "./math-normalize.js";
 import {
   instructionsPayload,
   instructionsReminder,
@@ -366,6 +367,18 @@ const PAGE_HAND_OFF =
   "Once the page is written, hand it back in one line: its title and its path (`/<slug>`), plus one short clause only for something the person needs to know that the page does not show (an assumption you made, a part you left out or could not verify, a page filed somewhere they would not expect). Where the app already shows them what you wrote, as crescent's own chat does, give only that clause, if there is one. Do not restate, summarise or list what the page says, or narrate how you wrote it: the person reads the page itself, and a recap costs them time and checks nothing.";
 
 /**
+ * How a page writes math, which the two page-writing tools enforce as well
+ * (math-normalize.ts, feedback #76). In full in their descriptions, which an
+ * agent has loaded by the time it writes, so that it writes math right the
+ * first time rather than learning it from a refusal; the server instructions
+ * carry MATH_BRIEF.
+ */
+const MATH_BRIEF =
+  "MATH: TeX as `$…$` inline and `$$…$$` on lines of their own, with single backslashes; never `\\(…\\)`, `\\[…\\]` or doubled backslashes. kb_create_page and kb_update_page describe the rest.";
+const MATH_RULE =
+  "MATH: write TeX as `$…$` inline and `$$…$$` on lines of their own, with single backslashes, as in `$780^\\circ\\mathrm{C}$`: never `\\(…\\)` or `\\[…\\]`, never doubled backslashes (`\\\\circ`), never spaces just inside the dollars (`$ x $`). TeX shown as an example rather than typeset goes in a code span. A page write converts those other forms, and is refused while a formula KaTeX can't read, or a TeX command outside any formula, is left: the refusal lists each one with its line, so fix them and send the page again.";
+
+/**
  * crescent's icon, for a client that shows one beside the server. Inline, as
  * the server may be all of crescent that is running, and the icon is the
  * viewer's own (public/, beside server/ in a release as beside src/ here).
@@ -407,9 +420,18 @@ const server = new McpServer(
       " WRITING PAGES: when the person asks for a page, the page is what they asked for, not your reply. Write as soon as the request is clear enough to act on, since any page can be edited or archived afterwards; ask one short question first only when what the page should cover, or which space or section it belongs in, is genuinely unclear. File it beside similar pages (kb_list_pages, kb_search) rather than inventing new structure. A new page is one kb_create_page call with its title and full body, never an empty page filled in afterwards; to change a page, read it with kb_get_page (format: raw) and send the whole replacement with kb_update_page. Write for a reader landing on the page cold, not as a reply to this conversation: lead with what they need first, under clear headings. A page shows only images in its own space's `_assets/`: add an image file with kb_add_image and use the link it returns, since an image from the web shows only as a link and a `data:` image only as its alt text. " +
       PAGE_HAND_OFF +
       " If the person also asked something the page does not answer, answer just that part, briefly." +
-      " FIGURES: prose stays Markdown. To show what words can't, try a ```mermaid diagram (flowcharts, sequences, states) or TeX math (`$…$`, `$$…$$`) first. A drawing that neither moves nor responds is an SVG image: write it with kb_write_asset and show it with `![caption](_assets/name.svg)`, drawn dark on a light background, since the dark theme shows every image on a light panel, and with no `prefers-color-scheme` in it. Only a figure that has to move or respond (an animation, sliders, a chart that shows values on hover, a quiz) is an HTML widget: one file per figure, named for what it shows, written with kb_write_asset (whose description has the rules a widget follows) and embedded like an image, `![caption](_assets/name.html =x400)`. HTML pasted into a page is not rendered.",
+      " FIGURES: prose stays Markdown. To show what words can't, try a ```mermaid diagram (flowcharts, sequences, states) or TeX math (`$…$`, `$$…$$`) first. A drawing that neither moves nor responds is an SVG image: write it with kb_write_asset and show it with `![caption](_assets/name.svg)`, drawn dark on a light background, since the dark theme shows every image on a light panel, and with no `prefers-color-scheme` in it. Only a figure that has to move or respond (an animation, sliders, a chart that shows values on hover, a quiz) is an HTML widget: one file per figure, named for what it shows, written with kb_write_asset (whose description has the rules a widget follows) and embedded like an image, `![caption](_assets/name.html =x400)`. HTML pasted into a page is not rendered. " +
+      MATH_BRIEF,
   }
 );
+
+/** What a page write's result says about the math it converted, and the broken math it kept. */
+function mathFields(math: MathCheck): Record<string, string> {
+  return {
+    ...(math.converted && { mathConverted: math.converted }),
+    ...(math.existing && { mathNotRendering: math.existing }),
+  };
+}
 
 server.registerTool(
   "kb_list_spaces",
@@ -679,7 +701,9 @@ server.registerTool(
     title: "Create KB Page",
     description:
       "Create a new page from a title and Markdown body inside a space or page. Write the whole page in this one call, rather than creating it empty and filling it in with kb_update_page. The title becomes the page slug; a leaf-page parent is auto-promoted into a section. Every page must live inside a space, so the parent is required (a space key like `kb25`, or a deeper page slug); use kb_create_space for a new space. " +
-      PAGE_HAND_OFF,
+      PAGE_HAND_OFF +
+      " " +
+      MATH_RULE,
     inputSchema: {
       parent: z
         .string()
@@ -706,8 +730,11 @@ server.registerTool(
     const gate = await gateWrite(spaceKey, spaceInstructionsToken);
     if (gate) return gate;
 
+    const math = checkPageMath(body ?? "");
+    if (math.refused) return errorResult(math.refused);
+
     try {
-      const written = await writes.createPage(parent ?? "", title, body ?? "", { tags, summary });
+      const written = await writes.createPage(parent ?? "", title, math.body, { tags, summary });
       const { mutation } = written;
       return textResult({
         created: true,
@@ -715,6 +742,7 @@ server.registerTool(
         id: mutation.id,
         path: git.kbRelPath(mutation.fsPath),
         ...commitFields(written),
+        ...mathFields(math),
         ...(await writeToken(spaceKey)),
       });
     } catch (err) {
@@ -984,7 +1012,9 @@ server.registerTool(
     title: "Update KB Page",
     description:
       "Replace a page's entire Markdown source, including frontmatter. The frontmatter must be valid (a title is required), and it must keep the page's existing `id` — that id is what `[[id:<id>]]` links resolve through, so read the current source first with kb_get_page (format: raw) rather than composing frontmatter from scratch. Do not add or reword inline notes as a side effect of an unrelated edit; preserve the ones you were not asked about. To leave an explanation of your own, use kb_add_agent_note rather than writing `<!-- kb25:note ... -->` syntax by hand — a note written by hand gets no id, so nothing can resolve it afterwards. Folders have no body and are rejected — use kb_rename_folder to rename one. " +
-      PAGE_HAND_OFF,
+      PAGE_HAND_OFF +
+      " " +
+      MATH_RULE,
     inputSchema: {
       slug: z.string().describe("Page slug, e.g. engineering/runbooks/deploy."),
       markdown: z.string().describe("Full replacement Markdown source, including YAML frontmatter."),
@@ -1004,7 +1034,18 @@ server.registerTool(
     if (gate) return gate;
 
     try {
-      const written = await writes.updatePage(slug, markdown);
+      // The math is the body's; the frontmatter's bytes go through as they
+      // came. What the page had before decides which broken math is this
+      // write's to answer for.
+      const { header, body } = splitFrontmatter(markdown);
+      const current = await content.loadRaw(slug);
+      const math = checkPageMath(body, {
+        previous: current ? splitFrontmatter(current.raw).body : undefined,
+        lineOffset: header.split("\n").length - 1,
+      });
+      if (math.refused) return errorResult(math.refused);
+
+      const written = await writes.updatePage(slug, header + math.body);
       if (!written) return errorResult(`Page not found: ${cleanSlug(slug) || "(home)"}`);
       const { mutation } = written;
       return textResult({
@@ -1015,6 +1056,7 @@ server.registerTool(
         // Flagged when the submitted frontmatter dropped or altered the page's
         // stable id and the on-disk one was restored — read before you rewrite.
         ...(mutation.idPreserved && { idPreserved: true }),
+        ...mathFields(math),
         ...(await writeToken(spaceKey)),
       });
     } catch (err) {
