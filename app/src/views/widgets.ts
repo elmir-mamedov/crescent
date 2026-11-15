@@ -7,13 +7,13 @@ import { themeColors } from "./styles.js";
  *
  * A widget is untrusted, like everything in the KB, and it needs its scripts,
  * so it runs in a sandboxed frame with an origin of its own and no network
- * (`embedHeaders` in assets.ts): it can't read or change Crescent's pages, and
+ * (`embedHeaders` in assets.ts): it can't read or change crescent's pages, and
  * it can't make a request. What no sandbox stops is a widget navigating its
  * own frame (`location.href = …`), which would send that site whatever the
- * widget holds and show its page as part of Crescent's. Crescent's windows
- * cancel any frame navigation that leaves Crescent (shell/), and in a browser
+ * widget holds and show its page as part of crescent's. crescent's windows
+ * cancel any frame navigation that leaves crescent (shell/), and in a browser
  * the page swaps out a frame that loads a second time (WIDGETS_SCRIPT).
- * What it gets from Crescent comes in a
+ * What it gets from crescent comes in a
  * preamble put in front of it (widgetDocument): the theme's colours and fonts,
  * and a script that tells the page how tall the widget is. The frame and the
  * page talk only through postMessage, each message an object whose `kb25`
@@ -26,7 +26,7 @@ import { themeColors } from "./styles.js";
  */
 
 /**
- * The colours a widget is drawn in, as CSS variables that follow Crescent's
+ * The colours a widget is drawn in, as CSS variables that follow crescent's
  * theme. The names are what agents are told to use (mcp.ts, chat.ts), so they
  * stay put whatever the stylesheet's own tokens are called.
  */
@@ -60,8 +60,8 @@ function themeBlock(theme: "light" | "dark"): string {
 }
 
 /**
- * The preamble's styles: both themes, the dark one, Crescent's default, until
- * the page says otherwise, and a body in Crescent's type on a clear
+ * The preamble's styles: both themes, the dark one, crescent's default, until
+ * the page says otherwise, and a body in crescent's type on a clear
  * background, so the page shows through. Nothing shows until the frame knows
  * its theme, so a widget never flashes the wrong one first. The frame's
  * `color-scheme` matches the page's, or a browser backs it with an opaque
@@ -83,7 +83,7 @@ button,input,select,textarea{font:inherit}`;
  * height of 0 is not reported, since that is a widget drawn with absolute
  * positions, which keeps the height its frame started at. Opened on its own,
  * with no page around it, the frame follows the system's theme; in a page
- * that never answers, it shows in the dark theme, Crescent's default, after a
+ * that never answers, it shows in the dark theme, crescent's default, after a
  * second.
  */
 const WIDGET_SCRIPT = `(() => {
@@ -145,8 +145,8 @@ ${own}`;
  *
  * A widget's frame loads once. A second load is the widget leaving for
  * another page, which its sandbox can't stop, so the frame is swapped for a
- * line saying so: whatever that page draws never passes for Crescent's. It
- * can't take back the request that load made; Crescent's windows cancel the
+ * line saying so: whatever that page draws never passes for crescent's. It
+ * can't take back the request that load made; crescent's windows cancel the
  * navigation before it starts (shell/), and a browser tab has only this.
  *
  * `__widgetsForPrint(true)` is what a print waits for (PRINT_SCRIPT): every
@@ -198,7 +198,7 @@ export const WIDGETS_SCRIPT = `
     }
     const note = document.createElement("p");
     note.className = "widget-left";
-    note.textContent = "This widget tried to open another page, so Crescent stopped it.";
+    note.textContent = "This widget tried to open another page, so crescent stopped it.";
     frame.replaceWith(note);
   }, true);
 

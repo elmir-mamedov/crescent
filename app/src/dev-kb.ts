@@ -1,7 +1,7 @@
 /**
  * The development KB. A checkout's server opens a sample knowledge base, the
  * spaces in dev/seed/ that `npm run dev:reset` copies into place, and never
- * the folder where an installed Crescent on the same computer keeps someone's
+ * the folder where an installed crescent on the same computer keeps someone's
  * pages: testing there would commit every trial edit to them.
  */
 import fs from "node:fs";
@@ -76,7 +76,7 @@ export async function resetDevKb(kbDir: string, options: ResetOptions = {}): Pro
 
   const installedKb = options.installedKb === undefined ? installedKbDir() : options.installedKb;
   if (installedKb && sameDir(installedKb, kbDir)) {
-    throw new Error(`${kbDir} is where your installed Crescent keeps its pages, and dev:reset never deletes them.`);
+    throw new Error(`${kbDir} is where your installed crescent keeps its pages, and dev:reset never deletes them.`);
   }
   if (entries.length > 0) {
     if (!fs.existsSync(path.join(kbDir, MARKER))) {

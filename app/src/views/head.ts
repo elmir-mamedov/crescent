@@ -67,7 +67,7 @@ const QUIT_SCRIPT = `
     const card = document.querySelector("[data-update]") || document.body.appendChild(document.createElement("div"));
     card.className = "update-card";
     card.setAttribute("role", "status");
-    card.replaceChildren(el("update-title", "Crescent has quit"), el("update-text", "Open Crescent again to keep using it."));
+    card.replaceChildren(el("update-title", "crescent has quit"), el("update-text", "Open crescent again to keep using it."));
     card.hidden = false;
   }
 
@@ -97,7 +97,7 @@ const QUIT_SCRIPT = `
         showQuit();
       })
       .catch(() => {
-        error.textContent = "Crescent didn't quit. Try again.";
+        error.textContent = "crescent didn't quit. Try again.";
         error.hidden = false;
         confirm.disabled = false;
       });
@@ -140,7 +140,7 @@ const THEME_SCRIPT = `
 `;
 
 /**
- * In Crescent's macOS window, two fingers across the trackpad go Back and
+ * In crescent's macOS window, two fingers across the trackpad go Back and
  * Forward at once (feedback #26, #27). The window's own swipe slid the page
  * aside under the fingers before changing it, and WebKit offers it with no
  * way to drop the slide; so the window turns it off and, before any page

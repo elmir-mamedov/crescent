@@ -1,4 +1,4 @@
-// Writes Crescent.app: KB25's window on macOS (shell/mac/KB25.swift, built by
+// Writes crescent.app: KB25's window on macOS (shell/mac/KB25.swift, built by
 // scripts/build-shell.mjs) in a bundle with the viewer's favicon as its icon,
 // so Spotlight, Launchpad, the Dock and Cmd+Tab treat KB25 like any other app.
 // Shared by the developer launcher (scripts/install-app.mjs) and the one-line
@@ -12,7 +12,7 @@ const LSREGISTER =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 
 /**
- * (Re)write `bundle` (e.g. ~/Applications/Crescent.app) around `executable`, the
+ * (Re)write `bundle` (e.g. ~/Applications/crescent.app) around `executable`, the
  * built window. `start` is the command it runs to start the server and learn
  * its address (KB25StartCommand); `resources` are extra files for
  * Contents/Resources, such as a script `start` names. `iconPng` is a square
@@ -27,7 +27,7 @@ export function writeMacApp({
   version = "",
   resources = {},
   iconPng,
-  name = "Crescent",
+  name = "crescent",
   bundleId = "local.kb25.viewer",
 }) {
   fs.rmSync(bundle, { recursive: true, force: true });

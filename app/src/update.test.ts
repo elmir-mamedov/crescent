@@ -222,7 +222,7 @@ test("start refuses when there is nothing to update to", async () => {
       fetch: fakeFetch("0.2.0").impl,
       spawn: spawn.impl,
     });
-    assert.deepEqual(await updater.start(), { ok: false, reason: "Crescent is already up to date." });
+    assert.deepEqual(await updater.start(), { ok: false, reason: "crescent is already up to date." });
     assert.equal(spawn.calls.length, 0);
   } finally {
     await tmp.cleanup();
@@ -433,7 +433,7 @@ async function makeSkill(dir: string, text: string) {
 
 const exists = (file: string) => fs.lstat(file).then(() => true, () => false);
 
-test("the installer removes the skill it copied, and only when every byte in it is Crescent's", async () => {
+test("the installer removes the skill it copied, and only when every byte in it is crescent's", async () => {
   const tmp = await makeTempKb();
   try {
     const { removeShippedSkill } = await installerCommon();

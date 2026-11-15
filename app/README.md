@@ -17,13 +17,13 @@ In a checkout the server opens a sample knowledge base in `../kb`: two spaces
 on quantum mechanics, copied from `dev/seed/`, each its own git repo.
 `npm run dev` makes it on its first run, and `npm run dev:reset` makes it
 again from scratch, so a test can change anything in it. Keep real pages
-somewhere else: the server refuses to open the KB an installed Crescent on
+somewhere else: the server refuses to open the KB an installed crescent on
 this computer uses, unless `KB25_DEV_REAL_KB=1` is set, and `dev:reset` only
 ever deletes a KB it made itself.
 
-On macOS, `npm run app:install` adds `~/Applications/Crescent Dev.app`, so the
-viewer opens like any other app (Cmd+Space, "Crescent Dev"). It has its own
-name and bundle id, so an installed `Crescent.app` stays as it is beside it,
+On macOS, `npm run app:install` adds `~/Applications/crescent dev.app`, so the
+viewer opens like any other app (Cmd+Space, "crescent dev"). It has its own
+name and bundle id, so an installed `crescent.app` stays as it is beside it,
 with its own window position and storage. It starts the server
 if it is not already running and opens the viewer in its own window, the native
 app in `shell/mac/`, which it builds with `swiftc` (Xcode or its Command Line
@@ -47,7 +47,7 @@ pointing everyone at one exposed process.
 | Var          | Default        | Meaning                                  |
 |--------------|----------------|------------------------------------------|
 | `KB_DIR`     | `../kb`        | Path to the content folder; in a checkout, `../kb` is the sample KB. The MCP server also reads it from `~/.config/kb25/.env`. |
-| `KB25_DEV_REAL_KB` | off     | Let a checkout's server open the KB an installed Crescent uses. Every edit made there is a real commit. |
+| `KB25_DEV_REAL_KB` | off     | Let a checkout's server open the KB an installed crescent uses. Every edit made there is a real commit. |
 | `PORT`       | `4000`         | Port to listen on.                       |
 | `HOST`       | `localhost`    | Bind address. Leave it — a wider bind exposes the login form (see Run). |
 | `SITE_TITLE` | `Knowledge Base` | Name shown in the sidebar/title.       |
@@ -258,8 +258,8 @@ echo 'KB_DIR=/absolute/path/to/kb' > ~/.config/kb25/.env
 ```
 
 When `KB_DIR` does not exist the server refuses to start, rather than serve an
-empty knowledge base. The Crescent installer reads the per-user file too, and
-offers to use the knowledge base it names. An installed Crescent registers its
+empty knowledge base. The crescent installer reads the per-user file too, and
+offers to use the knowledge base it names. An installed crescent registers its
 own bundled copy of this server with Claude Code and the Claude app, so neither
 needs a hand-written entry.
 
@@ -268,5 +268,5 @@ needs a hand-written entry.
 - `npm run dev` — watch + reload, on the sample KB (made first if missing).
 - `npm run dev:reset` — replace `../kb` with a fresh copy of the sample KB.
 - `npm start` — run once.
-- `npm run app:install` — install the `Crescent Dev.app` launcher (macOS).
+- `npm run app:install` — install the `crescent dev.app` launcher (macOS).
 - `npm run typecheck` — type-check with `tsc --noEmit`.

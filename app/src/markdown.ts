@@ -1467,7 +1467,7 @@ export function createRenderer(
 const GALLERY_BASE = new URL("http://crescent.invalid/space/page");
 
 /**
- * Whether an image is one of Crescent's own: a file in a space's `_assets/`,
+ * Whether an image is one of crescent's own: a file in a space's `_assets/`,
  * the images its gallery shows, written `_assets/plot.png` or
  * `/<space>/_assets/plot.png`. The address is read the way a browser reads it,
  * dot segments and all, so `//host`, `\\host`, a tab hidden in a scheme and
@@ -1483,7 +1483,7 @@ export function isGalleryImageSrc(src: string): boolean {
 }
 
 /**
- * Show only Crescent's own images, on pages and in chat replies alike.
+ * Show only crescent's own images, on pages and in chat replies alike.
  * Everything a page or a reply holds is untrusted: a space pulled from
  * elsewhere, a page or a reply an agent wrote after reading the web. An image
  * the browser loads as the page opens sends its address, and whatever was put

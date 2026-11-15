@@ -349,20 +349,20 @@ async function writeToken(spaceKey: string): Promise<{ spaceInstructionsToken?: 
 function refuseInstructionsPath(slug: string) {
   if (!isInstructionsSlug(slug)) return null;
   return errorResult(
-    "A space's instructions are edited only from the Crescent web UI (the Space instructions button, top right). They are the space owner's standing orders, so the tools will not change them. You can read them with kb_get_space_instructions."
+    "A space's instructions are edited only from the crescent web UI (the Space instructions button, top right). They are the space owner's standing orders, so the tools will not change them. You can read them with kb_get_space_instructions."
   );
 }
 
 /**
  * What to say once a page is written. The rules for writing pages live in
  * this server rather than in a skill: Cowork and the Claude app take their
- * skills from the person's Claude account, which Crescent can't reach, while
+ * skills from the person's Claude account, which crescent can't reach, while
  * every client reads this server and every update replaces it. This one is in
  * the server instructions and again in the two page-writing tools'
  * descriptions, for a client that drops the instructions.
  */
 const PAGE_HAND_OFF =
-  "Once the page is written, hand it back in one line: its title and its path (`/<slug>`), plus one short clause only for something the person needs to know that the page does not show (an assumption you made, a part you left out or could not verify, a page filed somewhere they would not expect). Where the app already shows them what you wrote, as Crescent's own chat does, give only that clause, if there is one. Do not restate, summarise or list what the page says, or narrate how you wrote it: the person reads the page itself, and a recap costs them time and checks nothing.";
+  "Once the page is written, hand it back in one line: its title and its path (`/<slug>`), plus one short clause only for something the person needs to know that the page does not show (an assumption you made, a part you left out or could not verify, a page filed somewhere they would not expect). Where the app already shows them what you wrote, as crescent's own chat does, give only that clause, if there is one. Do not restate, summarise or list what the page says, or narrate how you wrote it: the person reads the page itself, and a recap costs them time and checks nothing.";
 
 const server = new McpServer(
   {
@@ -419,7 +419,7 @@ server.registerTool(
   {
     title: "Get Space Instructions",
     description:
-      "Read a space's standing instructions: the space owner's rules for what you write there, how you answer questions about it, and any standing domain context. Returns the text plus the `spaceInstructionsToken` value the write tools require for that space. Call this before writing into a space you have not yet read from in this session. A person edits these in the Crescent web UI; the tools cannot change them.",
+      "Read a space's standing instructions: the space owner's rules for what you write there, how you answer questions about it, and any standing domain context. Returns the text plus the `spaceInstructionsToken` value the write tools require for that space. Call this before writing into a space you have not yet read from in this session. A person edits these in the crescent web UI; the tools cannot change them.",
     inputSchema: {
       space: z.string().min(1).describe("Space key — its top-level folder name, e.g. kb25."),
     },

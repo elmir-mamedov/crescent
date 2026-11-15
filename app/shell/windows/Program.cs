@@ -175,7 +175,7 @@ namespace KB25
             this.home = home;
             this.show = show;
             this.shown = shown;
-            Text = "Crescent";
+            Text = "crescent";
             BackColor = Background;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Size = new Size(1280, 860);
@@ -267,8 +267,8 @@ namespace KB25
                 splash.FormClosed -= OnSplashClosed;
                 splash.Close();
                 MessageBox.Show(
-                    "Crescent needs the Microsoft Edge WebView2 Runtime for its window, so it opens in your browser instead.",
-                    "Crescent");
+                    "crescent needs the Microsoft Edge WebView2 Runtime for its window, so it opens in your browser instead.",
+                    "crescent");
                 var address = await Task.Run(() => StartServer());
                 if (address != null) OpenElsewhere(new Uri(address));
                 // The server keeps running for the browser, until its power button.
@@ -285,12 +285,12 @@ namespace KB25
             core.Settings.IsZoomControlEnabled = false;
             core.Settings.IsPinchZoomEnabled = false;
             core.DocumentTitleChanged += (sender, e) =>
-                Text = string.IsNullOrEmpty(core.DocumentTitle) ? "Crescent" : core.DocumentTitle;
+                Text = string.IsNullOrEmpty(core.DocumentTitle) ? "crescent" : core.DocumentTitle;
             core.NavigationStarting += OnNavigationStarting;
             // A frame is a page's widget (views/widgets.ts), which may show only
-            // what Crescent sends it. Its sandbox can't stop it navigating itself,
+            // what crescent sends it. Its sandbox can't stop it navigating itself,
             // so one that tries to load another site, to send it what the widget
-            // holds or to pass that site's page off as Crescent's, stays where it is.
+            // holds or to pass that site's page off as crescent's, stays where it is.
             core.FrameNavigationStarting += (sender, e) =>
             {
                 if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) || !IsKB25(uri)) e.Cancel = true;
@@ -302,7 +302,7 @@ namespace KB25
                 e.Handled = true;
                 if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) OpenElsewhere(uri);
             };
-            core.NavigateToString(Page("Starting Crescent…"));
+            core.NavigateToString(Page("Starting crescent…"));
 
             var started = await Task.Run(() => StartServer());
             if (started == null)
@@ -425,8 +425,8 @@ namespace KB25
             }
             if (requested == null) return;
             if (e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled) return;
-            if (!revealed) splash.Status("Crescent isn’t answering. Trying again…");
-            web.CoreWebView2.NavigateToString(Page("Crescent isn’t answering. Trying again…", requested));
+            if (!revealed) splash.Status("crescent isn’t answering. Trying again…");
+            web.CoreWebView2.NavigateToString(Page("crescent isn’t answering. Trying again…", requested));
         }
 
         void OnClosing(object sender, FormClosingEventArgs e)
@@ -524,7 +524,7 @@ namespace KB25
 
         public SplashWindow(Icon icon)
         {
-            Text = "Crescent";
+            Text = "crescent";
             Icon = icon;
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;

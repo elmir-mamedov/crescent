@@ -82,7 +82,7 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: ServerContex
 
   /**
    * A thread's messages as the drawer shows them, rendered against the KB as
-   * it is now. Like a page, a reply shows only Crescent's own images, and an
+   * it is now. Like a page, a reply shows only crescent's own images, and an
    * image from anywhere else as a link to it (createRenderer), so a reply
    * can't send anything anywhere by being shown.
    */
@@ -149,7 +149,7 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: ServerContex
   /**
    * An image attached to a message, for the drawer to show. Sent with an
    * asset's headers (assets.ts): it came from the person's disk, and an SVG
-   * opened on its own must not run as Crescent.
+   * opened on its own must not run as crescent.
    */
   app.get("/_chat/threads/:id/images/:name", async (req, reply) => {
     const { id, name } = req.params as { id: string; name: string };
