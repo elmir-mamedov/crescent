@@ -2092,6 +2092,14 @@ test("feedback #64: the flash script ships only with headings to light", () => {
   assert.match(html, /\.is-flashed\{[^}]*animation:section-flash 2s/);
 });
 
+test("feedback #72: a heading lights up in the green its # turns when clicked", () => {
+  const html = layout(pageView({ contentHtml: SECTION_HTML }));
+  assert.match(html, /\.section-link\.copied\{[^}]*color:var\(--success-fg\)/);
+  assert.match(html, /@keyframes section-flash\{\s*15%,65%\{color:var\(--success-fg\);/);
+  assert.match(html, /\.is-flashed\{animation:none; color:var\(--success-fg\)\}/);
+  assert.doesNotMatch(html, /--section-flash:/);
+});
+
 test("a real element id wins over the note-fragment handler", () => {
   const html = layout(pageView({ notes: [] }));
   assert.match(html, /if \(location\.hash\.length > 1 && document\.getElementById\(location\.hash\.slice\(1\)\)\) return;/);
