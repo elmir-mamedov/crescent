@@ -143,6 +143,8 @@ function pageRig(count: number) {
   type Frame = {
     style: Record<string, string>;
     loading: string;
+    classes: Set<string>;
+    classList: { add: (name: string) => void };
     contentWindow: { postMessage: (data: unknown) => void };
     posted: unknown[];
     replacedBy?: { className: string; textContent: string };
@@ -150,9 +152,12 @@ function pageRig(count: number) {
   };
   const frames: Frame[] = Array.from({ length: count }, () => {
     const posted: unknown[] = [];
+    const classes = new Set<string>();
     const frame: Frame = {
       style: {},
       loading: "lazy",
+      classes,
+      classList: { add: (name) => classes.add(name) },
       contentWindow: { postMessage: (data: unknown) => posted.push(data) },
       posted,
       // As in the DOM, a replaced frame is no longer one of the page's.
@@ -214,6 +219,20 @@ test("WIDGETS_SCRIPT: a frame that starts is told the theme, and again when it c
   rig.switchTheme("light");
   assert.deepEqual(rig.frames[0].posted.at(-1), { kb25: "theme", theme: "light" });
   assert.deepEqual(rig.frames[1].posted, [{ kb25: "theme", theme: "light" }]);
+});
+
+test("WIDGETS_SCRIPT: a frame is shown once it loads or speaks, not before", () => {
+  const rig = pageRig(3);
+  const [loading, speaking, waiting] = rig.frames;
+  rig.load(loading);
+  rig.from(speaking, { kb25: "ready" });
+  assert.ok(loading.classes.has("is-loaded"), "a frame that loaded");
+  assert.ok(speaking.classes.has("is-loaded"), "a frame whose widget spoke before its load");
+  assert.ok(!waiting.classes.has("is-loaded"), "a frame still loading");
+  rig.onMessage({ data: { kb25: "ready" }, source: {} });
+  assert.ok(!waiting.classes.has("is-loaded"), "a message from elsewhere");
+  rig.load(speaking);
+  assert.equal(rig.frames.length, 3, "a frame that spoke first still has its own load");
 });
 
 test("WIDGETS_SCRIPT: a frame is as tall as it says, within bounds", () => {
