@@ -13,7 +13,9 @@ here, to `licenses/<package name>/`, for what that folder lacks:
   only its name, version and license.
 - **A license file** for a package that npm installs without one:
   abstract-logging, whose README names the MIT License at
-  `jsumners.mit-license.org`, the text here.
+  `jsumners.mit-license.org`, the text here; and fastdom, which mermaid
+  depends on from 11.17, whose README carries its MIT License, copied here
+  unchanged (its repository has no license file either).
 - **A license field** for a package whose `package.json` has none: khroma.
 
 `npm test` fails when the release ships a package with no license here or in
