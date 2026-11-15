@@ -71,11 +71,82 @@ test("the instructions and every tool's description fit in what Claude Code pass
   }
 });
 
-test("feedback #76: a page write puts its math into $…$ and refuses math that won't render", async () => {
+/** The token a read_me result hands out. */
+function readMeToken(result: { text: string }): string {
+  const token = /Your token is `([^`]+)`/.exec(result.text)?.[1];
+  assert.ok(token, result.text.slice(0, 200));
+  return token;
+}
+
+test("feedback #34: read_me comes before every other tool, which refuses without its token", async () => {
   const kb = await makeTempKb();
   const client = new Client({ name: "mcp.test", version: "0" });
   const call = async (name: string, args: Record<string, unknown>) => {
     const result = (await client.callTool({ name, arguments: args })) as {
+      isError?: boolean;
+      content: { type: string; text: string }[];
+    };
+    return { isError: !!result.isError, text: result.content[0]?.text ?? "" };
+  };
+  try {
+    await client.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: ["--import", "tsx", path.join(import.meta.dirname, "mcp.ts")],
+        cwd: path.join(import.meta.dirname, ".."),
+        env: { KB_DIR: kb.dir, XDG_CONFIG_HOME: kb.dir },
+        stderr: "ignore",
+      })
+    );
+    // What an agent sees before its first call sends it to read_me.
+    assert.match(client.getInstructions() ?? "", /Before you use any other crescent tool, call read_me/);
+    const { tools } = await client.listTools();
+    const readMe = tools.find((tool) => tool.name === "read_me");
+    assert.match(readMe?.description ?? "", /^Call this first, before any other crescent tool/);
+    assert.ok(!readMe?.inputSchema.required?.includes("i_have_seen_read_me"));
+    for (const tool of tools.filter((tool) => tool.name !== "read_me")) {
+      assert.ok(tool.inputSchema.required?.includes("i_have_seen_read_me"), `${tool.name} does not require the token`);
+    }
+
+    // Without the token, or with a made-up one, a tool does nothing but say to read the guide.
+    const none = await call("kb_list_spaces", {});
+    assert.equal(none.isError, true);
+    assert.match(none.text, /Call read_me first/);
+    const guessed = await call("kb_list_spaces", { i_have_seen_read_me: "guess" });
+    assert.equal(guessed.isError, true);
+    assert.match(guessed.text, /Call read_me again/);
+
+    // The first read gives the core and the token, which then opens every tool.
+    const first = await call("read_me", {});
+    assert.equal(first.isError, false);
+    assert.match(first.text, /^# crescent: how to work here/);
+    assert.match(first.text, /## Space instructions/);
+    const token = readMeToken(first);
+    assert.equal((await call("kb_list_spaces", { i_have_seen_read_me: token })).isError, false);
+
+    // A module, asked for with the token, comes without the core again.
+    const modules = await call("read_me", { modules: ["math", "figures"], i_have_seen_read_me: token });
+    assert.doesNotMatch(modules.text, /## Space instructions/);
+    assert.match(modules.text, /# Module: math[\s\S]*# Module: figures/);
+    assert.equal(readMeToken(modules), token);
+  } finally {
+    await client.close();
+    await kb.cleanup();
+  }
+});
+
+test("a chat thread keeps its read_me token across turns, until the guide changes", async () => {
+  const { threadReadMeToken } = await import("./read-me.js");
+  assert.equal(threadReadMeToken("thread-a"), threadReadMeToken("thread-a"));
+  assert.notEqual(threadReadMeToken("thread-a"), threadReadMeToken("thread-b"));
+});
+
+test("feedback #76: a page write puts its math into $…$ and refuses math that won't render", async () => {
+  const kb = await makeTempKb();
+  const client = new Client({ name: "mcp.test", version: "0" });
+  let token = "";
+  const call = async (name: string, args: Record<string, unknown>) => {
+    const result = (await client.callTool({ name, arguments: { ...args, i_have_seen_read_me: token } })) as {
       isError?: boolean;
       content: { type: string; text: string }[];
     };
@@ -102,6 +173,7 @@ test("feedback #76: a page write puts its math into $…$ and refuses math that 
         stderr: "ignore",
       })
     );
+    token = readMeToken(await call("read_me", {}));
     assert.equal((await call("kb_create_space", { title: "Math" })).isError, false);
 
     const created = await call("kb_create_page", {
