@@ -25,11 +25,26 @@ export function registerFormParser(app: FastifyInstance): void {
   );
 }
 
+/** A base no real address shares, to tell a path on this server from one that leaves it. */
+const REDIRECT_BASE = new URL("http://crescent.invalid");
+
+/**
+ * Where a redirect a request asked for (`/_login?next=`, a label form's
+ * `returnTo`) may go: a path on this server, else "/". A browser reading the
+ * Location header takes a backslash for a slash and drops tabs and newlines,
+ * so "/\evil.com" and "/<TAB>/evil.com" leave the site exactly like
+ * "//evil.com" does. Any whitespace or control character is refused, and what
+ * is left is read the way a browser reads it, and kept only if it stays here.
+ */
 export function safeRedirectPath(value: string | null): string {
-  // Browsers read a backslash as a slash in a URL path, so "/\evil.com" leaves
-  // the site exactly like "//evil.com" does.
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "/";
-  if (value === "/_login" || value.startsWith("/_login?")) return "/";
+  if (!value || !value.startsWith("/") || /[\\\s\x00-\x1f\x7f]/.test(value)) return "/";
+  let url: URL;
+  try {
+    url = new URL(value, REDIRECT_BASE);
+  } catch {
+    return "/";
+  }
+  if (url.origin !== REDIRECT_BASE.origin || url.pathname === "/_login") return "/";
   return value;
 }
 
