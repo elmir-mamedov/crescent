@@ -8,7 +8,12 @@ import { themeColors } from "./styles.js";
  * A widget is untrusted, like everything in the KB, and it needs its scripts,
  * so it runs in a sandboxed frame with an origin of its own and no network
  * (`embedHeaders` in assets.ts): it can't read or change Crescent's pages, and
- * it has nothing to send anywhere. What it gets from Crescent comes in a
+ * it can't make a request. What no sandbox stops is a widget navigating its
+ * own frame (`location.href = …`), which would send that site whatever the
+ * widget holds and show its page as part of Crescent's. Crescent's windows
+ * cancel any frame navigation that leaves Crescent (shell/), and in a browser
+ * the page swaps out a frame that loads a second time (WIDGETS_SCRIPT).
+ * What it gets from Crescent comes in a
  * preamble put in front of it (widgetDocument): the theme's colours and fonts,
  * and a script that tells the page how tall the widget is. The frame and the
  * page talk only through postMessage, each message an object whose `kb25`
@@ -134,6 +139,12 @@ ${own}`;
  * from one of this page's own frames, found by the window it came from, since
  * a sandboxed frame's origin is opaque and names nothing.
  *
+ * A widget's frame loads once. A second load is the widget leaving for
+ * another page, which its sandbox can't stop, so the frame is swapped for a
+ * line saying so: whatever that page draws never passes for Crescent's. It
+ * can't take back the request that load made; Crescent's windows cancel the
+ * navigation before it starts (shell/), and a browser tab has only this.
+ *
  * `__widgetsForPrint(true)` is what a print waits for (PRINT_SCRIPT): every
  * frame loaded, a lazy one included, and in the light theme a print wears,
  * for two seconds at most; `__widgetsForPrint(false)` puts the theme back.
@@ -169,6 +180,21 @@ export const WIDGETS_SCRIPT = `
   });
 
   new MutationObserver(() => frames().forEach(tell)).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+
+  // A frame's load doesn't bubble, but the document sees it on the way down.
+  const loaded = new WeakSet();
+  document.addEventListener("load", (event) => {
+    const frame = event.target;
+    if (!frames().includes(frame)) return;
+    if (!loaded.has(frame)) {
+      loaded.add(frame);
+      return;
+    }
+    const note = document.createElement("p");
+    note.className = "widget-left";
+    note.textContent = "This widget tried to open another page, so Crescent stopped it.";
+    frame.replaceWith(note);
+  }, true);
 
   window.__widgetsForPrint = (on) => {
     printing = on;

@@ -853,6 +853,8 @@ html.has-find.has-tabs .toc{padding-top:58px}
 .prose .widget-frame:not([width]){width:100%}
 .prose .widget-frame:not([height]){height:320px}
 .prose figure.widget figcaption{margin-top:6px; color:var(--muted); font-size:14px}
+/* Where a widget stood that tried to open another page (WIDGETS_SCRIPT). */
+.prose .widget-left{margin:0; padding:10px 12px; border:1px dashed var(--line); border-radius:6px; color:var(--muted); font-size:14px}
 .wikilink{border-bottom:1px dotted var(--accent)}
 /* Inline notes.
    Only annotated blocks become positioning contexts, so an unannotated page
