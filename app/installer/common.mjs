@@ -91,7 +91,7 @@ export const SHIPPED_SKILLS = [
 
 /**
  * Remove the page-writing skill an earlier install copied into `dir`, but only
- * when every byte in it is Crescent's: a real folder, not a link, holding the
+ * when every byte in it is crescent's: a real folder, not a link, holding the
  * empty marker and a SKILL.md exactly as a release shipped it, and nothing
  * else. A skill of the person's own by that name has no marker, and a copy of
  * ours they changed or added a file to fails the rest, so either stays as it
@@ -177,11 +177,11 @@ export function alertUser(message) {
     if (isMac) {
       execFileSync("osascript", [
         "-e",
-        `display alert "Crescent" message ${JSON.stringify(message)}`,
+        `display alert "crescent" message ${JSON.stringify(message)}`,
       ]);
     } else if (isWindows) {
       powershell(
-        `Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(${psQuote(message)}, 'Crescent') | Out-Null`
+        `Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(${psQuote(message)}, 'crescent') | Out-Null`
       );
     }
   } catch {}

@@ -118,13 +118,13 @@ export async function writeTextAsset(
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
     }
     if (!(await isRealDir(dir))) {
-      throw new Error(`${path.relative(path.dirname(root), dir).split(path.sep).join("/")} is not a folder Crescent can write to.`);
+      throw new Error(`${path.relative(path.dirname(root), dir).split(path.sep).join("/")} is not a folder crescent can write to.`);
     }
   }
 
   const fsPath = path.join(dir, segments[segments.length - 1]);
   const state = await content.fileState(fsPath);
-  if (state === "other") throw new Error(`_assets/${rel} is not a file Crescent can replace.`);
+  if (state === "other") throw new Error(`_assets/${rel} is not a file crescent can replace.`);
   // A dot-file, which the asset routes never serve, until it is renamed.
   const temp = path.join(dir, `.${path.basename(fsPath)}.${randomUUID()}.tmp`);
   await fs.writeFile(temp, text, { flag: "wx" });

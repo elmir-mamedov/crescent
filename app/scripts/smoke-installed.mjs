@@ -73,10 +73,10 @@ mcp.kill();
 assert.ok(tools && tools.length >= 18, `expected the MCP tools, got ${tools?.length}`);
 console.log(`mcp: ${tools.length} tools`);
 
-// 4. Crescent's license, and the licenses of what others wrote, went in with it.
+// 4. crescent's license, and the licenses of what others wrote, went in with it.
 const app = path.join(home, "app");
 assert.match(fs.readFileSync(path.join(app, "LICENSE"), "utf8"), /Apache License\s+Version 2\.0/);
-assert.match(fs.readFileSync(path.join(app, "NOTICE"), "utf8"), /^Crescent\r?\n/);
+assert.match(fs.readFileSync(path.join(app, "NOTICE"), "utf8"), /^crescent\r?\n/);
 const notices = fs.readFileSync(path.join(app, "THIRD_PARTY_NOTICES.txt"), "utf8");
 for (const name of ["fastify", "mermaid", "chevrotain", "katex", "Microsoft.Web.WebView2"]) {
   assert.match(notices, new RegExp(`^${name.replace(/\./g, "\\.")} `, "m"), `THIRD_PARTY_NOTICES.txt leaves out ${name}`);
@@ -84,13 +84,18 @@ for (const name of ["fastify", "mermaid", "chevrotain", "katex", "Microsoft.Web.
 console.log(`licenses: LICENSE, NOTICE and THIRD_PARTY_NOTICES.txt (${notices.length} characters)`);
 
 // 5. The launcher is where Spotlight / the Start menu look for it, and the
-// update replaced the one KB25 0.12.0 and earlier left (release.yml plants it).
+// update replaced the one KB25 0.12.0 and earlier left and wrote the name
+// 0.22.0 and earlier capitalized in lowercase (release.yml plants both).
 const launcher = isWindows
-  ? path.join(process.env.APPDATA, "Microsoft", "Windows", "Start Menu", "Programs", "Crescent.lnk")
-  : path.join(os.homedir(), "Applications", "Crescent.app");
+  ? path.join(process.env.APPDATA, "Microsoft", "Windows", "Start Menu", "Programs", "crescent.lnk")
+  : path.join(os.homedir(), "Applications", "crescent.app");
 assert.ok(fs.existsSync(launcher), `missing launcher ${launcher}`);
 const oldLauncher = path.join(path.dirname(launcher), isWindows ? "KB25.lnk" : "KB25.app");
 assert.ok(!fs.existsSync(oldLauncher), `the update left ${oldLauncher}`);
+// Listed, since a disk that ignores case finds the launcher by either name.
+const besideLauncher = fs.readdirSync(path.dirname(launcher));
+assert.ok(besideLauncher.includes(path.basename(launcher)), `the launcher is not named ${path.basename(launcher)}`);
+assert.ok(!besideLauncher.includes(isWindows ? "Crescent.lnk" : "Crescent.app"), "the update left the capitalized launcher");
 console.log(`launcher: ${launcher}`);
 
 // 6. KB25's window: the native app (shell/) starts the server and opens it;
@@ -180,7 +185,7 @@ await until(async () => !(await answers()), "quitting the window stops the serve
 console.log("window: starts the server, and quitting it stops the server");
 
 // An update made while the window is open restarts it on the new version: the
-// installer closes it and opens Crescent again, which starts the server. The
+// installer closes it and opens crescent again, which starts the server. The
 // same version stands in for a new one here, as in release.yml.
 /** The pid of an open window, or undefined. */
 function windowPid() {

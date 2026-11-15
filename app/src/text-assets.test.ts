@@ -80,7 +80,7 @@ test("writeTextAsset: writes nothing through a link, for _assets, a folder in it
       await fs.writeFile(path.join(outside, "victim.html"), "original");
       await fs.rm(assets, { recursive: true });
       if (!(await trySymlink(outside, assets, "dir"))) return t.skip("this system makes no symbolic links");
-      await assert.rejects(writeTextAsset(content, "docs", "victim.html", WIDGET), /not a folder Crescent can write to/);
+      await assert.rejects(writeTextAsset(content, "docs", "victim.html", WIDGET), /not a folder crescent can write to/);
       await fs.rm(assets);
 
       await fs.mkdir(assets);
@@ -89,7 +89,7 @@ test("writeTextAsset: writes nothing through a link, for _assets, a folder in it
       assert.equal(await pathExists(path.join(outside, "new.html")), false);
 
       if (await trySymlink(path.join(outside, "victim.html"), path.join(assets, "victim.html"), "file")) {
-        await assert.rejects(writeTextAsset(content, "docs", "victim.html", WIDGET), /not a file Crescent can replace/);
+        await assert.rejects(writeTextAsset(content, "docs", "victim.html", WIDGET), /not a file crescent can replace/);
       }
       assert.equal(await fs.readFile(path.join(outside, "victim.html"), "utf8"), "original");
     } finally {

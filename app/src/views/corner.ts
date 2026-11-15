@@ -104,12 +104,12 @@ ${HELP_DIALOG}${desktop ? QUIT_DIALOG : ""}
 /** Help dialog content: a short KB25 overview plus the keyboard shortcuts. */
 const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
   <form method="dialog" class="help-head">
-    <h2>Crescent Help</h2>
+    <h2>crescent help</h2>
     <button class="help-close" aria-label="Close help" value="close">&times;</button>
   </form>
   <section class="help-section">
-    <h3>About Crescent</h3>
-    <p>Crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. To keep several pages open at once, <kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click a page in the sidebar, or any link to one: each opens in a <strong>tab</strong> along the top, and the button at its left end closes all but the one you are on. The arrows at the top left go back and forward between the pages you have opened, as in a browser. A page in a tab, like each of the last few pages you read, opens again where you left it. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, mark it unread, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it; to put it back, choose <strong>Mark as unread</strong> in the page's <strong>&ctdot;</strong> menu. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
+    <h3>About crescent</h3>
+    <p>crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. To keep several pages open at once, <kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click a page in the sidebar, or any link to one: each opens in a <strong>tab</strong> along the top, and the button at its left end closes all but the one you are on. The arrows at the top left go back and forward between the pages you have opened, as in a browser. A page in a tab, like each of the last few pages you read, opens again where you left it. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, mark it unread, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it; to put it back, choose <strong>Mark as unread</strong> in the page's <strong>&ctdot;</strong> menu. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>
   </section>
   <section class="help-section">
     <h3>Keyboard shortcuts</h3>
@@ -155,18 +155,18 @@ const HELP_SCRIPT = `
 `;
 
 /** Power button, last in the corner of a launcher-started server; opens QUIT_DIALOG. */
-const QUIT_BUTTON = `<button type="button" class="quit-button" data-quit-open aria-label="Quit Crescent" title="Quit Crescent — stop it until you open it again">
+const QUIT_BUTTON = `<button type="button" class="quit-button" data-quit-open aria-label="Quit crescent" title="Quit crescent — stop it until you open it again">
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.4 6.6a9 9 0 1 1-12.8 0" /><path d="M12 2v10" /></svg>
   </button>`;
 
 /** Asks before quitting: Quit stops every open KB25 tab, not just this one. */
 const QUIT_DIALOG = `<dialog class="help-dialog" data-quit-dialog tabindex="-1">
   <form method="dialog" class="help-head">
-    <h2>Quit Crescent?</h2>
+    <h2>Quit crescent?</h2>
     <button class="help-close" aria-label="Cancel" value="cancel">&times;</button>
   </form>
   <section class="help-section">
-    <p>Every open Crescent tab stops working until you open Crescent again.</p>
+    <p>Every open crescent tab stops working until you open crescent again.</p>
     <p class="quit-error" data-quit-error role="alert" hidden></p>
   </section>
   <form method="dialog" class="quit-actions">
@@ -176,7 +176,7 @@ const QUIT_DIALOG = `<dialog class="help-dialog" data-quit-dialog tabindex="-1">
 </dialog>`;
 
 /** Speech bubble in the top-right corner that opens the feedback dialog. */
-const FEEDBACK_BUTTON = `<button type="button" class="feedback-button" data-feedback-open aria-label="Send feedback" title="Send feedback — report a bug or suggest an idea to the Crescent developer">
+const FEEDBACK_BUTTON = `<button type="button" class="feedback-button" data-feedback-open aria-label="Send feedback" title="Send feedback — report a bug or suggest an idea to the crescent developer">
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
   </button>`;
 
@@ -203,7 +203,7 @@ const info = () => {
 const root = document.documentElement;
 const feedback = mountFeedback({
   app: "kb25",
-  appName: "Crescent",
+  appName: "crescent",
   button: false,
   version: () => info().then((i) => i && i.version),
   facts: () => info().then((i) => (i ? i.facts : {})),
@@ -229,7 +229,7 @@ const feedback = mountFeedback({
     try {
       res = await fetch("/_feedback", { method: "POST", headers: { accept: "application/json" }, body: reportForm(report) });
     } catch {
-      return { status: "refused", error: "Crescent didn't answer. Is it still running?" };
+      return { status: "refused", error: "crescent didn't answer. Is it still running?" };
     }
     const answer = await res.json().catch(() => null);
     if (answer && ["sent", "queued", "refused"].includes(answer.status)) return answer;
@@ -305,7 +305,7 @@ const UPDATE_SCRIPT = `
     notes.target = "_blank";
     notes.rel = "noopener";
     show(
-      el("p", "update-title", "Crescent " + s.latest + " is available"),
+      el("p", "update-title", "crescent " + s.latest + " is available"),
       notes,
       actions(
         button("Later", "secondary", () => { store.set(DISMISSED, s.latest); hide(); }),
@@ -323,7 +323,7 @@ const UPDATE_SCRIPT = `
     // A version on each when there are several, for someone who skipped releases.
     const label = (m) => (u.messages.length > 1 ? m.version + ": " : "") + m.text;
     show(
-      el("p", "update-title", "Crescent is updated to " + u.to),
+      el("p", "update-title", "crescent is updated to " + u.to),
       ...u.messages.map((m) => el("p", "update-text update-message", label(m))),
       notes,
       actions(button("OK", "secondary", () => {
@@ -343,7 +343,7 @@ const UPDATE_SCRIPT = `
   }
 
   async function update(s) {
-    show(el("p", "update-title", "Updating Crescent…"), el("p", "update-text", "This page reloads when it's done."));
+    show(el("p", "update-title", "Updating crescent…"), el("p", "update-text", "This page reloads when it's done."));
     let res = null;
     try { res = await fetch("/_update", { method: "POST" }); } catch {}
     if (!res || res.status !== 202) {

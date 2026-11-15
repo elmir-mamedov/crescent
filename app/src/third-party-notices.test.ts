@@ -102,7 +102,7 @@ test("the release's notices name what it bundles, copies and carries inside merm
   }
 });
 
-test("the release ships nothing under a license Crescent cannot carry", async () => {
+test("the release ships nothing under a license crescent cannot carry", async () => {
   for (const entry of await shipped) {
     assert.ok(entry.license, `${entry.name} names no license`);
     assert.ok(compatible(entry.license), `${entry.name} is under ${entry.license}`);

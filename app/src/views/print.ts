@@ -5,7 +5,7 @@ import { slugPath } from "./html.js";
  * the Markdown file (a zip of it and its images when it shows any, written by
  * page-export.ts), or the page as a PDF, which is the page printed — the
  * print stylesheet (views/styles.ts) keeps the page alone and light, and
- * whatever prints it makes the PDF: a browser's print dialog, or Crescent's
+ * whatever prints it makes the PDF: a browser's print dialog, or crescent's
  * macOS window, which writes it into Downloads itself (shell/mac/KB25.swift).
  */
 

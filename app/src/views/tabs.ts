@@ -20,7 +20,7 @@ import { escapeHtml } from "./html.js";
  * the remembered places nor gets put back where it was.
  */
 export function tabStrip(title: string, options: { scrollMemory?: boolean } = {}): string {
-  // Crescent's own window is the only one there is, so what it had open can
+  // crescent's own window is the only one there is, so what it had open can
   // outlast it; a browser can hold the site in several windows at once.
   const reopen = desktop ? " data-tabs-reopen" : "";
   const memory = options.scrollMemory === false ? " data-no-scroll-memory" : "";
@@ -31,7 +31,7 @@ export function tabStrip(title: string, options: { scrollMemory?: boolean } = {}
 
 /**
  * Back and Forward, as in a browser (feedback #38): what a swipe between
- * pages does, for a click. Crescent's window has no toolbar of its own to
+ * pages does, for a click. crescent's window has no toolbar of its own to
  * hold them. They lead the tab strip, before Close other tabs; with no strip
  * showing, the same pair leads the sidebar, beside the site's name, and
  * gives way to the strip's when it slides in (has-tabs).
@@ -215,12 +215,12 @@ export const TAB_MODEL = `
  * Every view is its own page load, so a tab is just an address: switching tabs
  * loads the other tab's page, and a page loading takes over the open tab, the
  * way following a link does in a browser. The tabs live in sessionStorage,
- * which is this window's alone; Crescent's own window also copies them to
+ * which is this window's alone; crescent's own window also copies them to
  * localStorage, and a new window opening on the home page goes back to the tab
  * the last one had open.
  *
- * Cmd/Ctrl-click or a middle click on a link to a Crescent page opens it in a
- * new tab. Crescent's window would otherwise send that click to the browser,
+ * Cmd/Ctrl-click or a middle click on a link to a crescent page opens it in a
+ * new tab. crescent's window would otherwise send that click to the browser,
  * as it does any link asked for in a new window, so the click never reaches it.
  * A new tab shows up on the page it opens, once that has loaded: the strip
  * slides down when it is the second tab, and the tab fades in when it joins
@@ -525,7 +525,7 @@ ${TAB_MODEL}
   });
 
   // Cmd/Ctrl+W closes the open tab, as in a browser, but never the last one,
-  // which would leave nothing to show (feedback #29). Crescent's window has
+  // which would leave nothing to show (feedback #29). crescent's window has
   // no Close item of its own, so the keys reach the page; a browser keeps
   // them for its own tabs.
   document.addEventListener("keydown", (event) => {
@@ -535,7 +535,7 @@ ${TAB_MODEL}
     if (state.tabs.length > 1) closeTab(state.active);
   });
 
-  // A link to a Crescent page: not a file (a download, a space's asset), and
+  // A link to a crescent page: not a file (a download, a space's asset), and
   // not one a script on the page has already handled. On the window, so that
   // every listener on the document has had its turn first.
   function pageLink(event) {

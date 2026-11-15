@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     guard let command = Bundle.main.object(forInfoDictionaryKey: "KB25StartCommand") as? [String],
           let executable = command.first
     else {
-      return fail("Crescent.app does not say how to start Crescent. Install Crescent again.")
+      return fail("crescent.app does not say how to start crescent. Install crescent again.")
     }
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executable)
@@ -133,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     do {
       try process.run()
     } catch {
-      fail("Crescent could not start: \(error.localizedDescription)")
+      fail("crescent could not start: \(error.localizedDescription)")
     }
   }
 
@@ -175,7 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
   private func fail(_ message: String) {
     let alert = NSAlert()
-    alert.messageText = "Crescent"
+    alert.messageText = "crescent"
     alert.informativeText = message
     alert.runModal()
     quit()
@@ -208,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     // viewer (views/diagrams.ts) zooms its diagram with.
     webView.allowsMagnification = false
     if #available(macOS 13.3, *) { webView.isInspectable = true }
-    webView.loadHTMLString(Self.page("Starting Crescent…"), baseURL: nil)
+    webView.loadHTMLString(Self.page("Starting crescent…"), baseURL: nil)
 
     window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 1280, height: 860),
@@ -216,7 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       backing: .buffered,
       defer: false
     )
-    window.title = "Crescent"
+    window.title = "crescent"
     window.contentView = webView
     window.backgroundColor = Self.background
     window.isReleasedWhenClosed = false
@@ -225,7 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     window.setFrameAutosaveName("KB25")
     titleObservation = webView.observe(\.title) { [weak self] webView, _ in
       let title = webView.title ?? ""
-      self?.window.title = title.isEmpty ? "Crescent" : title
+      self?.window.title = title.isEmpty ? "crescent" : title
     }
     // Shown by reveal(), once the loading window has played the moon.
   }
@@ -282,7 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     container.addSubview(view)
 
     let panel = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
-    panel.title = "Crescent"
+    panel.title = "crescent"
     panel.isOpaque = false
     panel.backgroundColor = .clear
     panel.hasShadow = true
@@ -378,9 +378,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       return decisionHandler(.cancel)
     }
     // A frame is a page's widget (views/widgets.ts), which may show only what
-    // Crescent sends it. Its sandbox can't stop it navigating itself, so one
+    // crescent sends it. Its sandbox can't stop it navigating itself, so one
     // that tries to load another site, to send it what the widget holds or to
-    // pass that site's page off as Crescent's, stays where it is.
+    // pass that site's page off as crescent's, stays where it is.
     if !mainFrame && !isKB25(url) { return decisionHandler(.cancel) }
     decisionHandler(.allow)
   }
@@ -560,8 +560,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     if error.code == NSURLErrorCancelled || (error.domain == "WebKitErrorDomain" && error.code == 102) { return }
     guard let url = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL, isKB25(url) else { return }
     failedURL = url
-    if !revealed { setSplashStatus("Crescent isn’t answering. Trying again…") }
-    webView.loadHTMLString(Self.page("Crescent isn’t answering. Trying again…", retry: url), baseURL: nil)
+    if !revealed { setSplashStatus("crescent isn’t answering. Trying again…") }
+    webView.loadHTMLString(Self.page("crescent isn’t answering. Trying again…", retry: url), baseURL: nil)
   }
 
   // MARK: Menus
@@ -622,14 +622,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       return menu
     }
     let find = #selector(findInPage(_:))
-    submenu("Crescent", [
-      item("About Crescent", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+    submenu("crescent", [
+      item("About crescent", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
       .separator(),
-      item("Hide Crescent", #selector(NSApplication.hide(_:)), "h"),
+      item("Hide crescent", #selector(NSApplication.hide(_:)), "h"),
       item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
       item("Show All", #selector(NSApplication.unhideAllApplications(_:))),
       .separator(),
-      item("Quit Crescent", #selector(NSApplication.terminate(_:)), "q"),
+      item("Quit crescent", #selector(NSApplication.terminate(_:)), "q"),
     ])
     submenu("File", [
       item("Print…", #selector(printFromMenu(_:)), "p"),
