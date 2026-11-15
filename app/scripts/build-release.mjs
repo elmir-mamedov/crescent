@@ -98,7 +98,6 @@ if (!macShell || !windowsShell) {
 }
 copy(macShell, path.join("shell", "mac", "KB25"));
 copy(windowsShell, path.join("shell", "windows"));
-copy(path.join(appDir, "skills"), "skills");
 // Crescent's license, and the licenses of what others wrote: the packages the
 // bundles took in, those copied above and what their prebuilt files carry,
 // and the NuGet packages KB25.exe ships with, which its build's restore lists.
