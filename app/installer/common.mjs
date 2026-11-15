@@ -21,6 +21,7 @@
 //
 // On macOS the window is ~/Applications/KB25.app itself (mac-app.mjs).
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -74,25 +75,44 @@ export function recordUpdate(file, from, to) {
   }
 }
 
-/** Marks a skill folder as ours, so removal never deletes someone's own skill. */
+/** The empty file every install from 0.1.0 to 0.22.0 put in the skill folder it copied. */
 const SKILL_MARKER = ".installed-by-kb25";
 
-/** Whether `dir` holds the page-writing skill an earlier install put there. */
-export function isOurSkill(dir) {
-  return fs.existsSync(path.join(dir, SKILL_MARKER));
-}
+/**
+ * SHA-256 of each SKILL.md a release shipped: one for 0.1.0 to 0.20.0, the
+ * other for 0.21.0 to 0.22.0, the last release with the skill. Releases copied
+ * it byte for byte. `git show v0.22.0:app/skills/kb-page-authoring/SKILL.md`
+ * gives back the text, and before 0.12.2 it was in kb25-plugin/skills/.
+ */
+export const SHIPPED_SKILLS = [
+  "ce4893db24423cc4adbb62c819ffdbf307580ecbfbdefc9e8822f6d029f4cd32",
+  "a6fcb30bb1f1a3b46d242ee3f3001e19bf575b4bdc7922f44762c8b04a4e8db4",
+];
 
 /**
- * Copy the page-writing skill from `source` into `dir`, replacing the copy an
- * earlier install left, so the skill tracks the installed version. A skill of
- * the person's own by that name, one without our marker, is left alone.
+ * Remove the page-writing skill an earlier install copied into `dir`, but only
+ * when every byte in it is Crescent's: a real folder, not a link, holding the
+ * empty marker and a SKILL.md exactly as a release shipped it, and nothing
+ * else. A skill of the person's own by that name has no marker, and a copy of
+ * ours they changed or added a file to fails the rest, so either stays as it
+ * is. Returns whether the folder was removed.
  */
-export function copySkill(source, dir) {
-  if (!fs.existsSync(source)) return;
-  if (fs.existsSync(dir) && !isOurSkill(dir)) return;
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.cpSync(source, dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, SKILL_MARKER), "");
+export function removeShippedSkill(dir, shipped = SHIPPED_SKILLS) {
+  try {
+    if (!fs.lstatSync(dir).isDirectory()) return false;
+    const entries = fs.readdirSync(dir);
+    if (entries.length !== 2 || !entries.includes(SKILL_MARKER) || !entries.includes("SKILL.md")) return false;
+    const marker = fs.lstatSync(path.join(dir, SKILL_MARKER));
+    const skill = fs.lstatSync(path.join(dir, "SKILL.md"));
+    if (!marker.isFile() || marker.size !== 0 || !skill.isFile()) return false;
+    const hash = createHash("sha256").update(fs.readFileSync(path.join(dir, "SKILL.md"))).digest("hex");
+    if (!shipped.includes(hash)) return false;
+    fs.rmSync(dir, { recursive: true });
+    return true;
+  } catch {
+    // Not there, or not readable: either way, nothing of ours to take.
+    return false;
+  }
 }
 
 /** KEY=value lines, the same shape the server's loadEnvFile reads. */

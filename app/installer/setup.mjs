@@ -20,15 +20,14 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import {
-  copySkill,
   isMac,
-  isOurSkill,
   isWindows,
   paths,
   powershell,
   psQuote,
   readEnvFile,
   recordUpdate,
+  removeShippedSkill,
   sleep,
   stopServer,
   tildify,
@@ -62,6 +61,7 @@ const USER_ENV_FILE = path.join(
   "kb25",
   ".env"
 );
+/** Where releases up to 0.22.0 copied the page-writing skill (removeOldSkill). */
 const SKILL_DIR = path.join(os.homedir(), ".claude", "skills", "kb-page-authoring");
 /**
  * Where an install's port search starts: clear of the ports dev servers take
@@ -111,6 +111,7 @@ async function main() {
   const window = createLauncher();
   await connectClaudeDesktop();
   await connectClaudeCode();
+  removeOldSkill();
 
   if (UPDATING) {
     // KB25_NO_BROWSER comes from the window, by way of the server that ran this.
@@ -530,39 +531,36 @@ function claude(args) {
 }
 
 async function connectClaudeCode() {
-  if (claude(["--version"]) === null) {
-    // An update started from Crescent's window runs with the server's PATH,
-    // which seldom has ~/.local/bin, where Claude Code installs itself. The
-    // skill an earlier run copied in was copied once Claude Code was found and
-    // connected, so it is refreshed even when Claude Code isn't found now.
-    if (isOurSkill(SKILL_DIR)) installSkill();
-    return;
-  }
+  if (claude(["--version"]) === null) return;
   if (claude(["mcp", "get", "kb25"])?.includes(p.mcp)) {
     console.log("Claude Code is already connected to Crescent.");
-  } else {
-    if (!(await ask("Connect Crescent to Claude Code?"))) return;
-    if (claude(["mcp", "add", "--scope", "user", "kb25", "--", p.node, p.mcp]) === null) {
-      console.log("Claude Code didn't accept the connection, so it was skipped.");
-      return;
-    }
-    console.log("Connected. Start a new Claude Code session to use Crescent there.");
+    return;
   }
-  installSkill();
+  if (!(await ask("Connect Crescent to Claude Code?"))) return;
+  if (claude(["mcp", "add", "--scope", "user", "kb25", "--", p.node, p.mcp]) === null) {
+    console.log("Claude Code didn't accept the connection, so it was skipped.");
+    return;
+  }
+  console.log("Connected. Start a new Claude Code session to use Crescent there.");
 }
 
-/** The page-writing skill, refreshed on every run so it tracks the installed version. */
-function installSkill() {
-  copySkill(path.join(p.app, "skills", "kb-page-authoring"), SKILL_DIR);
+/**
+ * Releases up to 0.22.0 copied a page-writing skill into Claude Code; the MCP
+ * server carries its rules to every client now. The copy goes only when it is
+ * provably Crescent's and unchanged (removeShippedSkill), and whether or not
+ * claude is found: an update started from the window seldom finds it.
+ */
+function removeOldSkill() {
+  if (removeShippedSkill(SKILL_DIR)) {
+    console.log("Removed the page-writing skill Crescent used to keep in Claude Code: Claude gets its rules from Crescent now.");
+  }
 }
 
 function disconnectClaudeCode() {
   if (claude(["mcp", "get", "kb25"])?.includes(p.mcp)) {
     claude(["mcp", "remove", "--scope", "user", "kb25"]);
   }
-  if (isOurSkill(SKILL_DIR)) {
-    fs.rmSync(SKILL_DIR, { recursive: true, force: true });
-  }
+  removeShippedSkill(SKILL_DIR);
 }
 
 /** Remove everything KB25 installed. The pages stay where they are. */

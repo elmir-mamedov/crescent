@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { SpawnOptions } from "node:child_process";
@@ -309,8 +311,8 @@ async function installerCommon() {
   const url = new URL("../installer/common.mjs", import.meta.url).href;
   return (await import(url)) as {
     recordUpdate(file: string, from: string, to: string): void;
-    copySkill(source: string, dir: string): void;
-    isOurSkill(dir: string): boolean;
+    removeShippedSkill(dir: string, shipped?: string[]): boolean;
+    SHIPPED_SKILLS: string[];
   };
 }
 
@@ -422,40 +424,81 @@ test("the installer records an update, keeping where an unseen one started", asy
   }
 });
 
-test("the installer copies its skill in, refreshes its own copy, and leaves a person's own alone", async () => {
+/** A skill folder as an install left it: the marker and the SKILL.md it copied. */
+async function makeSkill(dir: string, text: string) {
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, "SKILL.md"), text);
+  await fs.writeFile(path.join(dir, ".installed-by-kb25"), "");
+}
+
+const exists = (file: string) => fs.lstat(file).then(() => true, () => false);
+
+test("the installer removes the skill it copied, and only when every byte in it is Crescent's", async () => {
   const tmp = await makeTempKb();
   try {
-    const { copySkill, isOurSkill } = await installerCommon();
-    const source = path.join(tmp.dir, "release", "kb-page-authoring");
-    const dir = path.join(tmp.dir, "skills", "kb-page-authoring");
-    const read = () => fs.readFile(path.join(dir, "SKILL.md"), "utf8");
-    await fs.mkdir(source, { recursive: true });
+    const { removeShippedSkill } = await installerCommon();
+    const text = "---\nname: kb-page-authoring\n---\nThe page is the deliverable.\n";
+    const shipped = [createHash("sha256").update(text).digest("hex")];
+    const skill = (name: string) => path.join(tmp.dir, name, "kb-page-authoring");
 
-    await fs.writeFile(path.join(source, "SKILL.md"), "0.22.0");
-    copySkill(source, dir);
-    assert.equal(await read(), "0.22.0");
-    assert.equal(isOurSkill(dir), true);
+    // As a release left it: gone.
+    await makeSkill(skill("ours"), text);
+    assert.equal(removeShippedSkill(skill("ours"), shipped), true);
+    assert.equal(await exists(skill("ours")), false);
 
-    // An update brings a newer skill, and a file the old one had goes with it.
-    await fs.writeFile(path.join(dir, "old.md"), "dropped");
-    await fs.writeFile(path.join(source, "SKILL.md"), "0.23.0");
-    copySkill(source, dir);
-    assert.equal(await read(), "0.23.0");
-    await assert.rejects(fs.stat(path.join(dir, "old.md")));
+    // A copy the person edited.
+    await makeSkill(skill("edited"), `${text}My own rule.\n`);
+    // A copy they added a file to.
+    await makeSkill(skill("added"), text);
+    await fs.writeFile(path.join(skill("added"), "notes.md"), "mine");
+    // A skill of their own, word for word ours but without the marker.
+    await fs.mkdir(skill("own"), { recursive: true });
+    await fs.writeFile(path.join(skill("own"), "SKILL.md"), text);
+    // A marker with something written in it.
+    await makeSkill(skill("marked"), text);
+    await fs.writeFile(path.join(skill("marked"), ".installed-by-kb25"), "x");
+    for (const name of ["edited", "added", "own", "marked"]) {
+      assert.equal(removeShippedSkill(skill(name), shipped), false, name);
+      assert.equal(await exists(path.join(skill(name), "SKILL.md")), true, name);
+    }
 
-    // A release without the skill changes nothing.
-    copySkill(path.join(tmp.dir, "release", "missing"), dir);
-    assert.equal(await read(), "0.23.0");
+    // A link to a folder elsewhere, even one that would pass: link and folder stay.
+    await makeSkill(skill("target"), text);
+    await fs.mkdir(path.join(tmp.dir, "linked"));
+    await fs.symlink(skill("target"), skill("linked"), "junction");
+    assert.equal(removeShippedSkill(skill("linked"), shipped), false);
+    assert.equal(await exists(path.join(skill("target"), "SKILL.md")), true);
 
-    // A skill the person wrote under the same name isn't ours to replace.
-    const own = path.join(tmp.dir, "own", "kb-page-authoring");
-    await fs.mkdir(own, { recursive: true });
-    await fs.writeFile(path.join(own, "SKILL.md"), "mine");
-    assert.equal(isOurSkill(own), false);
-    copySkill(source, own);
-    assert.equal(await fs.readFile(path.join(own, "SKILL.md"), "utf8"), "mine");
-    assert.equal(isOurSkill(path.join(tmp.dir, "nowhere")), false);
+    // Nothing there.
+    assert.equal(removeShippedSkill(skill("nowhere"), shipped), false);
   } finally {
     await tmp.cleanup();
   }
+});
+
+const repo = path.join(import.meta.dirname, "..", "..");
+const hasTags = (() => {
+  try {
+    execFileSync("git", ["-C", repo, "rev-parse", "--verify", "--quiet", "v0.22.0^{commit}"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+test("the installer knows the SKILL.md of every release that shipped one", { skip: !hasTags && "needs the release tags (a shallow clone has none)" }, async () => {
+  const { SHIPPED_SKILLS } = await installerCommon();
+  const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "buffer" });
+  const tags = git("tag", "--list", "v*").toString().split("\n").filter(Boolean);
+  const found = new Set<string>();
+  for (const tag of tags) {
+    for (const dir of ["app/skills/kb-page-authoring", "kb25-plugin/skills/kb-page-authoring"]) {
+      const files = git("ls-tree", "-r", "--name-only", tag, "--", dir).toString().split("\n").filter(Boolean);
+      if (!files.length) continue;
+      // The folder an install copied held SKILL.md alone, beside the marker.
+      assert.deepEqual(files, [`${dir}/SKILL.md`], tag);
+      found.add(createHash("sha256").update(git("show", `${tag}:${dir}/SKILL.md`)).digest("hex"));
+    }
+  }
+  assert.deepEqual([...found].sort(), [...SHIPPED_SKILLS].sort());
 });
