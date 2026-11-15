@@ -60,7 +60,9 @@ export function isWidgetName(name: string): boolean {
  * nothing and send nothing: no script, style, font or image from anywhere,
  * Crescent included, and no request. What it uses is written inside the file
  * (`data:` images and fonts, and a `blob:` it makes itself). Only Crescent's
- * own pages may frame it, so no other site can show a widget's contents.
+ * own pages may frame it, so no other site can show a widget's contents. No
+ * policy stops a document navigating itself, though; views/widgets.ts says
+ * what stops a widget that tries.
  */
 const EMBED_CSP = [
   "sandbox allow-scripts",
