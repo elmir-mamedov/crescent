@@ -297,8 +297,10 @@ test("WIDGETS_SCRIPT: a print loads every frame in the light theme, and waits fo
 });
 
 test("the rules agents are given name every theme variable a widget has, and no other", async () => {
-  const mcp = await fs.readFile(path.join(import.meta.dirname, "mcp.ts"), "utf8");
-  for (const name of WIDGET_VARIABLES) assert.ok(mcp.includes(`\`${name}\``), name);
-  const named = new Set(mcp.match(/--kb-[a-z-]+/g));
+  // They are in read_me's figures module, as an agent reads it.
+  const { readMe } = await import("./read-me.js");
+  const guide = readMe({ modules: ["figures"], withCore: false, token: "t", via: "mcp" });
+  for (const name of WIDGET_VARIABLES) assert.ok(guide.includes(`\`${name}\``), name);
+  const named = new Set(guide.match(/--kb-[a-z-]+/g));
   assert.deepEqual([...named].sort(), [...WIDGET_VARIABLES].sort());
 });
