@@ -294,6 +294,37 @@ test("a \\\\ inside \\(…\\) is TeX's, not the closer", () => {
   assert.match(html, /here\.<\/p>/);
 });
 
+test("feedback #76: \\\\(…\\\\) and \\\\[…\\\\] are typeset as the formula a MathJax site would see", () => {
+  // The MathJax convention doubles every backslash Markdown would eat. Read as
+  // Markdown text, `\\circ` is `\circ` and `\\,` is `\,`, while `\_` is `_`.
+  const html = render(
+    String.raw`Convert \\(780^\\circ\\mathrm C=1053.15\\ \\mathrm K\\) and \\(k\_{L}\\,\mathrm{s}\\).`
+  );
+  assert.deepEqual(texOf(html), [String.raw`780^\circ\mathrm C=1053.15\ \mathrm K`, String.raw`k_{L}\,\mathrm{s}`]);
+  assert.doesNotMatch(html, /katex-display/);
+  assert.doesNotMatch(html, /\\\(|\\\)/);
+
+  const display = render(String.raw`Then \\[ \\frac{a}{b} \\] inline.` + "\n");
+  assert.deepEqual(texOf(display), [String.raw`\frac{a}{b}`]);
+  assert.match(display, /Then <span class="katex-display">/);
+});
+
+test("a \\\\[ … \\\\] block is display math, anchored like any other block", () => {
+  const html = render("Intro.\n\n\\\\[\nQ = \\\\frac{a}{b} \\\\\\\\\n- b\n\\\\]\n\nAfter.\n");
+  assert.doesNotMatch(html, /<ul/);
+  assert.match(html, /<div class="math-block" data-src-line="2" data-src-hash="[0-9a-f]{8}"><span class="katex-display">/);
+  assert.deepEqual(texOf(html), ["Q = \\frac{a}{b} \\\\\n- b"]);
+  assert.match(html, /<p[^>]*>After\.<\/p>/);
+});
+
+test("a doubled \\\\(…\\\\) around prose stays the text it shows", () => {
+  // Escaping a backslash is how Markdown shows a literal `\(`, so the doubled
+  // form needs TeX inside it to be taken.
+  const html = render(String.raw`Write \\(n\\) or \\[sic\\] to delimit, as in \\(x\\).`);
+  assert.doesNotMatch(html, /katex/);
+  assert.match(html, /Write \\\(n\\\) or \\\[sic\\\] to delimit, as in \\\(x\\\)\./);
+});
+
 test("a heading's \\(…\\) formula appears in the rail as its TeX", () => {
   const [section] = extractSections(String.raw`### Arrhenius factor \(k(T)=k_0e^{-E_a/RT}\)` + "\n");
   assert.equal(section.text, "Arrhenius factor k(T)=k_0e^{-E_a/RT}");
