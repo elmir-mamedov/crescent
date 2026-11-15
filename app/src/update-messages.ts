@@ -12,5 +12,6 @@ export const UPDATE_MESSAGES: Readonly<Record<string, string>> = {
   "0.21.1":
     "If you use Crescent from the Claude app or Claude Code, restart it to use this version there: quit the Claude app completely and open it again, and start a new Claude Code session. Until then, Claude can't add images to your pages.",
   "0.23.0":
-    "If you use Crescent from the Claude app or Claude Code, restart it to use this version there: quit the Claude app completely and open it again, and start a new Claude Code session. Until then, Claude can't add moving or interactive figures to your pages.",
+    "If you use Crescent from the Claude app or Claude Code, restart it to use this version there: quit the Claude app completely and open it again, and start a new Claude Code session. Until then, Claude can't add moving or interactive figures to your pages.\n\n" +
+    "Claude now learns how to write your pages from Crescent itself, in the Claude app as well as in Claude Code, so this update removed the page-writing skill Crescent used to keep in Claude Code. If you had changed that skill, it was left as it is, and it won't be updated again: delete the kb-page-authoring folder in .claude/skills, in your home folder, once you no longer need it.",
 };
