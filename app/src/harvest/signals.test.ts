@@ -141,6 +141,26 @@ test("kb25 tool calls are extracted with commit SHA and ok status from results",
   assert.deepEqual(task.spaces, ["kb25", "nope"]);
 });
 
+test("tool calls are found under the crescent name too, which Claude Code registers since 0.23.0", async () => {
+  const events = await eventsFor([
+    userPrompt("find pages", { uuid: "u1" }),
+    assistant({
+      uuid: "a1",
+      parentUuid: "u1",
+      toolUses: [
+        { id: "c1", name: "mcp__crescent__kb_search", input: { space: "notes" } },
+        { id: "c2", name: "mcp__kb25__kb_get_page", input: { slug: "notes/x" } },
+      ],
+    }),
+  ]);
+
+  const calls = byKind(events, "kb25_tool_call");
+  assert.deepEqual(
+    calls.map((c) => c.name),
+    ["mcp__crescent__kb_search", "mcp__kb25__kb_get_page"]
+  );
+});
+
 test("deriveSpace reads the space from a slug, parent, space arg, or result", () => {
   assert.equal(deriveSpace({ slug: "engineering/runbooks/deploy" }), "engineering");
   assert.equal(deriveSpace({ sourceSlug: "kb25/logging" }), "kb25");
