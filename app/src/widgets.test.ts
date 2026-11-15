@@ -140,16 +140,43 @@ type Message = { data: unknown; source: unknown };
  */
 function pageRig(count: number) {
   const root = { dataset: { theme: "dark" } as Record<string, string> };
-  const frames = Array.from({ length: count }, () => {
+  type Frame = {
+    style: Record<string, string>;
+    loading: string;
+    contentWindow: { postMessage: (data: unknown) => void };
+    posted: unknown[];
+    replacedBy?: { className: string; textContent: string };
+    replaceWith: (node: { className: string; textContent: string }) => void;
+  };
+  const frames: Frame[] = Array.from({ length: count }, () => {
     const posted: unknown[] = [];
-    return { style: {} as Record<string, string>, loading: "lazy", contentWindow: { postMessage: (data: unknown) => posted.push(data) }, posted };
+    const frame: Frame = {
+      style: {},
+      loading: "lazy",
+      contentWindow: { postMessage: (data: unknown) => posted.push(data) },
+      posted,
+      // As in the DOM, a replaced frame is no longer one of the page's.
+      replaceWith: (node) => {
+        frame.replacedBy = node;
+        frames.splice(frames.indexOf(frame), 1);
+      },
+    };
+    return frame;
   });
+  let onLoad: (event: { target: unknown }) => void = () => {};
   let onMessage: (event: Message) => void = () => {};
   let onTheme: () => void = () => {};
   const win: Record<string, unknown> = {};
   new Function("window", "document", "addEventListener", "MutationObserver", "setTimeout", WIDGETS_SCRIPT)(
     win,
-    { documentElement: root, querySelectorAll: (selector: string) => (selector === "iframe.widget-frame" ? frames : []) },
+    {
+      documentElement: root,
+      querySelectorAll: (selector: string) => (selector === "iframe.widget-frame" ? [...frames] : []),
+      createElement: () => ({ className: "", textContent: "" }),
+      addEventListener: (type: string, fn: (event: { target: unknown }) => void, capture: boolean) => {
+        if (type === "load" && capture) onLoad = fn;
+      },
+    },
     (type: string, fn: (event: Message) => void) => {
       if (type === "message") onMessage = fn;
     },
@@ -169,7 +196,14 @@ function pageRig(count: number) {
     root.dataset.theme = theme;
     onTheme();
   };
-  return { frames, from, switchTheme, onMessage: (event: Message) => onMessage(event), print: win.__widgetsForPrint as (on: boolean) => Promise<void> };
+  return {
+    frames,
+    from,
+    switchTheme,
+    onMessage: (event: Message) => onMessage(event),
+    load: (target: unknown) => onLoad({ target }),
+    print: win.__widgetsForPrint as (on: boolean) => Promise<void>,
+  };
 }
 
 test("WIDGETS_SCRIPT: a frame that starts is told the theme, and again when it changes", () => {
@@ -200,6 +234,28 @@ test("WIDGETS_SCRIPT: a message from anything but one of the page's frames is ig
   rig.onMessage({ data: { kb25: "ready" }, source: null });
   assert.equal(rig.frames[0].style.height, undefined);
   assert.deepEqual(rig.frames[0].posted, []);
+});
+
+test("WIDGETS_SCRIPT: a frame that loads a second time, a widget leaving for another page, is swapped out", () => {
+  const rig = pageRig(2);
+  const [leaving, staying] = rig.frames;
+  rig.load(leaving);
+  rig.load(staying);
+  assert.equal(rig.frames.length, 2, "a widget's own load keeps it");
+  rig.load(leaving);
+  assert.equal(rig.frames.length, 1);
+  assert.equal(rig.frames[0], staying);
+  assert.equal(leaving.replacedBy?.className, "widget-left");
+  assert.match(leaving.replacedBy?.textContent ?? "", /tried to open another page/);
+});
+
+test("WIDGETS_SCRIPT: the load of anything but a widget frame is left alone", () => {
+  const rig = pageRig(1);
+  const image = {};
+  rig.load(image);
+  rig.load(image);
+  rig.load(rig.frames[0]);
+  assert.equal(rig.frames.length, 1);
 });
 
 test("WIDGETS_SCRIPT: a print loads every frame in the light theme, and waits for them to wear it", async () => {
