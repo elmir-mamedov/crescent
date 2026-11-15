@@ -353,6 +353,17 @@ function refuseInstructionsPath(slug: string) {
   );
 }
 
+/**
+ * What to say once a page is written. The rules for writing pages live in
+ * this server rather than in a skill: Cowork and the Claude app take their
+ * skills from the person's Claude account, which Crescent can't reach, while
+ * every client reads this server and every update replaces it. This one is in
+ * the server instructions and again in the two page-writing tools'
+ * descriptions, for a client that drops the instructions.
+ */
+const PAGE_HAND_OFF =
+  "Once the page is written, hand it back in one line: its title and its path (`/<slug>`), plus one short clause only for something the person needs to know that the page does not show (an assumption you made, a part you left out or could not verify, a page filed somewhere they would not expect). Where the app already shows them what you wrote, as Crescent's own chat does, give only that clause, if there is one. Do not restate, summarise or list what the page says, or narrate how you wrote it: the person reads the page itself, and a recap costs them time and checks nothing.";
+
 const server = new McpServer(
   {
     name: "kb25",
@@ -364,6 +375,9 @@ const server = new McpServer(
       `Every write is auto-committed to its space's repo as \`... via ${COMMIT_VIA}\`.` +
       " A write whose result carries `commitError` was saved but not committed: the change is in place, so do not repeat it." +
       " SPACE INSTRUCTIONS: a space may carry standing instructions written by its owner — language, register, formatting, standing domain context — that govern everything you write there and how you answer questions about it. They arrive as a `spaceInstructions` block on the first tool result scoped to that space, and they are binding: follow them in preference to your own defaults, and do not restate or negotiate them. Later results in the same space carry a short block marked `unchanged` with the token but no text — the instructions delivered earlier still apply in full, and if you can no longer see them, call `kb_get_space_instructions` to get them back. Where a space has them, writing into it also requires passing that block's `token` back as the write tool's `spaceInstructionsToken` — so read a space before you write to it. The token changes whenever a person edits the instructions; a refused write returns the current text and a fresh token, so retry once with those. `kb_get_space_instructions` fetches them directly, and `kb_list_spaces` reports which spaces have them. LINKING: every page has a stable `id`, returned by the read and create tools. Prefer a wiki-link by id — `[[id:<id>]]` or `[[id:<id>|Link text]]` — which keeps resolving even after the target is moved or renamed; a slug-based link like `[[space/some/slug]]` or `[text](/space/some/slug)` breaks when the target moves. To point at one section of a page rather than the whole thing, append its anchor: `[[id:<id>#<anchor>]]` or `[[space/some/slug#<anchor>]]`. Anchors come back in `kb_get_page`'s `sections` and on each `kb_search` match — read them, do not guess them from the heading text." +
+      " WRITING PAGES: when the person asks for a page, the page is what they asked for, not your reply. Write as soon as the request is clear enough to act on, since any page can be edited or archived afterwards; ask one short question first only when what the page should cover, or which space or section it belongs in, is genuinely unclear. File it beside similar pages (kb_list_pages, kb_search) rather than inventing new structure. A new page is one kb_create_page call with its title and full body, never an empty page filled in afterwards; to change a page, read it with kb_get_page (format: raw) and send the whole replacement with kb_update_page. Write for a reader landing on the page cold, not as a reply to this conversation: lead with what they need first, under clear headings. A page shows only images in its own space's `_assets/`: add an image file with kb_add_image and use the link it returns, since an image from the web shows only as a link and a `data:` image only as its alt text. " +
+      PAGE_HAND_OFF +
+      " If the person also asked something the page does not answer, answer just that part, briefly." +
       " FIGURES: prose stays Markdown. To show what words can't, try a ```mermaid diagram (flowcharts, sequences, states) or TeX math (`$…$`, `$$…$$`) first. A drawing that neither moves nor responds is an SVG image: write it with kb_write_asset and show it with `![caption](_assets/name.svg)`, drawn dark on a light background, since the dark theme shows every image on a light panel, and with no `prefers-color-scheme` in it. Only a figure that has to move or respond (an animation, sliders, a chart that shows values on hover, a quiz) is an HTML widget: one file per figure, named for what it shows, written with kb_write_asset (whose description has the rules a widget follows) and embedded like an image, `![caption](_assets/name.html =x400)`. HTML pasted into a page is not rendered.",
   }
 );
@@ -635,13 +649,17 @@ server.registerTool(
   {
     title: "Create KB Page",
     description:
-      "Create a new page from a title and Markdown body inside a space or page. The title becomes the page slug; a leaf-page parent is auto-promoted into a section. Every page must live inside a space, so the parent is required (a space key like `kb25`, or a deeper page slug); use kb_create_space for a new space.",
+      "Create a new page from a title and Markdown body inside a space or page. Write the whole page in this one call, rather than creating it empty and filling it in with kb_update_page. The title becomes the page slug; a leaf-page parent is auto-promoted into a section. Every page must live inside a space, so the parent is required (a space key like `kb25`, or a deeper page slug); use kb_create_space for a new space. " +
+      PAGE_HAND_OFF,
     inputSchema: {
       parent: z
         .string()
         .describe("Parent slug — a space key or deeper page, e.g. kb25 or kb25/runbooks. A leaf parent becomes a section. Required; pages cannot be created at the root."),
       title: z.string().min(1).describe("Page title; also slugified into the filename."),
-      body: z.string().optional().describe("Markdown body (without frontmatter). Defaults to a heading."),
+      body: z
+        .string()
+        .optional()
+        .describe("The page's whole Markdown body (without frontmatter), written here in full. Defaults to a heading."),
       tags: z.array(z.string()).optional().describe("Optional frontmatter tags."),
       summary: z.string().optional().describe("Optional frontmatter summary."),
       spaceInstructionsToken: instructionTokenSchema,
@@ -936,7 +954,8 @@ server.registerTool(
   {
     title: "Update KB Page",
     description:
-      "Replace a page's entire Markdown source, including frontmatter. The frontmatter must be valid (a title is required), and it must keep the page's existing `id` — that id is what `[[id:<id>]]` links resolve through, so read the current source first with kb_get_page (format: raw) rather than composing frontmatter from scratch. Do not add or reword inline notes as a side effect of an unrelated edit; preserve the ones you were not asked about. To leave an explanation of your own, use kb_add_agent_note rather than writing `<!-- kb25:note ... -->` syntax by hand — a note written by hand gets no id, so nothing can resolve it afterwards. Folders have no body and are rejected — use kb_rename_folder to rename one.",
+      "Replace a page's entire Markdown source, including frontmatter. The frontmatter must be valid (a title is required), and it must keep the page's existing `id` — that id is what `[[id:<id>]]` links resolve through, so read the current source first with kb_get_page (format: raw) rather than composing frontmatter from scratch. Do not add or reword inline notes as a side effect of an unrelated edit; preserve the ones you were not asked about. To leave an explanation of your own, use kb_add_agent_note rather than writing `<!-- kb25:note ... -->` syntax by hand — a note written by hand gets no id, so nothing can resolve it afterwards. Folders have no body and are rejected — use kb_rename_folder to rename one. " +
+      PAGE_HAND_OFF,
     inputSchema: {
       slug: z.string().describe("Page slug, e.g. engineering/runbooks/deploy."),
       markdown: z.string().describe("Full replacement Markdown source, including YAML frontmatter."),
