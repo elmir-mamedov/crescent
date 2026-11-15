@@ -1459,6 +1459,47 @@ export function createRenderer(
   return md;
 }
 
+/** A base no real address shares, to tell an image's own address from Crescent's. */
+const OWN_BASE = new URL("http://crescent.invalid/page/");
+
+/**
+ * Whether an image's address loads from Crescent itself, or loads nothing: a
+ * path on this server (an asset, a gallery image), a relative one, or a
+ * `data:` image, the only kind markdown-it lets through. The URL is read the
+ * way a browser reads it, so `//host`, `\\host` and a tab hidden in a scheme
+ * all count as the other site they lead to.
+ */
+export function isOwnImageSrc(src: string): boolean {
+  try {
+    const url = new URL(src, OWN_BASE);
+    return url.origin === OWN_BASE.origin || url.protocol === "data:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Show each image from another site as a link to it instead, on a renderer
+ * built by createRenderer: what the chat drawer renders a reply with. A
+ * reply is written by an agent, and whatever it reads, a web page or a page
+ * pulled into the KB, can tell it what to write. An image the browser loads as
+ * soon as the reply shows sends its address, and whatever an agent put in it
+ * (the text of any page), to that site with no click and no tool. A link
+ * leaves it to the person.
+ */
+export function linkOutsideImages(md: MarkdownIt): MarkdownIt {
+  const image = md.renderer.rules.image!;
+  md.renderer.rules.image = (tokens, idx, options, env, self) => {
+    const token = tokens[idx];
+    const src = token.attrGet("src") ?? "";
+    if (isOwnImageSrc(src)) return image(tokens, idx, options, env, self);
+    const alt = self.renderInlineAsText(token.children ?? [], options, env);
+    const href = md.utils.escapeHtml(src);
+    return `<a class="outside-image" href="${href}">${md.utils.escapeHtml(alt || src)}</a>`;
+  };
+  return md;
+}
+
 /** One run of a note's words: plain text, or text that stands for a link. */
 export interface NoteSegment {
   text: string;
