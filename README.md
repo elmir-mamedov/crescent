@@ -1,6 +1,6 @@
-# Crescent
+# crescent
 
-Crescent is a personal knowledge base that runs on your
+crescent is a personal knowledge base that runs on your
 computer. Pages are Markdown files in a folder you own, organised into spaces,
 and you browse and edit them in your web browser. A built-in chat, driven by
 Claude Code or Codex, answers questions and writes pages, and the Claude app
@@ -53,24 +53,24 @@ irm https://github.com/elmir-mamedov/crescent/releases/latest/download/install.p
 ```
 
 The installer asks a few yes/no questions; pressing Enter accepts each default.
-It installs Crescent into `~/Library/Application Support/KB25` on macOS or
+It installs crescent into `~/Library/Application Support/KB25` on macOS or
 `%LOCALAPPDATA%\KB25` on Windows, and keeps pages in a `Crescent` folder in
 your home folder. If it finds an existing knowledge base, it offers to use
-that instead. It can also connect Crescent to the Claude app and to Claude
+that instead. It can also connect crescent to the Claude app and to Claude
 Code.
 
-After installation, Crescent opens from Spotlight on macOS or the Start menu on
+After installation, crescent opens from Spotlight on macOS or the Start menu on
 Windows.
 
-## Using Crescent
+## Using crescent
 
-Crescent is an app with a window of its own and its own icon in the Dock or
+crescent is an app with a window of its own and its own icon in the Dock or
 the taskbar. It runs a small server on your computer, which accepts
-connections from this computer only. Closing the window quits Crescent, as
+connections from this computer only. Closing the window quits crescent, as
 quitting any app does, and so does the power button in the top-right corner;
 links to other sites open in your default browser. It needs macOS 13 or
 later, or Windows 10 or 11 with the Microsoft Edge WebView2 Runtime, which
-comes with Edge; without WebView2, Crescent opens in your default browser
+comes with Edge; without WebView2, crescent opens in your default browser
 instead and quits with the power button.
 
 **Writing pages.** Create a space from the spaces page, then add pages and
@@ -98,32 +98,32 @@ the chat; it can then describe it, or put it on a page. Conversations, and the
 images attached to them, are stored in the `.kb25/chat` folder of your
 knowledge base, separate from the spaces.
 
-**Using Crescent from Claude.** Once connected during installation, the Claude
+**Using crescent from Claude.** Once connected during installation, the Claude
 app and Claude Code can search, read and write your pages through the kb25 MCP
 server. Changes made this way are committed like any other edit, and the
 sidebar marks the new pages until you open them.
 
 ## Updating and removing
 
-When a new version is available, Crescent installs it before it opens: the
+When a new version is available, crescent installs it before it opens: the
 next time you open it, it asks you to **Install update** and opens once that
 is done. If the update can't be installed, for example without an internet
-connection, Crescent says so and opens on the version you have. While
-Crescent is already open, a notice appears in its bottom-right corner instead,
+connection, crescent says so and opens on the version you have. While
+crescent is already open, a notice appears in its bottom-right corner instead,
 whose **Update** installs it in the background and reloads the page. Pages and
 settings are kept.
 
-Running the install command again also updates Crescent when a newer version
-exists. When Crescent is already up to date, the command offers to remove it.
-Removing Crescent leaves your pages in place.
+Running the install command again also updates crescent when a newer version
+exists. When crescent is already up to date, the command offers to remove it.
+Removing crescent leaves your pages in place.
 
 ## Feedback
 
 The speech-bubble button in the top-right corner sends a bug report or
 suggestion to the developer, with optional screenshots and an optional email
-address for a reply. Each report includes Crescent's version, the operating
-system, the browser and its window size. Errors Crescent ran into are added
-unless you untick them, and **Diagnostic logs**, the end of Crescent's log,
+address for a reply. Each report includes crescent's version, the operating
+system, the browser and its window size. Errors crescent ran into are added
+unless you untick them, and **Diagnostic logs**, the end of crescent's log,
 only if you tick it. The dialog shows everything that goes before you send.
 Reports written while offline are sent once a connection is available.
 
@@ -134,7 +134,7 @@ in [`AGENTS.md`](AGENTS.md).
 
 ## License
 
-Crescent is licensed under the [Apache License 2.0](LICENSE); see also
+crescent is licensed under the [Apache License 2.0](LICENSE); see also
 [`NOTICE`](NOTICE). The software by others that it includes is listed, with
 the text of each license, in `THIRD_PARTY_NOTICES.txt`, in the `app` folder
 of an installed copy (see [Installation](#installation)).

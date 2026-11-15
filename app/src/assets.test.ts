@@ -36,7 +36,7 @@ test("isWidgetName: an HTML file, in any case; nothing else", () => {
   for (const name of ["page.htm", "plot.svg", "html", "tcp.html.txt"]) assert.equal(isWidgetName(name), false, name);
 });
 
-test("embedHeaders: scripts in a sandbox of their own, with no network, framed only by Crescent", () => {
+test("embedHeaders: scripts in a sandbox of their own, with no network, framed only by crescent", () => {
   const headers = embedHeaders();
   const csp = headers["content-security-policy"].split("; ");
   assert.equal(csp[0], "sandbox allow-scripts");

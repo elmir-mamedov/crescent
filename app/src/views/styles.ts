@@ -135,7 +135,7 @@ const LIGHT_TOKENS = `
 `;
 
 /**
- * A theme's colours by name, `bg` for `--bg`, for what is drawn in Crescent's
+ * A theme's colours by name, `bg` for `--bg`, for what is drawn in crescent's
  * colours outside this stylesheet: a widget's frame (views/widgets.ts).
  */
 export function themeColors(theme: "light" | "dark"): Record<string, string> {

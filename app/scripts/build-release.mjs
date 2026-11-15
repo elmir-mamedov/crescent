@@ -13,7 +13,7 @@
 // ../node_modules/katex/dist, ../node_modules/@elmir-mamedov/feedback/dist,
 // ../../.env) resolve unchanged.
 //
-// It carries Crescent's LICENSE and NOTICE, and THIRD_PARTY_NOTICES.txt, the
+// It carries crescent's LICENSE and NOTICE, and THIRD_PARTY_NOTICES.txt, the
 // licenses of everything in it that others wrote (src/third-party-notices.ts,
 // which this imports, so it runs through tsx). A package copied as it is below
 // must be in that module's COPIED too.
@@ -98,7 +98,7 @@ if (!macShell || !windowsShell) {
 }
 copy(macShell, path.join("shell", "mac", "KB25"));
 copy(windowsShell, path.join("shell", "windows"));
-// Crescent's license, and the licenses of what others wrote: the packages the
+// crescent's license, and the licenses of what others wrote: the packages the
 // bundles took in, those copied above and what their prebuilt files carry,
 // and the NuGet packages KB25.exe ships with, which its build's restore lists.
 for (const file of ["LICENSE", "NOTICE"]) copy(path.join(appDir, "..", file), file);

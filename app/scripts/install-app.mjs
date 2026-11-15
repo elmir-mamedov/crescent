@@ -1,6 +1,6 @@
-// Installs ~/Applications/Crescent Dev.app, KB25's window (shell/mac/KB25.swift,
+// Installs ~/Applications/crescent dev.app, KB25's window (shell/mac/KB25.swift,
 // built here with swiftc) that Spotlight, Launchpad and the Dock pick up. It has
-// its own name and bundle id, so it sits beside an installed Crescent.app rather
+// its own name and bundle id, so it sits beside an installed crescent.app rather
 // than replacing it, and keeps its window's storage and position apart. Opening it
 // starts the server when it is not already running and opens the viewer; it
 // stops the server it started when the window closes. A server already running
@@ -17,11 +17,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { sh, writeMacApp } from "../installer/mac-app.mjs";
+import { removeMacApp, sh, writeMacApp } from "../installer/mac-app.mjs";
 import { buildMacShell } from "./build-shell.mjs";
 
 if (process.platform !== "darwin") {
-  console.error("Crescent Dev.app is a macOS launcher; on other systems run `npm run dev`.");
+  console.error("crescent dev.app is a macOS launcher; on other systems run `npm run dev`.");
   process.exit(1);
 }
 
@@ -34,11 +34,11 @@ if (!fs.existsSync(tsxCli)) {
 
 const executable = buildMacShell();
 if (!executable) {
-  console.error("Building Crescent's window needs swiftc; run `xcode-select --install` first.");
+  console.error("Building crescent's window needs swiftc; run `xcode-select --install` first.");
   process.exit(1);
 }
 
-const name = "Crescent Dev";
+const name = "crescent dev";
 const bundle = path.join(os.homedir(), "Applications", `${name}.app`);
 const logPath = path.join(os.homedir(), "Library", "Logs", "kb25-viewer.log");
 const port = process.env.PORT ?? "4000";
@@ -74,6 +74,9 @@ echo "$URL"
 `;
 
 fs.mkdirSync(path.dirname(logPath), { recursive: true });
+// Its name before crescent was written in lowercase. First: a disk that
+// ignores case takes it for the bundle about to be written.
+removeMacApp(path.join(path.dirname(bundle), "Crescent Dev.app"));
 writeMacApp({
   bundle,
   executable,

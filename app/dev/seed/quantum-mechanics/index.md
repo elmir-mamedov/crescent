@@ -2,7 +2,7 @@
 title: Quantum Mechanics
 id: 10hyryhp6ed4n
 icon: ⚛️
-summary: A short tour of quantum mechanics, from wave–particle duality to entanglement. Sample pages for testing Crescent.
+summary: A short tour of quantum mechanics, from wave–particle duality to entanglement. Sample pages for testing crescent.
 ---
 Quantum mechanics describes matter and light at the scale of atoms, where energy comes in fixed amounts, particles behave like waves, and a measurement can only ever give odds. These pages build it up in order: start with [[id:3uaeubqgetixb]] and read down the list.
 

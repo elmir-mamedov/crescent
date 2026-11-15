@@ -56,10 +56,10 @@ export function isWidgetName(name: string): boolean {
  * The policy a widget is sent under at `/_embed/…` (server/widgets.ts), the
  * one route that shows a space's HTML as a page. A widget needs its scripts to
  * move and respond, so it keeps them, but the sandbox gives it an origin of
- * its own, without Crescent's pages, storage or sign-in, and it may load
+ * its own, without crescent's pages, storage or sign-in, and it may load
  * nothing and send nothing: no script, style, font or image from anywhere,
- * Crescent included, and no request. What it uses is written inside the file
- * (`data:` images and fonts, and a `blob:` it makes itself). Only Crescent's
+ * crescent included, and no request. What it uses is written inside the file
+ * (`data:` images and fonts, and a `blob:` it makes itself). Only crescent's
  * own pages may frame it, so no other site can show a widget's contents. No
  * policy stops a document navigating itself, though; views/widgets.ts says
  * what stops a widget that tries.

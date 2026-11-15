@@ -293,7 +293,7 @@ export async function saveImage(
 
   await fs.mkdir(root, { recursive: true });
   // mkdir is satisfied by a link to a folder; the files must land in a real one.
-  if (!(await isRealDir(root))) throw new Error("This space's _assets is not a folder Crescent can write to.");
+  if (!(await isRealDir(root))) throw new Error("This space's _assets is not a folder crescent can write to.");
 
   const ext = path.extname(fileName);
   const base = fileName.slice(0, -ext.length);

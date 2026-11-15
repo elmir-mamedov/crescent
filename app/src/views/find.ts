@@ -87,7 +87,7 @@ export const FIND_MODEL = `
  * Find on the page (feedback #44), on FIND_MODEL above. Cmd+F (Ctrl+F off a
  * Mac) opens FIND_BAR, and what is typed there is found in the page's title,
  * its text and its "On this page" rail, and nowhere else: not the sidebar, the
- * tabs, or any of Crescent's own buttons and labels, which a browser's find
+ * tabs, or any of crescent's own buttons and labels, which a browser's find
  * would match too. Enter and Shift+Enter, the bar's arrows, Cmd+G and
  * Cmd+Shift+G (F3 and Shift+F3 too) step through the matches, and Esc closes
  * it. The window's Edit menu opens it through window.kb25Find.
