@@ -192,6 +192,8 @@ export function layout(v: PageView): string {
   // In <head> rather than beside the Mermaid script: KaTeX's markup without its
   // stylesheet shows every formula twice, once as text and once as MathML.
   const mathCss = v.contentHtml.includes('class="katex') ? `\n${KATEX_CSS}` : "";
+  // The viewer that opens a diagram large opens a page's image too.
+  const hasDiagram = v.contentHtml.includes('class="mermaid"');
 
   return `<!doctype html>
 <html lang="en">
@@ -223,7 +225,8 @@ ${toc ? `<script>${TOC_SCRIPT}</script>` : ""}
 ${v.contentHtml.includes('class="section-link"') ? `<script>${SECTION_FLASH_SCRIPT}</script>` : ""}
 ${notesData ? `<script>${NOTES_SCRIPT}</script>` : ""}
 <script>${MOVE_SCRIPT}</script>
-${v.contentHtml.includes('class="mermaid"') ? `${DIAGRAM_VIEWER}\n${MERMAID_SCRIPT}` : ""}
+${hasDiagram || v.contentHtml.includes("<img ") ? DIAGRAM_VIEWER : ""}
+${hasDiagram ? MERMAID_SCRIPT : ""}
 ${v.contentHtml.includes('class="widget-frame"') ? `<script>${WIDGETS_SCRIPT}</script>` : ""}
 </body>
 </html>`;

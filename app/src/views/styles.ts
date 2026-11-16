@@ -820,6 +820,10 @@ html.has-find.has-tabs .toc{padding-top:58px}
 .diagram-viewer-stage.is-dragging{cursor:grabbing}
 .diagram-viewer-canvas{position:absolute; left:0; top:0; transform-origin:0 0}
 .diagram-viewer-canvas svg{display:block}
+.diagram-viewer-canvas img{display:block; width:100%; height:100%; box-sizing:border-box; object-fit:contain; -webkit-user-drag:none}
+/* A page's image opens in the same viewer, clicked or with Enter. */
+.prose img[data-image-open]{cursor:zoom-in}
+.prose img[data-image-open]:focus-visible{outline:2px solid var(--focus-ring); outline-offset:2px}
 /* A formula wider than the column scrolls on its own instead of the page. */
 .prose .katex-display{overflow-x:auto; overflow-y:hidden; padding:.2em 0}
 .prose .math-block{margin:.7em 0}
@@ -836,10 +840,11 @@ html.has-find.has-tabs .toc{padding-top:58px}
 .prose img{max-width:100%; height:auto}
 /* Diagrams are usually drawn in black on a transparent background meant for a
    white page, so in dark mode their lines and labels vanish into --bg. Back
-   every image with a light panel there, dimmed slightly to cut the glare. */
-:root[data-theme="dark"] .prose img{background:#f0f3f6; padding:8px; border-radius:6px; filter:brightness(.9)}
+   every image with a light panel there, dimmed slightly to cut the glare,
+   and the copy the viewer opens large too. */
+:root[data-theme="dark"] :is(.prose,.diagram-viewer-canvas) img{background:#f0f3f6; padding:8px; border-radius:6px; filter:brightness(.9)}
 @media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .prose img{background:#f0f3f6; padding:8px; border-radius:6px; filter:brightness(.9)}
+  :root:not([data-theme="light"]):not([data-theme="dark"]) :is(.prose,.diagram-viewer-canvas) img{background:#f0f3f6; padding:8px; border-radius:6px; filter:brightness(.9)}
 }
 /* A widget (views/widgets.ts): a frame the width of the column, or of its
    =Wx, starting at its =xH or 320px, until it says how tall it is. It draws
