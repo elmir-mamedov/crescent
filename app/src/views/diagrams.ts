@@ -1,7 +1,7 @@
 /**
- * Mermaid diagrams: the script that draws them, and the viewer that opens one
- * large. DIAGRAM_MODEL is the viewer's zoom and bounds, which the tests run on
- * their own.
+ * Mermaid diagrams: the script that draws them, and the viewer that opens one,
+ * or a page's image, large. DIAGRAM_MODEL is the viewer's zoom and bounds,
+ * which the tests run on their own.
  */
 
 /**
@@ -69,11 +69,15 @@ export const MERMAID_SCRIPT = `<script src="/_vendor/mermaid/mermaid.min.js"></s
 
 /**
  * The diagram viewer's limits, as functions of plain numbers so the tests can
- * run them. diagramScale holds a zoom level between MIN and MAX. diagramBound
- * places one axis of the diagram, `size` long, in a stage `room` long: one
- * that fits stays wholly in view, at least ROOM from either side, and a bigger
- * one can be moved until its edge is ROOM inside the stage's, and no further,
- * so the reader is never left looking at empty space.
+ * run them. diagramScale holds a zoom level between MIN and MAX. imageScale
+ * does the same for an image, given the level `fits` that fits it to the
+ * window, which is where it opens: a photo too big to be seen whole at MIN
+ * goes down to that, and a small drawing, which MAX would stop before it
+ * filled the window, can be zoomed to MAX times that. diagramBound places one
+ * axis of the diagram, `size` long, in a stage `room` long: one that fits
+ * stays wholly in view, at least ROOM from either side, and a bigger one can
+ * be moved until its edge is ROOM inside the stage's, and no further, so the
+ * reader is never left looking at empty space.
  */
 export const DIAGRAM_MODEL = `
   const MIN = 0.3;
@@ -81,6 +85,9 @@ export const DIAGRAM_MODEL = `
   const ROOM = 32;
   function diagramScale(level) {
     return Math.min(MAX, Math.max(MIN, level));
+  }
+  function imageScale(level, fits) {
+    return Math.min(Math.max(MAX, fits * MAX), Math.max(Math.min(MIN, fits), level));
   }
   function diagramBound(at, size, room) {
     const far = room - size - ROOM;
@@ -93,6 +100,11 @@ export const DIAGRAM_MODEL = `
  * carries its expand button, outside the <pre> Mermaid draws into and empties
  * again on every theme change. Expanding copies the drawn SVG onto the stage
  * at its own size, then scales it to fit the window.
+ *
+ * A page's image opens the same way, clicked or with Enter (feedback #79): a
+ * copy at its own size, which for an SVG that has none is the size it is
+ * drawn at on the page. Not an image that is a link's, which opens where the
+ * link leads, nor one in a dialog, such as the gallery's viewer.
  *
  * Dragging moves the view, and so does scrolling. Scrolling with Cmd/Ctrl
  * held zooms about the pointer, as does a pinch: Chromium sends one as a
@@ -113,6 +125,7 @@ const DIAGRAM_VIEWER_SCRIPT = `
   const stage = viewer.querySelector("[data-diagram-stage]");
   const canvas = viewer.querySelector("[data-diagram-canvas]");
   const level = viewer.querySelector("[data-diagram-fit]");
+  const article = document.querySelector("article.prose");
 ${DIAGRAM_MODEL}
   const STEP = 1.25;
 
@@ -129,7 +142,18 @@ ${DIAGRAM_MODEL}
   let width = 0;
   let height = 0;
   let fitted = true;
+  // Whether what is open is an image, and the level that fits it to the window.
+  let image = false;
+  let fits = 1;
 
+  function bounded(next) {
+    return image ? imageScale(next, fits) : diagramScale(next);
+  }
+  function measure() {
+    const box = stage.getBoundingClientRect();
+    fits = Math.min((box.width - ROOM * 2) / width, (box.height - ROOM * 2) / height);
+    return box;
+  }
   function draw() {
     x = diagramBound(x, width * scale, stage.clientWidth);
     y = diagramBound(y, height * scale, stage.clientHeight);
@@ -137,9 +161,8 @@ ${DIAGRAM_MODEL}
     level.textContent = Math.round(scale * 100) + "%";
   }
   function fit() {
-    const box = stage.getBoundingClientRect();
-    const fits = Math.min((box.width - ROOM * 2) / width, (box.height - ROOM * 2) / height);
-    scale = diagramScale(fits);
+    const box = measure();
+    scale = bounded(fits);
     x = (box.width - width * scale) / 2;
     y = (box.height - height * scale) / 2;
     fitted = true;
@@ -147,7 +170,7 @@ ${DIAGRAM_MODEL}
   }
   // Zoom to next, keeping the point (px, py) of the stage where it is.
   function zoom(next, px, py) {
-    next = diagramScale(next);
+    next = bounded(next);
     x = px - (px - x) * (next / scale);
     y = py - (py - y) * (next / scale);
     scale = next;
@@ -163,32 +186,70 @@ ${DIAGRAM_MODEL}
     return [event.clientX - box.left, event.clientY - box.top];
   }
 
-  function open(frame) {
-    const svg = frame.querySelector("pre.mermaid svg");
-    if (!svg) return;
-    const box = svg.viewBox && svg.viewBox.baseVal;
-    const drawn = svg.getBoundingClientRect();
-    width = box && box.width ? box.width : drawn.width;
-    height = box && box.height ? box.height : drawn.height;
-    if (!width || !height) return;
-    const copy = svg.cloneNode(true);
-    copy.setAttribute("width", String(width));
-    copy.setAttribute("height", String(height));
-    copy.style.maxWidth = "none";
+  function show(copy, w, h, label, isImage) {
+    if (viewer.open) return;
+    width = w;
+    height = h;
+    image = isImage;
     canvas.style.width = width + "px";
     canvas.style.height = height + "px";
     canvas.replaceChildren(copy);
+    viewer.setAttribute("aria-label", label);
     viewer.showModal();
     // Not its close button, which would wear a focus ring until clicked away.
     viewer.focus();
     fit();
   }
+  function openDiagram(frame) {
+    const svg = frame.querySelector("pre.mermaid svg");
+    if (!svg) return;
+    const box = svg.viewBox && svg.viewBox.baseVal;
+    const drawn = svg.getBoundingClientRect();
+    const w = box && box.width ? box.width : drawn.width;
+    const h = box && box.height ? box.height : drawn.height;
+    if (!w || !h) return;
+    const copy = svg.cloneNode(true);
+    copy.setAttribute("width", String(w));
+    copy.setAttribute("height", String(h));
+    copy.style.maxWidth = "none";
+    show(copy, w, h, "Diagram", false);
+  }
+  function openImage(img) {
+    const copy = new Image();
+    // Once the copy has loaded, so not an image that never does. It fills
+    // the canvas, which show() sizes.
+    copy.addEventListener("load", () => {
+      // Its own size, in the shape the page draws it in.
+      const w = img.naturalWidth || img.width;
+      const h = img.width ? (w * img.height) / img.width : 0;
+      if (w && h) show(copy, w, h, img.alt || "Image", true);
+    });
+    copy.alt = img.alt;
+    copy.draggable = false;
+    copy.src = img.currentSrc || img.src;
+  }
 
   document.addEventListener("click", (event) => {
     const button = event.target instanceof Element ? event.target.closest("[data-diagram-expand]") : null;
     const frame = button && button.closest(".mermaid-frame");
-    if (frame) open(frame);
+    if (frame) openDiagram(frame);
   });
+  if (article) {
+    for (const img of article.querySelectorAll("img")) {
+      if (img.closest("a, dialog")) continue;
+      img.setAttribute("data-image-open", "");
+      img.tabIndex = 0;
+    }
+    const opens = (target) => target instanceof Element && target.matches("img[data-image-open]");
+    article.addEventListener("click", (event) => {
+      if (opens(event.target)) openImage(event.target);
+    });
+    article.addEventListener("keydown", (event) => {
+      if ((event.key !== "Enter" && event.key !== " ") || !opens(event.target)) return;
+      event.preventDefault();
+      openImage(event.target);
+    });
+  }
   viewer.querySelector("[data-diagram-close]").addEventListener("click", () => viewer.close());
   // A click on the backdrop lands on the dialog itself.
   viewer.addEventListener("click", (event) => {
@@ -210,8 +271,12 @@ ${DIAGRAM_MODEL}
   });
   window.addEventListener("resize", () => {
     if (!viewer.open) return;
-    if (fitted) fit();
-    else draw();
+    if (fitted) {
+      fit();
+    } else {
+      measure();
+      draw();
+    }
   });
 
   let drag = null;
@@ -283,8 +348,9 @@ ${DIAGRAM_MODEL}
  * A diagram opened large (feedback #33). A busy Mermaid diagram shrinks to
  * the page's width until its labels can't be read, so each one gets a button
  * that opens it in a dialog nearly the size of the window, where it can be
- * dragged about and zoomed. It comes before MERMAID_SCRIPT, whose diagrams
- * its script (DIAGRAM_VIEWER_SCRIPT, above) frames first.
+ * dragged about and zoomed. A page's image opens in it too, when clicked
+ * (feedback #79). It comes before MERMAID_SCRIPT, whose diagrams its script
+ * (DIAGRAM_VIEWER_SCRIPT, above) frames first.
  */
 export const DIAGRAM_VIEWER = `<template data-diagram-expand-template><button type="button" class="diagram-expand" data-diagram-expand aria-label="Expand diagram" title="Expand diagram"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"/></svg></button></template>
 <dialog class="diagram-viewer" data-diagram-viewer tabindex="-1" aria-label="Diagram">
