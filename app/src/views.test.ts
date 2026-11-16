@@ -1806,8 +1806,56 @@ test("feedback #37: the diagram viewer zooms from 30% to 150% and stays on the d
 
   const html = layout(pageView({ contentHtml: MERMAID_PAGE }));
   assert.match(html, /x = diagramBound\(x, width \* scale, stage\.clientWidth\);\s*y = diagramBound\(y, height \* scale, stage\.clientHeight\);/);
-  assert.match(html, /scale = diagramScale\(fits\);/);
-  assert.match(html, /next = diagramScale\(next\);/);
+  assert.match(html, /return image \? imageScale\(next, fits\) : diagramScale\(next\);/);
+  assert.match(html, /scale = bounded\(fits\);/);
+  assert.match(html, /next = bounded\(next\);/);
+});
+
+const IMAGE_PAGE = '<p>Before.</p>\n<p><img src="/kb25/_assets/plot.png" alt="A plot"></p>\n';
+
+test("feedback #79: a page's image opens large in the diagram viewer, to zoom and drag about", () => {
+  const html = layout(pageView({ contentHtml: IMAGE_PAGE }));
+  assert.match(html, /<dialog class="diagram-viewer" data-diagram-viewer tabindex="-1" aria-label="Diagram">/);
+  // Without a diagram, no Mermaid.
+  assert.doesNotMatch(html, /\/_vendor\/mermaid\/mermaid\.min\.js/);
+
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('document.querySelector("[data-diagram-viewer]")'));
+  assert.ok(script);
+  // The article's images, but not a link's, nor one in a dialog such as the gallery's viewer.
+  assert.match(script, /const article = document\.querySelector\("article\.prose"\);/);
+  assert.match(script, /for \(const img of article\.querySelectorAll\("img"\)\) \{\s*if \(img\.closest\("a, dialog"\)\) continue;\s*img\.setAttribute\("data-image-open", ""\);\s*img\.tabIndex = 0;/);
+  // Opened by a click, or by Enter or Space once focused.
+  assert.match(script, /article\.addEventListener\("click", \(event\) => \{\s*if \(opens\(event\.target\)\) openImage\(event\.target\);/);
+  assert.match(script, /if \(\(event\.key !== "Enter" && event\.key !== " "\) \|\| !opens\(event\.target\)\) return;/);
+  // A copy, shown once it has loaded, at the image's own size in the shape the page draws it.
+  assert.match(script, /copy\.addEventListener\("load", \(\) => \{[\s\S]*?const w = img\.naturalWidth \|\| img\.width;\s*const h = img\.width \? \(w \* img\.height\) \/ img\.width : 0;\s*if \(w && h\) show\(copy, w, h, img\.alt \|\| "Image", true\);/);
+  assert.match(script, /copy\.draggable = false;\s*copy\.src = img\.currentSrc \|\| img\.src;/);
+
+  // It looks like it opens, and in dark mode the copy gets the light panel the page's image has.
+  assert.match(html, /\.prose img\[data-image-open\]\{cursor:zoom-in\}/);
+  assert.match(html, /:root\[data-theme="dark"\] :is\(\.prose,\.diagram-viewer-canvas\) img\{background:#f0f3f6/);
+
+  // No image and no diagram, no viewer.
+  assert.doesNotMatch(layout(pageView()), /data-diagram-viewer/);
+});
+
+test("feedback #79: an image opens fitted to the window, and zooms in past it however small it is", () => {
+  const { imageScale } = new Function(`${DIAGRAM_MODEL}\nreturn { imageScale };`)() as {
+    imageScale(level: number, fits: number): number;
+  };
+  // A drawing that fits at 215% opens there, and zooms in to 150% of that.
+  assert.equal(imageScale(2.15, 2.15), 2.15);
+  assert.equal(imageScale(10, 2), 3);
+  assert.equal(imageScale(0.01, 2), 0.3);
+  // A screenshot that fits at 42% zooms from 30% to 150%, as a diagram does.
+  assert.equal(imageScale(0.42, 0.42), 0.42);
+  assert.equal(imageScale(10, 0.42), 1.5);
+  assert.equal(imageScale(0.01, 0.42), 0.3);
+  // A photo too big to be seen whole at 30% can still be.
+  assert.equal(imageScale(0.2, 0.2), 0.2);
+  assert.equal(imageScale(0.01, 0.2), 0.2);
 });
 
 test("views: every inline script in every layout parses as JavaScript", () => {
@@ -1815,6 +1863,7 @@ test("views: every inline script in every layout parses as JavaScript", () => {
     ["page", layout(pageView())],
     ["page-toc", layout(pageView({ sections: sections() }))],
     ["page-mermaid", layout(pageView({ contentHtml: MERMAID_PAGE }))],
+    ["page-image", layout(pageView({ contentHtml: IMAGE_PAGE }))],
     ["page-widget", layout(pageView({ contentHtml: WIDGET_PAGE }))],
     ["folder", folderLayout({ ...pageView(), children: [] } as unknown as FolderView)],
     ["dashboard", dashboardLayout(dashboardView())],
