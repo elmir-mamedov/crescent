@@ -326,7 +326,7 @@ export function startProcessTurn(options: {
  */
 function stopProcess(child: ChildProcess): void {
   if (process.platform === "win32") {
-    if (child.pid) execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], () => {});
+    if (child.pid) execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true }, () => {});
     return;
   }
   child.kill("SIGINT");
