@@ -36,7 +36,7 @@ export function sidebarHtml(
           .join("")}</ul>`
       : "";
     return `<aside class="sidebar">
-  <div class="sidebar-top">${PAGE_NAV}<a class="brand" href="/">${escapeHtml(siteTitle)}</a></div>
+  <div class="sidebar-top">${PAGE_NAV}<a class="brand" href="/">${escapeHtml(siteTitle)}</a>${SIDEBAR_HIDE_BUTTON}</div>
   <nav class="tree">${list}</nav>
   ${SIDEBAR_PLACED_MARKER}
 </aside>`;
@@ -73,7 +73,7 @@ export function sidebarHtml(
   }));
 
   return `<aside class="sidebar">
-  <div class="sidebar-top">${PAGE_NAV}<a class="brand" href="/">${escapeHtml(siteTitle)}</a></div>
+  <div class="sidebar-top">${PAGE_NAV}<a class="brand" href="/">${escapeHtml(siteTitle)}</a>${SIDEBAR_HIDE_BUTTON}</div>
   ${switcher}
   ${sidebarSearch(spaceKey, offered)}
   <details class="create-menu">
@@ -101,6 +101,47 @@ export function sidebarHtml(
 ${labelDialog(spaceKey, offered)}
 ${folderDialog()}`;
 }
+
+/** A panel with its left column marked: the sidebar, in both of its buttons. */
+const SIDEBAR_ICON = `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="2" y="2.75" width="12" height="10.5" rx="2"/><path d="M6.25 2.75v10.5"/></svg>`;
+
+/**
+ * Hide sidebar, at the end of the sidebar's top row, and Show sidebar, among
+ * the corner's tools (corner.ts), which shows only while the sidebar is hidden
+ * on a view that has one. Hidden, the sidebar leaves its width to the page,
+ * which on a narrow window is what lets the page and the chat sit side by side.
+ * Both flip the same switch (SIDEBAR_STATE_SCRIPT).
+ */
+const SIDEBAR_HIDE_BUTTON = `<button type="button" class="page-nav-button sidebar-toggle" data-sidebar-toggle aria-label="Hide sidebar" title="Hide sidebar">${SIDEBAR_ICON}</button>`;
+export const SIDEBAR_SHOW_BUTTON = `<button type="button" class="sidebar-show" data-sidebar-toggle aria-label="Show sidebar" title="Show sidebar">${SIDEBAR_ICON}</button>`;
+
+/**
+ * Whether the sidebar is hidden, kept in localStorage (`kb25.sidebar`) since
+ * every view is a page load of its own, and put on <html> as `sidebar-hidden`
+ * from <head> (head.ts), before the body paints, so a page opened with the
+ * sidebar hidden never shows it first. One click handler on the document
+ * serves every [data-sidebar-toggle].
+ */
+export const SIDEBAR_STATE_SCRIPT = `
+(() => {
+  const KEY = "kb25.sidebar";
+  const root = document.documentElement;
+  try {
+    if (localStorage.getItem(KEY) === "hidden") root.classList.add("sidebar-hidden");
+  } catch (e) {}
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    const button = target && target.closest ? target.closest("[data-sidebar-toggle]") : null;
+    if (!button) return;
+    event.preventDefault();
+    const hidden = root.classList.toggle("sidebar-hidden");
+    try {
+      if (hidden) localStorage.setItem(KEY, "hidden");
+      else localStorage.removeItem(KEY);
+    } catch (e) {}
+  });
+})();
+`;
 
 /**
  * Holds the first paint until the sidebar has been parsed (Chromium; other
