@@ -3532,7 +3532,7 @@ test("feedback #38: Back and Forward lead the tab strip, and the sidebar without
     assert.match(strip, /hidden><div class="page-nav" role="group" aria-label="History"><button type="button" class="page-nav-button" data-page-back aria-label="Back" title="Back"><svg [^>]*><path [^>]*\/><\/svg><\/button><button type="button" class="page-nav-button" data-page-forward aria-label="Forward" title="Forward"><svg [^>]*><path [^>]*\/><\/svg><\/button><\/div><button type="button" class="tabs-close-others"/, name);
     // And beside the site's name, wherever there is a sidebar.
     if (html.includes('<aside class="sidebar">')) {
-      assert.match(html, /<aside class="sidebar">\s*<div class="sidebar-top"><div class="page-nav" role="group" aria-label="History">[\s\S]*?<\/div><a class="brand" href="\/">KB<\/a><\/div>/, name);
+      assert.match(html, /<aside class="sidebar">\s*<div class="sidebar-top"><div class="page-nav" role="group" aria-label="History">[\s\S]*?<\/div><a class="brand" href="\/">KB<\/a><button type="button" class="page-nav-button sidebar-toggle" data-sidebar-toggle aria-label="Hide sidebar"[\s\S]*?<\/button><\/div>/, name);
     }
     assert.match(html, /<script>\s*\(\(\) => \{\s*const nav = window\.navigation;/, name);
   }
@@ -3720,4 +3720,97 @@ test("tabs: a new tab shows up once its page has loaded, the strip sliding in fo
   assert.doesNotMatch(pageHtml(), /\nbody\{[^}]*transition/);
   assert.match(pageHtml(), /\.tab\.is-new\{animation:tab-in [^}]*animation-play-state:paused\}\s*html\.tabs-loaded \.tab\.is-new\{animation-play-state:running\}/);
   assert.match(pageHtml(), /@media \(prefers-reduced-motion:reduce\)\{/);
+});
+
+/** The script in <head> that keeps the sidebar hidden from page to page. */
+function sidebarStateScript(html: string): string {
+  const head = html.slice(0, html.indexOf("</head>"));
+  const script = [...head.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('"kb25.sidebar"'));
+  assert.ok(script, "the sidebar's state script is in <head>, so it runs before the body paints");
+  return script;
+}
+
+/**
+ * Runs the sidebar's state script against a stand-in document and storage,
+ * starting from `stored`, and returns a click to send and what to look at.
+ */
+function sidebarRig(stored: string | null) {
+  const store = new Map<string, string>(stored === null ? [] : [["kb25.sidebar", stored]]);
+  const classes = new Set<string>();
+  let onClick: ((event: object) => void) | null = null;
+  const document = {
+    documentElement: {
+      classList: {
+        add: (c: string) => void classes.add(c),
+        toggle: (c: string) => (classes.has(c) ? (classes.delete(c), false) : (classes.add(c), true)),
+      },
+    },
+    addEventListener: (type: string, fn: (event: object) => void) => {
+      if (type === "click") onClick = fn;
+    },
+  };
+  const localStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+  };
+  new Function("document", "localStorage", sidebarStateScript(layout(pageView())))(document, localStorage);
+  const click = (onToggle: boolean) => {
+    let prevented = false;
+    const target = { closest: (sel: string) => (onToggle && sel === "[data-sidebar-toggle]" ? {} : null) };
+    onClick?.({ target, preventDefault: () => (prevented = true) });
+    return prevented;
+  };
+  return { click, hidden: () => classes.has("sidebar-hidden"), stored: () => store.get("kb25.sidebar") ?? null };
+}
+
+test("sidebar: hidden or shown by a button in its top row and one in the corner", () => {
+  const views: Array<[string, string]> = [
+    ["page", layout(pageView())],
+    ["folder", folderLayout(folderView())],
+    ["edit", editLayout(editView())],
+    ["dashboard", dashboardLayout(dashboardView())],
+  ];
+  for (const [name, html] of views) {
+    sidebarStateScript(html);
+    assert.match(html, /<div class="sidebar-top">[\s\S]*?<button type="button" class="page-nav-button sidebar-toggle" data-sidebar-toggle aria-label="Hide sidebar"/, name);
+    assert.match(html, /<div class="session-corner">\s*<button type="button" class="sidebar-show" data-sidebar-toggle aria-label="Show sidebar"/, name);
+  }
+  // The spaces page has no sidebar: its corner button stays out of sight there.
+  assert.doesNotMatch(spacesLayout(spacesView()), /<aside class="sidebar">/);
+  const css = layout(pageView());
+  assert.match(css, /html\.sidebar-hidden \.sidebar\{display:none\}/);
+  assert.match(css, /\.sidebar-show\{display:none\}\s*html\.sidebar-hidden body:has\(\.sidebar\) \.sidebar-show\{display:inline-flex\}/);
+});
+
+test("sidebar: the choice is kept from page to page, before the page paints", () => {
+  const shown = sidebarRig(null);
+  assert.equal(shown.hidden(), false);
+  assert.equal(shown.click(false), false, "a click elsewhere is left alone");
+  assert.equal(shown.hidden(), false);
+  assert.equal(shown.click(true), true);
+  assert.equal(shown.hidden(), true);
+  assert.equal(shown.stored(), "hidden");
+  shown.click(true);
+  assert.equal(shown.hidden(), false);
+  assert.equal(shown.stored(), null, "shown again, nothing is left stored");
+
+  const hidden = sidebarRig("hidden");
+  assert.equal(hidden.hidden(), true, "a page opened after hiding it starts hidden");
+});
+
+test("sidebar: half a screen keeps it beside the page, and the page beside the chat once it is hidden", () => {
+  const css = layout(pageView());
+  // The sidebar goes above the page only under 640px.
+  assert.match(css, /@media\(max-width:640px\)\{\s*body\{flex-direction:column\}/);
+  assert.match(css, /@media \(min-width:641px\)\{\s*html\.has-tabs \.sidebar\{/);
+  assert.doesNotMatch(css, /@media\(max-width:780px\)\{\s*body\{flex-direction:column\}/);
+  // The chat covers the page under 900px beside the sidebar, under 720px without it.
+  assert.match(css, /@media \(max-width:900px\)\{\s*html:not\(\.sidebar-hidden\) body\.chat-open\{padding-right:0\}/);
+  // Beside the sidebar, it covers the page and leaves the sidebar in sight.
+  assert.match(css, /@media \(min-width:721px\) and \(max-width:900px\)\{\s*html:not\(\.sidebar-hidden\) \.chat-drawer\{width:auto; left:300px\}\s*\}/);
+  assert.match(css, /@media \(max-width:720px\)\{\s*body\.chat-open\{padding-right:0\}[\s\S]*?\.chat-drawer\{width:100vw; border-left:0\}\s*\}/);
+  assert.match(css, /@media \(max-width:720px\)\{body\.chat-open \.find-bar\{right:16px\}\}/);
 });
