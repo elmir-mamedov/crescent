@@ -472,18 +472,25 @@ body.dragging-page .space-current{
   display:flex; align-items:center; gap:8px}
 /* The corner's two icon buttons share one box; only the theme toggle swaps its
    glyph, so the rules below it stay on that class alone. */
-.theme-toggle,.chat-button,.gallery-button,.dash-button,.instructions-button,.feedback-button,.quit-button{
+.theme-toggle,.sidebar-show,.chat-button,.gallery-button,.dash-button,.instructions-button,.feedback-button,.quit-button{
   display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto;
   width:34px; height:34px; padding:0; border:1px solid var(--line); border-radius:6px;
   background:var(--surface); color:var(--fg-secondary); cursor:pointer;
 }
-.theme-toggle:hover,.chat-button:hover,.gallery-button:hover,.dash-button:hover,.instructions-button:hover,.feedback-button:hover,.quit-button:hover{background:var(--surface-hover-2); color:var(--fg)}
-.chat-button svg,.gallery-button svg,.dash-button svg,.instructions-button svg,.feedback-button svg,.quit-button svg{display:block}
+.theme-toggle:hover,.sidebar-show:hover,.chat-button:hover,.gallery-button:hover,.dash-button:hover,.instructions-button:hover,.feedback-button:hover,.quit-button:hover{background:var(--surface-hover-2); color:var(--fg)}
+.sidebar-show svg,.chat-button svg,.gallery-button svg,.dash-button svg,.instructions-button svg,.feedback-button svg,.quit-button svg{display:block}
 .chat-button[aria-expanded="true"]{background:var(--active-bg); border-color:var(--accent); color:var(--accent)}
 .theme-toggle .theme-icon{display:block}
 .theme-toggle .icon-moon{display:none}
 :root[data-theme="dark"] .theme-toggle .icon-sun{display:none}
 :root[data-theme="dark"] .theme-toggle .icon-moon{display:block}
+/* Hide sidebar ends the sidebar's top row; Show sidebar, in the corner, is
+   there only while the sidebar is hidden, and only on a view that has one
+   (SIDEBAR_STATE_SCRIPT puts sidebar-hidden on the root). */
+.sidebar-top .sidebar-toggle{margin-left:auto}
+html.sidebar-hidden .sidebar{display:none}
+.sidebar-show{display:none}
+html.sidebar-hidden body:has(.sidebar) .sidebar-show{display:inline-flex}
 /* The tabs (tabStrip): a bar along the top of the window, drawn only while two
    or more are open, when TABS_SCRIPT puts has-tabs on the root. The corner's
    tools float over its right end, which --tabs-reserve (their width) keeps
@@ -582,7 +589,7 @@ html.tabs-animate .toc{transition:top .3s cubic-bezier(.2,.8,.2,1), max-height .
 html.has-tabs{scroll-padding-top:var(--tabs-h)}
 html.has-tabs body{padding-top:var(--tabs-h)}
 html.has-tabs .toc{top:var(--tabs-h); max-height:calc(100vh - var(--tabs-h)); padding-top:32px}
-@media (min-width:781px){
+@media (min-width:641px){
   html.has-tabs .sidebar{top:var(--tabs-h); height:calc(100vh - var(--tabs-h))}
   html.tabs-animate .sidebar{transition:top .3s cubic-bezier(.2,.8,.2,1), height .3s cubic-bezier(.2,.8,.2,1)}
 }
@@ -706,7 +713,8 @@ html.kb-arrived main,html.kb-arrived .toc{animation:kb-fade-in .14s ease-out}
 .find-step svg{display:block}
 html.has-tabs .find-bar{top:calc(var(--tabs-h) + 8px)}
 body.chat-open .find-bar{right:416px}
-@media (max-width:900px){body.chat-open .find-bar{right:16px}}
+@media (max-width:900px){html:not(.sidebar-hidden) body.chat-open .find-bar{right:16px}}
+@media (max-width:720px){body.chat-open .find-bar{right:16px}}
 html.has-find .toc{padding-top:108px}
 html.has-find.has-tabs .toc{padding-top:58px}
 /* The matches, and the one in hand. Plain colours rather than the theme's
@@ -1435,7 +1443,9 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
 .label-delete-dialog .help-head h2{margin:0; padding:0; border:0; overflow-wrap:anywhere}
 .label-delete-body{padding:16px 20px}
 .label-delete-body p{margin:0; color:var(--fg-secondary); font-size:14px; line-height:1.55; overflow-wrap:anywhere}
-@media(max-width:780px){
+/* Too narrow for the sidebar beside the page: it goes above it. A window
+   half a screen wide keeps it beside the page. */
+@media(max-width:640px){
   body{flex-direction:column}
   .sidebar{width:auto; flex:none; height:auto; position:static; border-right:none;
     border-bottom:1px solid var(--line)}
@@ -1469,7 +1479,8 @@ a.label-chip:hover{text-decoration:none; border-color:var(--lc-dot)}
 /* The chat drawer: a column down the right edge. On a wide window the page
    makes room for it (body is a flex row, so its padding narrows the content)
    and the corner tools and update card move left with it; on a narrow one it
-   covers the page, which its own close button gives back.
+   covers the page, which its own close button gives back (see the media
+   rules below: hiding the sidebar leaves room for both on a narrower one).
    It is dark in either theme: it wears the dark theme's colours, which
    everything in it reads, its native pickers and scrollbars included. */
 .chat-drawer{
@@ -1490,7 +1501,20 @@ body.chat-open .tab-strip{right:400px}
 /* The page loses the drawer's width, so the "On this page" rail needs that
    much more window to fit beside it (its own cutoff is 1180px). */
 @media (max-width:1580px){body.chat-open .toc{display:none}}
+/* Where the page would be left too narrow beside the drawer, the drawer covers
+   it instead: under 900px with the sidebar beside the page, where it covers
+   the page and leaves the sidebar, and under 720px with the sidebar hidden,
+   which leaves the page 320px or more beside it. Under 720px it covers the
+   whole window either way. */
 @media (max-width:900px){
+  html:not(.sidebar-hidden) body.chat-open{padding-right:0}
+  html:not(.sidebar-hidden) body.chat-open .session-corner,html:not(.sidebar-hidden) body.chat-open .update-card{right:16px}
+  html:not(.sidebar-hidden) body.chat-open .tab-strip{right:0}
+}
+@media (min-width:721px) and (max-width:900px){
+  html:not(.sidebar-hidden) .chat-drawer{width:auto; left:300px}
+}
+@media (max-width:720px){
   body.chat-open{padding-right:0}
   body.chat-open .session-corner,body.chat-open .update-card{right:16px}
   body.chat-open .tab-strip{right:0}
