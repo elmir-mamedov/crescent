@@ -1,9 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { run } from "./child.js";
 
 /**
  * Peer-to-peer git sync for the per-space repos: pull on startup, push after
@@ -76,7 +73,7 @@ export function makeSync(kbDir: string, options: SyncOptions = {}): Sync {
    * where the network accepts the connection and then stalls.
    */
   function runGit(repoRoot: string, args: string[]) {
-    return execFileAsync("git", args, {
+    return run("git", args, {
       cwd: repoRoot,
       timeout: timeoutMs,
       env: {

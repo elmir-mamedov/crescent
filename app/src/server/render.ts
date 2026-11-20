@@ -2,10 +2,9 @@
  * What several route modules draw: a page or folder, a page's editor, a
  * notice standing in for a page, and the sidebar around each of them.
  */
-import { execFile } from "node:child_process";
 import path from "node:path";
-import { promisify } from "node:util";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { run } from "../child.js";
 import { isFolderPage, type PageNode, type SpaceInfo, type TreeFilter } from "../content.js";
 import { cleanLabelNames } from "../frontmatter.js";
 import { loadLabelSet, type LabelDef } from "../labels.js";
@@ -15,8 +14,6 @@ import { CHAR_CAP, isInstructionsSlug } from "../space-instructions.js";
 import { editLayout, escapeHtml, folderLayout, layout, notFound, type ViewNotice } from "../views.js";
 import type { Site } from "./context.js";
 import { queryString } from "./http.js";
-
-const execFileAsync = promisify(execFile);
 
 export type Render = ReturnType<typeof makeRender>;
 
@@ -90,7 +87,7 @@ export function makeRender({ siteTitle, username, content, git, seen }: Site) {
       // History lives in the file's per-space repo, not at the KB root.
       const repoRoot = git.spaceRepoRoot(fsPath);
       const rel = path.relative(repoRoot, fsPath);
-      const { stdout } = await execFileAsync(
+      const { stdout } = await run(
         "git",
         ["log", "-1", "--date=format:%Y-%m-%d %H:%M", "--format=%cd", "--", rel],
         { cwd: repoRoot }

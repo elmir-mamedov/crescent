@@ -1,13 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { run } from "./child.js";
 
 /** Whether a command runs and exits 0. */
 function succeeds(cmd: string, args: string[], cwd?: string): Promise<boolean> {
-  return execFileAsync(cmd, args, { cwd }).then(
+  return run(cmd, args, { cwd }).then(
     () => true,
     () => false
   );
@@ -162,7 +159,7 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
     // No git, or a space created while git was missing: nothing to commit into.
     if (!(await hasGit()) || !fs.existsSync(path.join(repoRoot, ".git"))) return null;
 
-    const { stdout: status } = await execFileAsync(
+    const { stdout: status } = await run(
       "git",
       ["status", "--porcelain", "--", ...rels],
       { cwd: repoRoot }
@@ -170,12 +167,12 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
     if (!status.trim()) return null;
 
     if (mode === "all") {
-      await execFileAsync("git", ["add", "-A", "--", ...rels], { cwd: repoRoot });
-      await execFileAsync("git", ["commit", "-m", message, "--", ...rels], {
+      await run("git", ["add", "-A", "--", ...rels], { cwd: repoRoot });
+      await run("git", ["commit", "-m", message, "--", ...rels], {
         cwd: repoRoot,
       });
     } else {
-      await execFileAsync("git", ["add", "--", ...rels], { cwd: repoRoot });
+      await run("git", ["add", "--", ...rels], { cwd: repoRoot });
       const hasUntracked = status
         .split("\n")
         .filter(Boolean)
@@ -183,10 +180,10 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
       const commitArgs = hasUntracked
         ? ["commit", "-m", message, "--", ...rels]
         : ["commit", "--only", "-m", message, "--", ...rels];
-      await execFileAsync("git", commitArgs, { cwd: repoRoot });
+      await run("git", commitArgs, { cwd: repoRoot });
     }
 
-    const { stdout } = await execFileAsync("git", ["rev-parse", "--short", "HEAD"], {
+    const { stdout } = await run("git", ["rev-parse", "--short", "HEAD"], {
       cwd: repoRoot,
     });
     return stdout.trim() || null;
@@ -228,12 +225,12 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
   async function initSpaceRepo(spaceKey: string): Promise<void> {
     if (!(await hasGit())) return;
     const repoRoot = path.join(kbDir, spaceKey);
-    await execFileAsync("git", ["init"], { cwd: repoRoot });
-    await execFileAsync("git", ["branch", "-m", "main"], { cwd: repoRoot });
-    await execFileAsync("git", ["config", "core.symlinks", "false"], { cwd: repoRoot });
+    await run("git", ["init"], { cwd: repoRoot });
+    await run("git", ["branch", "-m", "main"], { cwd: repoRoot });
+    await run("git", ["config", "core.symlinks", "false"], { cwd: repoRoot });
     if (!(await succeeds("git", ["config", "user.email"], repoRoot))) {
-      await execFileAsync("git", ["config", "user.name", "crescent"], { cwd: repoRoot });
-      await execFileAsync("git", ["config", "user.email", "kb25@localhost"], { cwd: repoRoot });
+      await run("git", ["config", "user.name", "crescent"], { cwd: repoRoot });
+      await run("git", ["config", "user.email", "kb25@localhost"], { cwd: repoRoot });
     }
   }
 
@@ -248,7 +245,7 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
       const repoRoot = spaceRepoRoot(fsPath);
       const rel = relInRepo(fsPath);
       if (!rel) return [];
-      const { stdout } = await execFileAsync(
+      const { stdout } = await run(
         "git",
         [
           "log",
@@ -279,7 +276,7 @@ export function makeGit(kbDir: string, onCommit?: (repoRoot: string) => void) {
     try {
       const repoRoot = spaceRepoRoot(fsPath);
       const target = pathAtCommit || relInRepo(fsPath);
-      const { stdout } = await execFileAsync(
+      const { stdout } = await run(
         "git",
         ["show", "--format=", "--no-color", "--word-diff=porcelain", sha, "--", target],
         { cwd: repoRoot }
