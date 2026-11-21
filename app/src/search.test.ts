@@ -93,6 +93,61 @@ test("excerptFor collapses newlines and stays within the window", () => {
   assert.ok(excerpt.length <= 226, `expected a clamped excerpt, got ${excerpt.length}`);
 });
 
+test("excerptFor keeps only `lead` characters before the match", () => {
+  const body = `${"word ".repeat(40)}the bridge is closed`;
+  const excerpt = excerptFor("bridge", body, undefined, 24);
+  const before = excerpt.slice(3, excerpt.indexOf("bridge"));
+  assert.match(excerpt, /^\.\.\./);
+  assert.ok(before.length <= 24, `expected at most 24 characters before the match, got ${before.length}`);
+});
+
+test("excerptFor still keeps 80 characters of lead by default", () => {
+  const body = `${"word ".repeat(40)}the bridge is closed`;
+  const excerpt = excerptFor("bridge", body);
+  const before = excerpt.slice(3, excerpt.indexOf("bridge"));
+  assert.ok(before.length > 70 && before.length <= 80, `expected about 80 characters of lead, got ${before.length}`);
+});
+
+test("excerptFor starts a mid-body window on a word, not inside one", () => {
+  const body = "Downloaded tiles, streamed in one kilometre tiles over Charles Bridge";
+  for (let lead = 1; lead < 40; lead += 1) {
+    const excerpt = excerptFor("bridge", body, undefined, lead);
+    const shown = excerpt.replace(/^\.\.\./, "");
+    assert.ok(body.includes(` ${shown}`), `lead ${lead} cut a word: ${excerpt}`);
+    assert.match(shown, /Bridge$/);
+  }
+});
+
+test("excerptFor finds the match at its real place after a capital dotted İ", () => {
+  // İ lowercases to two code units, so an index into the lowercased body would
+  // run one character past the match for each İ before it.
+  const body = "İl İçin İş ".repeat(10) + "and the köprü is closed";
+  assert.match(excerptFor("köprü", body, undefined, 24), /köprü/);
+  assert.match(excerptFor("köprü", body), /köprü/);
+
+  for (const count of [15, 30, 60, 90]) {
+    const many = "İ ".repeat(count) + "the bridge is closed";
+    const excerpt = excerptFor("bridge", many, undefined, 24);
+    assert.match(excerpt, /bridge/, `${count} İ's before the match: ${excerpt}`);
+    assert.ok(excerpt.indexOf("bridge") <= 3 + 24, `${count} İ's: ${excerpt}`);
+  }
+});
+
+test("excerptFor maps the match back past İ and two-unit characters together", () => {
+  // 𝐀 is one character in two code units; mixed with İ, the body is lowercased
+  // a character at a time, and both must count right.
+  const body = "İ 𝐀 ".repeat(30) + "the bridge is closed";
+  const excerpt = excerptFor("bridge", body, undefined, 24);
+  assert.match(excerpt, /bridge/);
+  assert.ok(excerpt.indexOf("bridge") <= 3 + 24, excerpt);
+});
+
+test("excerptFor keeps a partial word when no space comes before the match", () => {
+  const body = `${"x".repeat(60)}bridge`;
+  const excerpt = excerptFor("bridge", body, undefined, 10);
+  assert.equal(excerpt, `...${"x".repeat(10)}bridge`);
+});
+
 /** A space plus a couple of pages, enough to exercise scoping and filters. */
 async function seed(dir: string): Promise<Content> {
   const content = new Content(dir);
@@ -111,6 +166,21 @@ test("searchPages matches body text, not just titles", async () => {
     assert.equal(hits.length, 1);
     assert.equal(hits[0].title, "Unrelated Title");
     assert.match(hits[0].excerpt, /deploy/);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("searchPages passes excerptLead through to each hit's excerpt", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = await seed(kb.dir);
+    await content.createPage("docs", "Late Match", `${"filler text ".repeat(20)}then the deploy script`);
+
+    const [short] = await searchPages(content, "deploy", { space: "docs", excerptLead: 24 });
+    const [long] = await searchPages(content, "deploy", { space: "docs" });
+    assert.ok(short.excerpt.indexOf("deploy") <= 3 + 24, short.excerpt);
+    assert.ok(long.excerpt.indexOf("deploy") > 3 + 70, long.excerpt);
   } finally {
     await kb.cleanup();
   }

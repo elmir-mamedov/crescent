@@ -53,9 +53,15 @@ export interface SearchOptions {
   space?: string;
   /** Only pages carrying every one of these labels (compared as `labelKey`). */
   labels?: string[];
+  /**
+   * Characters of context kept before the match in each excerpt. Defaults to
+   * `EXCERPT_LEAD`; a caller that shows only the start of an excerpt passes
+   * less, so the match is not cut off.
+   */
+  excerptLead?: number;
 }
 
-/** Characters either side of the matched term in a body excerpt. */
+/** Characters before the matched term in a body excerpt, and the excerpt's length. */
 const EXCERPT_LEAD = 80;
 const EXCERPT_LENGTH = 220;
 
@@ -130,21 +136,61 @@ function firstTokenIndex(haystack: string, tokens: string[]): number {
 }
 
 /**
- * A keyword-in-context snippet: a window of the body centred on the first term
- * that actually occurs in it. Falls back to the page's `summary` (then the body's
- * opening) only when the query matched somewhere else entirely — a title, slug or
- * tag hit — so a page having a summary never costs the user their highlight.
+ * Where the first query term occurs in `text`, as an index into `text` itself.
+ *
+ * The terms are lowercase, so they are looked for in a lowercased copy. Most
+ * text keeps its length when lowercased, and then an index in the copy is the
+ * same index in `text`. A few characters do not: the capital dotted İ (U+0130)
+ * lowercases to two code units, so each one before the match would push the
+ * index a character too far (feedback #83, on Turkish and Azerbaijani pages).
+ * For such text the copy is built a character at a time, noting where in
+ * `text` each of its code units came from.
  */
-export function excerptFor(query: string, body: string, summary?: string): string {
+function matchIndex(text: string, tokens: string[]): number {
+  const lower = text.toLowerCase();
+  if (lower.length === text.length) return firstTokenIndex(lower, tokens);
+
+  let mapped = "";
+  const origin: number[] = [];
+  let at = 0;
+  for (const char of text) {
+    const lowered = char.toLowerCase();
+    mapped += lowered;
+    for (let unit = 0; unit < lowered.length; unit += 1) origin.push(at);
+    at += char.length;
+  }
+  const index = firstTokenIndex(mapped, tokens);
+  return index === -1 ? -1 : origin[index];
+}
+
+/**
+ * A keyword-in-context snippet. The window starts `lead` characters before the
+ * first query term that occurs in the body, moved forward to the start of a
+ * word so it never opens on the tail of one ("...dov,"), and runs for
+ * `EXCERPT_LENGTH` characters. Falls back to the page's `summary` (then the
+ * body's opening) only when the query matched somewhere else entirely — a
+ * title, slug or tag hit — so a page having a summary never costs the user
+ * their highlight.
+ */
+export function excerptFor(query: string, body: string, summary?: string, lead = EXCERPT_LEAD): string {
   const tokens = searchTokens(query);
   const text = body.replace(/\s+/g, " ").trim();
-  const index = text ? firstTokenIndex(normalizeText(text), tokens) : -1;
+  const index = text ? matchIndex(text, tokens) : -1;
 
   if (index === -1) return summary ?? clamp(text, 0);
 
-  // Whitespace collapsing keeps `text` and its normalized form the same length,
-  // so an index found in one addresses the same character in the other.
-  return clamp(text, Math.max(0, index - EXCERPT_LEAD));
+  return clamp(text, wordStart(text, Math.max(0, index - Math.max(0, lead)), index));
+}
+
+/**
+ * Move a window's start forward to the next word, without passing `limit`
+ * (the match). A start already at a word's beginning stays, and so does one
+ * with no space between it and the match.
+ */
+function wordStart(text: string, start: number, limit: number): number {
+  if (start === 0 || text[start - 1] === " ") return start;
+  const space = text.indexOf(" ", start);
+  return space !== -1 && space < limit ? space + 1 : start;
 }
 
 /**
@@ -262,7 +308,7 @@ export async function searchPages(
         tags: page.data.tags ?? [],
         labels: labelsBySlug.get(page.slug) ?? [],
         summary: page.data.summary,
-        excerpt: excerptFor(query, searchable.body, page.data.summary),
+        excerpt: excerptFor(query, searchable.body, page.data.summary, opts.excerptLead),
         score,
       },
       body: searchable.body,

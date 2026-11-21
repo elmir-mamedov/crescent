@@ -14,6 +14,12 @@ const SEARCH_MIN_QUERY = 2;
 const SEARCH_LIMIT_DEFAULT = 8;
 const SEARCH_LIMIT_MAX = 20;
 
+// The dropdown shows two lines of each excerpt (`.sidebar-search-excerpt`),
+// about 90 characters in the sidebar, so the default 80 characters before
+// the match pushed the match past the cut and left nothing highlighted
+// (feedback #83). Half a line of lead keeps it on the first line.
+export const SIDEBAR_EXCERPT_LEAD = 24;
+
 export function registerSearchRoutes(app: FastifyInstance, ctx: ServerContext): void {
   const { content } = ctx;
   const { findSpace } = ctx.render;
@@ -69,7 +75,7 @@ export function registerSearchRoutes(app: FastifyInstance, ctx: ServerContext): 
         ? (await labelledPages(content, spaceKey, filter, labels))
             .slice(0, limit)
             .map((node) => ({ slug: node.slug, title: node.title, excerpt: "", labels: node.labels ?? [] }))
-        : await searchPages(content, query, { space: spaceKey, limit, filter, labels });
+        : await searchPages(content, query, { space: spaceKey, limit, filter, labels, excerptLead: SIDEBAR_EXCERPT_LEAD });
     } catch (err) {
       return reply.code(500).send({ ok: false, error: errorMessage(err) });
     }
