@@ -53,9 +53,15 @@ export interface SearchOptions {
   space?: string;
   /** Only pages carrying every one of these labels (compared as `labelKey`). */
   labels?: string[];
+  /**
+   * Characters of context kept before the match in each excerpt. Defaults to
+   * `EXCERPT_LEAD`; a caller that shows only the start of an excerpt passes
+   * less, so the match is not cut off.
+   */
+  excerptLead?: number;
 }
 
-/** Characters either side of the matched term in a body excerpt. */
+/** Characters before the matched term in a body excerpt, and the excerpt's length. */
 const EXCERPT_LEAD = 80;
 const EXCERPT_LENGTH = 220;
 
@@ -134,8 +140,11 @@ function firstTokenIndex(haystack: string, tokens: string[]): number {
  * that actually occurs in it. Falls back to the page's `summary` (then the body's
  * opening) only when the query matched somewhere else entirely — a title, slug or
  * tag hit — so a page having a summary never costs the user their highlight.
+ *
+ * `lead` is how much comes before the match. A window that starts mid-body
+ * starts on a word, so it never opens on the tail of one ("...dov,").
  */
-export function excerptFor(query: string, body: string, summary?: string): string {
+export function excerptFor(query: string, body: string, summary?: string, lead = EXCERPT_LEAD): string {
   const tokens = searchTokens(query);
   const text = body.replace(/\s+/g, " ").trim();
   const index = text ? firstTokenIndex(normalizeText(text), tokens) : -1;
@@ -144,7 +153,18 @@ export function excerptFor(query: string, body: string, summary?: string): strin
 
   // Whitespace collapsing keeps `text` and its normalized form the same length,
   // so an index found in one addresses the same character in the other.
-  return clamp(text, Math.max(0, index - EXCERPT_LEAD));
+  return clamp(text, wordStart(text, Math.max(0, index - Math.max(0, lead)), index));
+}
+
+/**
+ * Move a window's start forward to the next word, without passing `limit`
+ * (the match). A start already at a word's beginning stays, and so does one
+ * with no space between it and the match.
+ */
+function wordStart(text: string, start: number, limit: number): number {
+  if (start === 0 || text[start - 1] === " ") return start;
+  const space = text.indexOf(" ", start);
+  return space !== -1 && space < limit ? space + 1 : start;
 }
 
 /**
@@ -262,7 +282,7 @@ export async function searchPages(
         tags: page.data.tags ?? [],
         labels: labelsBySlug.get(page.slug) ?? [],
         summary: page.data.summary,
-        excerpt: excerptFor(query, searchable.body, page.data.summary),
+        excerpt: excerptFor(query, searchable.body, page.data.summary, opts.excerptLead),
         score,
       },
       body: searchable.body,
