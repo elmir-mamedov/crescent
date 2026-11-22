@@ -1480,6 +1480,68 @@ registerTool(
   }
 );
 
+/**
+ * The person's commands: MCP prompts, which a client offers the person by
+ * name (in the Claude app, the + menu; in Claude Code,
+ * `/mcp__crescent__write-up`) and which the model cannot call. They are
+ * prompts rather than a skill for the reason crescent ships no skill: every
+ * client of this server gets them, and every update replaces them (feedback
+ * #43). Each one only says what the person wants; how to write a page is
+ * read_me's `pages` module, which the message sends the agent to.
+ *
+ * write-up's topic is optional because Claude Code splits what follows the
+ * command on whitespace, one word per argument, and drops what is left over:
+ * a topic typed there would arrive as its first word. Run without one,
+ * write-up turns on writing pages for the rest of the conversation, so the
+ * person runs the command and then asks as usual; write-up-off turns it off.
+ * The Claude app asks for each argument in a field of its own, so a topic
+ * typed there arrives whole and is written up on its own.
+ */
+const WRITE_UP_HOW =
+  "Before writing, call crescent's read_me with the `pages` module, and any other module the page needs, and follow it: file the page beside similar ones, write it in one kb_create_page call, and hand it back the way that module says.";
+
+server.registerPrompt(
+  "write-up",
+  {
+    title: "Write up in crescent",
+    description:
+      "Have Claude answer by writing a page in crescent instead of in the chat. Give a topic to write up just that. Leave it out to have every question after this written up as a page, until you run write-up-off.",
+    argsSchema: {
+      topic: z
+        .string()
+        .optional()
+        .describe("What to write up: a question or a topic. Leave it out to write up each question you ask after this."),
+    },
+  },
+  ({ topic }) => {
+    const subject = topic?.trim();
+    const text = subject
+      ? `Write this up as a page in my crescent knowledge base instead of answering in the chat:\n\n${subject}\n\n${WRITE_UP_HOW}`
+      : "From now on in this conversation, answer each question I ask by writing it up as a page in my crescent knowledge base instead of answering in the chat, until I ask for answers in the chat again. " +
+        `${WRITE_UP_HOW}\n\nFor now, reply in one line that you'll write my questions up as pages, and wait for my first question.`;
+    return { messages: [{ role: "user", content: { type: "text", text } }] };
+  }
+);
+
+server.registerPrompt(
+  "write-up-off",
+  {
+    title: "Answer in the chat again",
+    description: "Turn write-up off: Claude answers your questions in the chat again, and writes a page only when you ask for one.",
+  },
+  () => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: "Stop writing my questions up as crescent pages: answer them in the chat again, and write a page only when I ask for one. Reply in one line that you will.",
+        },
+      },
+    ],
+  })
+);
+
 server.registerResource(
   "kb_page",
   new ResourceTemplate("kb://page/{+slug}", {

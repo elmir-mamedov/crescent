@@ -212,6 +212,14 @@ Write tools (auto-commit to Git):
 - `kb_delete_page` — permanently delete a page or section subtree.
 - `kb_create_space` — create a new top-level space with its own `index.md`.
 
+Prompts (commands the person runs; the model cannot call them):
+
+- `write-up` — have the agent write a page instead of answering in the chat.
+  With a `topic`, writes up that; without one, writes up every question after
+  it in the conversation. Claude Code runs it as `/mcp__crescent__write-up` and
+  passes only one word per argument, so there it is run without a topic.
+- `write-up-off` — back to answers in the chat.
+
 > The stdio server has no auth, so it trusts its local client with these writes.
 > If it is ever exposed beyond a single trusted user, gate the write tools.
 
