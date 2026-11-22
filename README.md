@@ -102,6 +102,12 @@ knowledge base, separate from the spaces.
 app and Claude Code can search, read and write your pages through crescent's
 MCP server, which they list as crescent. Changes made this way are committed
 like any other edit, and the sidebar marks the new pages until you open them.
+To have Claude answer by writing pages instead of in the chat, run crescent's
+**write-up** command: in the Claude app it is in the **+** menu under crescent,
+where you can type a question for it to write up; in Claude Code, type
+`/mcp__crescent__write-up`, and every question you ask after it becomes a page.
+**write-up-off** (`/mcp__crescent__write-up-off`) goes back to answers in the
+chat.
 
 ## Updating and removing
 
