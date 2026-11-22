@@ -211,3 +211,67 @@ test("feedback #76: a page write puts its math into $…$ and refuses math that 
     await kb.cleanup();
   }
 });
+
+test("feedback #43: write-up and write-up-off are prompts the person runs, not tools", async () => {
+  const kb = await makeTempKb();
+  const client = new Client({ name: "mcp.test", version: "0" });
+  try {
+    await client.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: ["--import", "tsx", path.join(import.meta.dirname, "mcp.ts")],
+        cwd: path.join(import.meta.dirname, ".."),
+        env: { KB_DIR: kb.dir, XDG_CONFIG_HOME: kb.dir },
+        stderr: "ignore",
+      })
+    );
+    const { prompts } = await client.listPrompts();
+    const writeUp = prompts.find((prompt) => prompt.name === "write-up");
+    const writeUpOff = prompts.find((prompt) => prompt.name === "write-up-off");
+    assert.ok(writeUp && writeUpOff, prompts.map((prompt) => prompt.name).join(", "));
+    // Claude Code passes one word per argument, so the topic must be optional:
+    // the command run bare is how write-up is used there.
+    assert.deepEqual(
+      writeUp.arguments?.map((arg) => [arg.name, arg.required ?? false]),
+      [["topic", false]]
+    );
+    assert.equal(writeUpOff.arguments?.length ?? 0, 0);
+    for (const prompt of [writeUp, writeUpOff]) {
+      assert.ok((prompt.description?.length ?? 0) <= 4096, `${prompt.name}'s description is too long`);
+    }
+
+    // The model must not be able to call them: they are not among the tools.
+    const { tools } = await client.listTools();
+    assert.ok(!tools.some((tool) => tool.name.startsWith("write-up")));
+
+    const text = (result: Awaited<ReturnType<typeof client.getPrompt>>): string => {
+      assert.equal(result.messages.length, 1);
+      assert.equal(result.messages[0].role, "user");
+      const content = result.messages[0].content;
+      assert.equal(content.type, "text");
+      return content.type === "text" ? content.text : "";
+    };
+
+    // With a topic, that topic, whole, is written up, and the agent is sent
+    // to read_me's pages module for how.
+    const topic = "what is a user-assigned managed identity?";
+    const once = text(await client.getPrompt({ name: "write-up", arguments: { topic } }));
+    assert.ok(once.includes(topic), once);
+    assert.match(once, /instead of answering in the chat/);
+    assert.match(once, /read_me with the `pages` module/);
+    assert.doesNotMatch(once, /From now on/);
+
+    // Without one, or with only spaces, it holds for the rest of the conversation.
+    for (const args of [{}, { topic: "  " }] as Record<string, string>[]) {
+      const ongoing = text(await client.getPrompt({ name: "write-up", arguments: args }));
+      assert.match(ongoing, /^From now on in this conversation, answer each question I ask by writing it up as a page/);
+      assert.match(ongoing, /read_me with the `pages` module/);
+    }
+
+    const off = text(await client.getPrompt({ name: "write-up-off" }));
+    assert.match(off, /answer them in the chat again/);
+  } finally {
+    await client.close();
+    await kb.cleanup();
+  }
+});
