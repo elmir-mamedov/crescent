@@ -3,7 +3,8 @@
  * report. Its other report, the Labels view, is in labels.ts.
  */
 import type { FastifyInstance } from "fastify";
-import type { SpaceInfo } from "../content.js";
+import { countPages, type SpaceInfo } from "../content.js";
+import { listImages } from "../gallery.js";
 import { filterLabelled, knownLabels, spaceNodes } from "../labels.js";
 import { collectNotes, groupNotesByPage, summarizeNotes } from "../note-index.js";
 import { dashboardLayout, dashboardsLayout, labelsHref } from "../views.js";
@@ -49,17 +50,20 @@ export function registerDashboardRoutes(app: FastifyInstance, ctx: ServerContext
   }
 
   /**
-   * The Dashboards hub for one space: a card per report, each carrying the
-   * number that sums it up. Same archived-space widening as the reports.
+   * The Dashboards hub for one space: how many pages and images it holds, then
+   * a card per report, each carrying the number that sums it up. Same
+   * archived-space widening as the reports, so an archived space counts its
+   * archived pages and a live one leaves them out.
    */
   async function renderDashboardsHub(space: SpaceInfo): Promise<string> {
     const filter = space.archived ? "all" : "live";
-    const [spaces, { tree, labelSet }, titles, tasks, nodes] = await Promise.all([
+    const [spaces, { tree, labelSet }, titles, tasks, nodes, images] = await Promise.all([
       content.spaces(),
       spaceChrome(space.key, filter),
       content.titleIndex(),
       collectNotes(content, filter, { space: space.key, kind: "task" }),
       spaceNodes(content, space.key, filter),
+      listImages(content, space.key),
     ]);
     const query = `?space=${encodeURIComponent(space.key)}`;
     const taskCount = summarizeNotes(tasks).total;
@@ -74,6 +78,7 @@ export function registerDashboardRoutes(app: FastifyInstance, ctx: ServerContext
       labelSet,
       titles,
       spaceTitle: space.title,
+      overview: { pages: countPages(tree), images: images.length },
       cards: [
         {
           href: `/_dashboard/tasks${query}`,
