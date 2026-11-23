@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { Content } from "./content.js";
+import { Content, countPages } from "./content.js";
 import { makeGit } from "./git.js";
 import { makeTempKb, pathExists, trySymlink, type TempKb } from "./test-helpers.js";
 
@@ -53,6 +53,42 @@ test("a content page with children is a section but NOT a folder", async () => {
     assert.ok(guide);
     assert.equal(guide!.isSection, true);
     assert.equal(guide!.isFolder, false, "an ordinary content section is not a folder");
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("countPages counts pages, sub-pages' parents included, but not folders", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Docs");
+    await content.createPage("docs", "Guide", "# Guide\n\nBody.\n");
+    await content.createPage("docs/guide", "Intro", "# Intro\n");
+    await content.createFolder("docs", "Runbooks");
+    await content.createPage("docs/runbooks", "Deploy", "# Deploy\n");
+    // A directory with no index.md shows in the sidebar but has no text.
+    await fs.mkdir(path.join(kb.dir, "docs", "loose"));
+    await fs.writeFile(path.join(kb.dir, "docs", "loose", "note.md"), "---\ntitle: Note\n---\n\nText.\n");
+
+    // Guide, Intro, Deploy and Note; not Runbooks, not loose, not the space home.
+    assert.equal(countPages(await content.spaceTree("docs")), 4);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("countPages leaves out archived pages in a live tree", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = new Content(kb.dir);
+    await seedSpace(content, "Docs");
+    await content.createPage("docs", "Kept", "# Kept\n");
+    await content.createPage("docs", "Old", "# Old\n");
+    await content.updateArchive("docs/old", true);
+
+    assert.equal(countPages(await content.spaceTree("docs")), 1);
+    assert.equal(countPages(await content.spaceTree("docs", "all")), 2);
   } finally {
     await kb.cleanup();
   }
