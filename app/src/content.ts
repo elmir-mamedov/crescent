@@ -1701,6 +1701,18 @@ export function flatten(nodes: PageNode[]): PageNode[] {
 }
 
 /**
+ * How many pages a navigation tree holds: every node with text of its own, a
+ * page with sub-pages under it included. A folder (`type: folder`) and a
+ * directory without a readable index.md only hold pages, so they are not
+ * counted, and nothing is counted twice.
+ */
+export function countPages(nodes: PageNode[]): number {
+  return flatten(nodes).filter(
+    (node) => !node.isSection || (!node.isFolder && path.basename(node.fsPath) === "index.md")
+  ).length;
+}
+
+/**
  * A page is a "folder" (pure container) when its frontmatter declares
  * `type: folder`. Single source of truth, shared by the content, server, and
  * MCP layers so folder detection can never drift between them.

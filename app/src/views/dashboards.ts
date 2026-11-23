@@ -45,6 +45,11 @@ export interface DashboardsView {
   labelSet?: LabelDef[];
   titles: Map<string, string>;
   spaceTitle: string;
+  /**
+   * The space at a glance: its pages (folders are not pages) and the images in
+   * its `_assets`, the same ones its gallery shows.
+   */
+  overview: { pages: number; images: number };
   cards: DashboardCard[];
   username?: string | null;
 }
@@ -234,11 +239,16 @@ function dashboardsBackLink(spaceKey: string): string {
 }
 
 /**
- * The Dashboards hub for one space: every report on it, each a card with the
- * number that sums it up, so the hub answers "is anything waiting?" before a
- * report is even opened.
+ * The Dashboards hub for one space: how big the space is, then every report on
+ * it, each a card with the number that sums it up, so the hub answers "is
+ * anything waiting?" before a report is even opened.
  */
 export function dashboardsLayout(v: DashboardsView): string {
+  const { pages, images } = v.overview;
+  const overview = [
+    statCard(String(pages), pages === 1 ? "page" : "pages"),
+    statCard(String(images), images === 1 ? "image" : "images"),
+  ].join("\n    ");
   const cards = v.cards
     .map(
       (card) => `<li>
@@ -261,6 +271,9 @@ export function dashboardsLayout(v: DashboardsView): string {
     titles: v.titles,
     title: `${v.spaceTitle} · Dashboards`,
     contentHtml: `<div class="dash">
+  <div class="stat-row">
+    ${overview}
+  </div>
   <p class="dash-lede">Reports on this space. Open one for the detail behind its number.</p>
   <ul class="hub-grid">
     ${cards}
