@@ -71,6 +71,7 @@ const MODULES: Record<ReadMeModule, string> = {
 - Prose is Markdown. HTML in a page is not rendered: a figure that needs it is a widget (module \`figures\`). Formulas are module \`math\`.
 - Detail most readers can skip (a derivation, a long example, the answer to a side question) can fold away under a title the reader clicks to open: a line \`:::details <title>\`, the Markdown inside, then a line \`:::\`. Use it for that kind of aside only, never for the page's main content.
 - Versions of one thing a reader picks between (the steps on Windows, macOS and Linux; one example in several languages) can sit under tabs: a line \`:::tabs\`, then for each version a line \`@tab <title>\` and its Markdown, then a line \`:::\`. Each version must make sense alone, since a reader sees one at a time.
+- Things to compare side by side (before and after, two methods, pros and cons) can sit in columns: a line \`:::columns\`, then for each column a line \`@col <title>\` (the title is optional) and its Markdown, then a line \`:::\`. Keep it to two or three short columns; a narrow window stacks them, and a comparison with many rows is a table.
 - A page shows only images in its own space's \`_assets/\`. Add an image file with kb_add_image and use the link it returns: an image from the web shows only as a link, and a \`data:\` image only as its alt text.
 
 ## Linking

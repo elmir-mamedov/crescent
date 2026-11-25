@@ -9,6 +9,17 @@ summary: Light arrives as particles, electrons interfere like waves, and one rel
 ---
 Classical physics had two kinds of thing: particles, which sit in one place and carry momentum, and waves, which spread out and interfere. Experiments between 1900 and 1927 showed that light and matter are each both.
 
+:::columns
+@col Particles
+- Sit in one place at a time
+- Carry momentum and arrive whole
+- Two of them add up to twice as much
+@col Waves
+- Spread out over a region
+- Bend round obstacles
+- Two of them can cancel where they meet
+:::
+
 ## Light comes in quanta
 
 In the photoelectric effect, light shone on a metal knocks electrons out of it. Brighter light frees more electrons but not faster ones; only the light's frequency sets their energy. Einstein explained this in 1905 by treating light as a stream of photons, each carrying an energy proportional to its frequency $\nu$:
