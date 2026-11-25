@@ -32,6 +32,17 @@ Cite the electron version: Tonomura and colleagues filmed the dots building up, 
 -->
 Each particle's wavefunction passes through both slits and interferes with itself, and the bands are the [[id:2m0eeje0u87ok#the-born-rule|Born rule]] at work: the screen shows $|\psi_1 + \psi_2|^2$, not $|\psi_1|^2 + |\psi_2|^2$. The difference between the two is the interference term.
 
+:::tabs
+@tab Photons
+In 1909 Geoffrey Taylor photographed the bands made by light so faint that a photon rarely had company in the apparatus. One exposure took about three months.
+
+@tab Electrons
+In 1974 Pier Giorgio Merli, Gian Franco Missiroli and Giulio Pozzi in Bologna sent electrons one at a time through an electron biprism, the electron version of two slits. In 1989 Akira Tonomura's team at Hitachi filmed the dots building up into bands.
+
+@tab Molecules
+In 1999 Markus Arndt, Anton Zeilinger and colleagues in Vienna sent $\mathrm{C}_{60}$ molecules through a grating of many slits. By 2019 the Vienna group had done it with molecules of about 2,000 atoms.
+:::
+
 ## Watching the slits
 
 Put a detector at the slits to find out which one each particle goes through, and the bands disappear: the screen shows two overlapping smudges, the sum of the two single-slit patterns. It isn't that the detector knocks the particles about. Any record of the path, even one nobody reads, makes the two routes distinguishable, and routes that can be told apart don't interfere.

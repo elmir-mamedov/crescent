@@ -2728,7 +2728,7 @@ test("a page carries the find bar, hidden until it is asked for", () => {
 test("find reads the page's title, text and rail, not the sidebar or controls", () => {
   const html = layout(pageView({ sections: sections() }));
   assert.match(html, /const SCOPE = "\.page-head h1, article\.prose, \.toc-list";/);
-  assert.match(html, /const SKIP = "button, input, textarea, select, script, style, template, svg, \.mermaid, \.katex-mathml";/);
+  assert.match(html, /const SKIP = "button, input, textarea, select, script, style, template, svg, \.mermaid, \.katex-mathml, \.is-tabbed > \.tabs-panel > \.tabs-label";/);
 });
 
 test("find leaves Ctrl+F to a Mac's text fields", () => {

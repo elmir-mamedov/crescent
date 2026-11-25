@@ -74,6 +74,8 @@ export const NOTES_SCRIPT = `
       // Mermaid re-reads its source from textContent on every theme flip, so
       // that text has to stay one intact node.
       if (node.parentElement && node.parentElement.closest("pre.mermaid")) continue;
+      // A tab's button repeats its panel's title, which is hidden behind it.
+      if (node.parentElement && node.parentElement.closest(".tabs-bar, .is-tabbed > .tabs-panel > .tabs-label")) continue;
       nodes.push(node);
     }
 
