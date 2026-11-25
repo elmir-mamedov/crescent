@@ -23,3 +23,13 @@ Every test has found the quantum prediction. The 2015 Delft experiment measured 
 - **Locality.** If one side's setting could reach the other before its measurement finished, a hidden signal could fake the correlation. Choosing the settings quickly, far apart, closes it.
 - **Detection.** If most particles go undetected, the ones that are detected might not be a fair sample. Detecting nearly every pair closes it.
 - **Freedom of choice.** The settings must not be correlated with any hidden variables. The 2018 Big Bell Test took its settings from choices made by about 100,000 people playing an online game.
+
+:::details Why local hidden variables cannot push $S$ above 2
+Each side measures one of two settings and gets $+1$ or $-1$. If hidden variables $\lambda$ fix every outcome in advance, then for each $\lambda$
+
+$$
+A(a)\,[B(b) - B(b')] + A(a')\,[B(b) + B(b')] = \pm 2,
+$$
+
+because one bracket is $0$ and the other is $\pm 2$. Averaged over $\lambda$, that gives $|S| \le 2$. Quantum mechanics predicts up to $2\sqrt{2} \approx 2.83$.
+:::

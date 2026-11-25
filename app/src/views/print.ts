@@ -24,7 +24,8 @@ export function downloadMenu(slug: string): string {
  * Gets a page ready to print, and prints it. A link to another page of the KB,
  * or to one of its files, leads nowhere once the page is a file, so it prints
  * as plain text; a link that leaves the KB, and one to a section of this page,
- * which a PDF can follow, are kept. Before a print the page starts itself, each
+ * which a PDF can follow, are kept. A closed collapsible section (`:::details`)
+ * is opened for the print and closed again after it. Before a print the page starts itself, each
  * diagram is drawn again in the light theme (`__drawMermaidForPrint`), into a
  * copy only print shows, so the page on screen stays as it is, and each
  * widget loads and turns light (`__widgetsForPrint`) until the print is over.
@@ -52,9 +53,13 @@ export const PRINT_SCRIPT = `
     return !(url.hash && url.pathname === location.pathname && url.search === location.search);
   }
   let unlinked = null;
+  // Closed :::details sections, opened for the print and closed again after.
+  let opened = [];
   function unlink() {
     if (unlinked) return;
     unlinked = [];
+    opened = [...main.querySelectorAll(".prose details.details-block:not([open])")];
+    for (const section of opened) section.open = true;
     for (const link of main.querySelectorAll("a[href]")) {
       if (!leadsNowhere(link)) continue;
       unlinked.push([link, link.getAttribute("href")]);
@@ -64,6 +69,8 @@ export const PRINT_SCRIPT = `
   }
   function relink() {
     if (!unlinked) return;
+    for (const section of opened) section.open = false;
+    opened = [];
     for (const [link, href] of unlinked) {
       link.setAttribute("href", href);
       link.removeAttribute("data-unlinked");
