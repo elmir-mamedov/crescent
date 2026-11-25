@@ -18,7 +18,7 @@ import {
 } from "./content.js";
 import { labelKey } from "./frontmatter.js";
 import { hasAllLabels } from "./labels.js";
-import { extractSections, type Section } from "./markdown.js";
+import { extractSections, plainText, type Section } from "./markdown.js";
 import { stripNotes } from "./notes.js";
 
 export interface SearchHit {
@@ -33,7 +33,10 @@ export interface SearchHit {
   /** The page's label names, as the tree reports them. */
   labels: string[];
   summary?: string;
-  /** Plain-text snippet, windowed around the query where possible. */
+  /**
+   * The page's text as a reader sees it (`plainText`), no Markdown, windowed
+   * around the query where possible.
+   */
   excerpt: string;
   /**
    * The section the match falls in, so a caller can link to that heading rather
@@ -164,13 +167,15 @@ function matchIndex(text: string, tokens: string[]): number {
 }
 
 /**
- * A keyword-in-context snippet. The window starts `lead` characters before the
- * first query term that occurs in the body, moved forward to the start of a
- * word so it never opens on the tail of one ("...dov,"), and runs for
- * `EXCERPT_LENGTH` characters. Falls back to the page's `summary` (then the
- * body's opening) only when the query matched somewhere else entirely — a
- * title, slug or tag hit — so a page having a summary never costs the user
- * their highlight.
+ * A keyword-in-context snippet of `body`, a page's text as `plainText` reads
+ * it, so that the excerpt shows what the page says rather than its Markdown,
+ * and no markup takes up the `lead`. The window starts `lead` characters
+ * before the first query term that occurs in the body, moved forward to the
+ * start of a word so it never opens on the tail of one ("...dov,"), and runs
+ * for `EXCERPT_LENGTH` characters. Falls back to the page's `summary` (then
+ * the body's opening) only when the query matched somewhere else entirely — a
+ * title, slug or tag hit, or markup the text leaves out, such as a link's id —
+ * so a page having a summary never costs the user their highlight.
  */
 export function excerptFor(query: string, body: string, summary?: string, lead = EXCERPT_LEAD): string {
   const tokens = searchTokens(query);
@@ -283,7 +288,7 @@ export async function searchPages(
     }
   });
 
-  const scored: { hit: SearchHit; body: string }[] = [];
+  const scored: { hit: Omit<SearchHit, "excerpt">; body: string }[] = [];
   for (const page of pages) {
     if (!page) continue;
     // Folders are pure containers with no body to match — skip them.
@@ -308,27 +313,36 @@ export async function searchPages(
         tags: page.data.tags ?? [],
         labels: labelsBySlug.get(page.slug) ?? [],
         summary: page.data.summary,
-        excerpt: excerptFor(query, searchable.body, page.data.summary, opts.excerptLead),
         score,
       },
       body: searchable.body,
     });
   }
 
-  // Locating each hit's section costs a Markdown parse, so it happens after the
-  // cut rather than for every page that matched — the sidebar's type-ahead runs
-  // this on each keystroke and would otherwise parse the whole KB to throw all
-  // but ten of the results away.
-  return scored
+  // Reading each hit's text for its excerpt and locating its section each cost
+  // a Markdown parse, so they happen after the cut rather than for every page
+  // that matched — the sidebar's type-ahead runs this on each keystroke and
+  // would otherwise parse the whole KB to throw all but ten of the results away.
+  const top = scored
     .sort((a, b) => b.hit.score - a.hit.score || a.hit.title.localeCompare(b.hit.title))
-    .slice(0, limit)
-    .map(({ hit, body }) => ({
-      ...hit,
-      // Sections come from the same note-stripped body the match was found in,
-      // so the line numbers line up. The ids still match the rendered page: a
-      // heading inside a note comment is consumed by `kb25_note` there too, so
-      // the sequence of real headings — and every id derived from it — is the
-      // same either way.
-      section: sectionFor(query, body, extractSections(body)),
-    }));
+    .slice(0, limit);
+  if (!top.length) return [];
+
+  // A `[[link]]` reads as the title the page shows for it.
+  const [titles, ids] = await Promise.all([content.titleIndex(), content.idIndex()]);
+  return top.map(({ hit, body }) => ({
+    ...hit,
+    excerpt: excerptFor(
+      query,
+      plainText(body, (slug) => titles.get(slug), hit.slug, (id) => ids.get(id)),
+      hit.summary,
+      opts.excerptLead
+    ),
+    // Sections come from the same note-stripped body the match was found in,
+    // so the line numbers line up. The ids still match the rendered page: a
+    // heading inside a note comment is consumed by `kb25_note` there too, so
+    // the sequence of real headings — and every id derived from it — is the
+    // same either way.
+    section: sectionFor(query, body, extractSections(body)),
+  }));
 }

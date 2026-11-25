@@ -417,3 +417,29 @@ test("searchPages with labels keeps only pages carrying every one of them", asyn
     await kb.cleanup();
   }
 });
+
+test("searchPages excerpts the page's text, not its Markdown", async () => {
+  const kb: TempKb = await makeTempKb();
+  try {
+    const content = await seed(kb.dir);
+    const target = await content.createPage("docs", "Bell tests", "body");
+    const body = [
+      "```mermaid",
+      "graph TD",
+      "  C --> E[Entanglement]",
+      "```",
+      "",
+      `Local theories fail: see [[id:${target.id}]]. *Entanglement* still can't carry a message.`,
+      "",
+      "| Year | Who |",
+      "|---|---|",
+    ].join("\n");
+    await content.createPage("docs", "Entangled pairs", body);
+
+    const [hit] = await searchPages(content, "entanglement", { space: "docs", excerptLead: 24 });
+    assert.equal(hit.title, "Entangled pairs");
+    assert.equal(hit.excerpt, "...fail: see Bell tests. Entanglement still can't carry a message. Year Who");
+  } finally {
+    await kb.cleanup();
+  }
+});

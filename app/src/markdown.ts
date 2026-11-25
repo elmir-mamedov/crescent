@@ -1076,10 +1076,11 @@ function stripSectionPin(inline: Token): string | null {
  * this text to a person — raw source would put literal backticks and asterisks
  * in front of them, and would join a setext heading's two lines with a newline.
  *
- * `heading` adds what a heading wants and `locateQuote` does not: an image's alt
- * text, and a formula's TeX, the nearest plain text to it. Neither is text a
- * note's quote could ever be highlighted in — alt text reaches the browser as an
- * attribute, and KaTeX draws a formula rather than writing out its source.
+ * `heading` adds what a heading, and a search excerpt (`plainText`), wants and
+ * `locateQuote` does not: an image's alt text, and a formula's TeX, the nearest
+ * plain text to it. Neither is text a note's quote could ever be highlighted in
+ * — alt text reaches the browser as an attribute, and KaTeX draws a formula
+ * rather than writing out its source.
  */
 function inlineText(token: Token, heading = true): string {
   let out = "";
@@ -1124,6 +1125,38 @@ export function extractSections(body: string): Section[] {
 }
 
 let sectionRenderer: MarkdownIt | undefined;
+
+/**
+ * A body's text as a reader sees it, for a search excerpt: the words of its
+ * headings, paragraphs, lists and table cells, and the code of its code
+ * blocks, in reading order with whitespace collapsed. Markup resolves the way
+ * the page renders it, so a link reads as its text and a `[[link]]` as the
+ * title it shows, which is why this takes the page's slug and the KB's
+ * resolvers, as `createRenderer` does. A Mermaid diagram and a display formula
+ * have no text to read and are left out; a formula in a sentence reads as its
+ * TeX, as in a heading (`inlineText`).
+ *
+ * The typographer stays off, so quotes and dashes are the ones the source has.
+ * Search matches the source, and a query typed with a straight apostrophe has
+ * to find its place in the excerpt to be highlighted there.
+ */
+export function plainText(
+  body: string,
+  resolveTitle: (slug: string) => string | undefined = () => undefined,
+  currentSlug = "",
+  resolveIdSlug: (id: string) => string | undefined = () => undefined
+): string {
+  const md = createRenderer(resolveTitle, currentSlug, resolveIdSlug).set({ typographer: false });
+  const parts: string[] = [];
+  for (const token of md.parse(body.replace(/\r\n?/g, "\n"), {})) {
+    if (token.type === "inline") parts.push(inlineText(token));
+    else if (token.type === "code_block") parts.push(token.content);
+    else if (token.type === "fence" && token.info.trim().split(/\s+/)[0] !== "mermaid") {
+      parts.push(token.content);
+    }
+  }
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
 
 /** A block anchor as attributes, for renderers that build their own open tag. */
 function anchorAttrs(md: MarkdownIt, token: Token): string {
