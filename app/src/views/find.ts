@@ -247,6 +247,8 @@ ${FIND_MODEL}
   // Nothing moves for a match that can already be seen.
   function bringIntoView(match) {
     const range = match.range;
+    // A match inside a closed :::details section opens it (DETAILS_SCRIPT).
+    if (typeof window.kb25Reveal === "function") window.kb25Reveal(range.startContainer.parentElement);
     const edge = topEdge();
     for (let el = range.startContainer.parentElement; el && el !== document.body; el = el.parentElement) {
       const style = getComputedStyle(el);

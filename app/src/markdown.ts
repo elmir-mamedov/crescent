@@ -853,6 +853,94 @@ function kb25Note(
 }
 
 /**
+ * `:::details Title` … `:::`, a collapsible section (feedback #30): the title
+ * shows, and what is between the lines opens on a click. Drawn as the
+ * browser's own `<details>`, so it needs no script, follows the theme, and its
+ * text stays in the page, for search and for notes.
+ *
+ * The section is one top-level block, so a note left inside it is pinned to
+ * the section, as one left in a list is pinned to the list. A `:::` line in a
+ * code block inside it is text, a `:::name` line opens a section nested in it,
+ * and a section left unclosed runs to the end of the page, as a fence does,
+ * rather than swallowing nothing or losing what follows.
+ */
+const DETAILS_OPEN_RE = /^:::[ \t]*details(?:[ \t]+(.*?))?[ \t]*$/;
+const CONTAINER_OPEN_RE = /^:::[ \t]*[A-Za-z]/;
+const CONTAINER_CLOSE_RE = /^:::[ \t]*$/;
+
+function kb25Details(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
+  if (state.sCount[startLine] - state.blkIndent >= 4) return false; // indented code
+  const open = DETAILS_OPEN_RE.exec(blockLine(state, startLine));
+  if (!open) return false;
+  if (silent) return true;
+
+  // The line that closes it, at the same depth: nested sections count up and
+  // down, and nothing inside a fenced code block counts at all.
+  let nextLine = startLine + 1;
+  let depth = 0;
+  let fence = "";
+  let closed = false;
+  for (; nextLine < endLine; nextLine += 1) {
+    // Outdented below the block it sits in (a list item, say): it ends there.
+    if (!state.isEmpty(nextLine) && state.sCount[nextLine] < state.blkIndent) break;
+    const text = blockLine(state, nextLine);
+    if (fence) {
+      const close = FENCE_RE.exec(text);
+      if (close && close[1][0] === fence[0] && close[1].length >= fence.length && !close[2].trim()) fence = "";
+      continue;
+    }
+    if (state.sCount[nextLine] - state.blkIndent >= 4) continue;
+    const opening = FENCE_RE.exec(text);
+    if (opening) {
+      fence = opening[1];
+      continue;
+    }
+    if (CONTAINER_CLOSE_RE.test(text)) {
+      if (depth === 0) {
+        closed = true;
+        break;
+      }
+      depth -= 1;
+    } else if (CONTAINER_OPEN_RE.test(text)) {
+      depth += 1;
+    }
+  }
+
+  const title = (open[1] ?? "").trim() || "Details";
+  const oldParent = state.parentType;
+  const oldLineMax = state.lineMax;
+  state.parentType = "kb25_details" as typeof state.parentType;
+  state.lineMax = nextLine;
+
+  const opener = state.push("kb25_details_open", "details", 1);
+  opener.block = true;
+  opener.markup = ":::";
+  opener.info = title;
+  opener.map = [startLine, closed ? nextLine + 1 : nextLine];
+  opener.attrSet("class", "details-block");
+
+  const summary = state.push("kb25_summary_open", "summary", 1);
+  summary.block = true;
+  summary.map = [startLine, startLine + 1];
+  const inline = state.push("inline", "", 0);
+  inline.content = title;
+  inline.map = [startLine, startLine + 1];
+  inline.children = [];
+  state.push("kb25_summary_close", "summary", -1).block = true;
+
+  state.md.block.tokenize(state, startLine + 1, nextLine);
+
+  const closer = state.push("kb25_details_close", "details", -1);
+  closer.block = true;
+  closer.markup = ":::";
+
+  state.parentType = oldParent;
+  state.lineMax = oldLineMax;
+  state.line = closed ? nextLine + 1 : nextLine;
+  return true;
+}
+
+/**
  * Where `kb25_table_pipes` parks the untouched source for `kb25_anchor`. On
  * `state.env` rather than a closure variable so nested or repeated renders on
  * one renderer can't read each other's source.
@@ -1371,6 +1459,10 @@ export function createRenderer(
   // Inline notes: consume the comment (see kb25Note for why this is needed at
   // all with html:false) and stamp source anchors onto every top-level block.
   md.block.ruler.before("table", "kb25_note", kb25Note, {
+    alt: ["paragraph", "reference", "blockquote", "list"],
+  });
+  // Collapsible sections, `:::details Title` … `:::` (kb25Details).
+  md.block.ruler.before("table", "kb25_details", kb25Details, {
     alt: ["paragraph", "reference", "blockquote", "list"],
   });
   md.core.ruler.push("kb25_anchor", kb25Anchor);
