@@ -853,6 +853,23 @@ html.has-find.has-tabs .toc{padding-top:58px}
 .prose details.details-block > :not(summary){margin-left:.9em; margin-right:.9em}
 .prose details.details-block > summary + *{margin-top:.7em}
 .prose details.details-block > :last-child:not(summary){margin-bottom:.7em}
+/* Tabs (:::tabs, markdown.ts; views/blocks.ts makes the row of tabs): the
+   panels sit in one bordered box, under a row of tabs while the script runs,
+   or each under its title, as on paper, without it. */
+.prose .tabs-block{margin:1em 0; border:1px solid var(--line); border-radius:8px; padding:0 .9em .7em}
+.prose .tabs-block > :first-child{margin-top:.7em}
+.prose .tabs-block > :last-child{margin-bottom:0}
+.prose .tabs-label{font-weight:600; margin:.7em 0 .3em}
+.prose .tabs-block.is-tabbed > .tabs-panel > .tabs-label{display:none}
+.prose .tabs-panel > :last-child{margin-bottom:0}
+.prose .tabs-bar{display:flex; flex-wrap:wrap; gap:2px; margin:0 -.9em .7em;
+  padding:0 .5em; border-bottom:1px solid var(--line)}
+.prose .tabs-block > .tabs-bar:first-child{margin-top:0}
+.prose .tabs-tab{font:inherit; font-weight:600; color:var(--muted); background:none; border:0;
+  border-bottom:2px solid transparent; margin-bottom:-1px; padding:.5em .7em; cursor:pointer}
+.prose .tabs-tab:hover{color:var(--fg)}
+.prose .tabs-tab[aria-selected="true"]{color:var(--fg); border-bottom-color:var(--accent)}
+.prose .tabs-tab:focus-visible{outline:2px solid var(--focus-ring); outline-offset:-2px; border-radius:4px}
 /* A table wider than the column scrolls inside its own .table-scroll, which
    the renderer puts around every table (see markdown.ts for the .table-wrap
    around that). */
@@ -1747,6 +1764,10 @@ body.chat-open .tab-strip{right:400px}
   .prose a[data-unlinked]{color:inherit; border-bottom:0; text-decoration:none}
   .prose :is(h1,h2,h3,h4,h5,h6){break-after:avoid}
   .prose :is(h1,h2,h3,h4,h5,h6).is-flashed{animation:none; color:inherit}
+  /* Every tab's panel, under its own title. */
+  .prose .tabs-bar{display:none}
+  .prose .tabs-block .tabs-panel[hidden]{display:block}
+  .prose .tabs-block.is-tabbed > .tabs-panel > .tabs-label{display:block}
   .prose :is(img,svg,.mermaid-frame,.math-block,.widget,blockquote,tr){break-inside:avoid}
   /* Remarks, tasks and agent notes are the reader's working marks, not part of
      the page; a highlight stays, as the underline it already is. */

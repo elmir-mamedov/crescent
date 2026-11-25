@@ -2,7 +2,7 @@ import type { PageNode, SpaceInfo } from "../content.js";
 import type { LabelDef } from "../labels.js";
 import type { RenderedNote, Section } from "../markdown.js";
 import { sessionCorner } from "./corner.js";
-import { DETAILS_SCRIPT } from "./details.js";
+import { BLOCKS_SCRIPT } from "./blocks.js";
 import { DIAGRAM_VIEWER, MERMAID_SCRIPT } from "./diagrams.js";
 import { FIND_BAR, FIND_SCRIPT } from "./find.js";
 import { newFolderButton, renameFolderButton } from "./folders.js";
@@ -218,7 +218,7 @@ ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, v.isArchi
 ${toc}
 ${notesData}
 ${FIND_BAR}
-${v.contentHtml.includes('class="details-block"') ? `<script>${DETAILS_SCRIPT}</script>` : ""}
+${/class="(details|tabs)-block"/.test(v.contentHtml) ? `<script>${BLOCKS_SCRIPT}</script>` : ""}
 <script>${FIND_SCRIPT}</script>
 <script>${EDIT_SHORTCUT_SCRIPT}</script>
 <script>${COPY_LINK_SCRIPT}</script>

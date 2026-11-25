@@ -113,7 +113,8 @@ ${FIND_MODEL}
   const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   const QUERY_KEY = "kb25.find";
   const SCOPE = ".page-head h1, article.prose, .toc-list";
-  const SKIP = "button, input, textarea, select, script, style, template, svg, .mermaid, .katex-mathml";
+  const SKIP = "button, input, textarea, select, script, style, template, svg, .mermaid, .katex-mathml, .is-tabbed > .tabs-panel > .tabs-label";
+  const TUCKED = ".prose details.details-block:not([open]), .is-tabbed > .tabs-panel[hidden]";
   const BLOCK = "p, li, h1, h2, h3, h4, h5, h6, td, th, pre, blockquote, dt, dd, caption, figcaption, summary, div, section, article, table, tr, ul, ol, dl";
   const all = new Highlight();
   const now = new Highlight();
@@ -184,7 +185,9 @@ ${FIND_MODEL}
           const end = point(block, span[1], true);
           const el = start[0].parentElement;
           if (!el) continue;
-          if (!shown.has(el)) shown.set(el, el.getClientRects().length > 0);
+          // Text a reader can open counts too: a closed :::details section, a
+          // tab not picked. Stepping to it opens it (bringIntoView).
+          if (!shown.has(el)) shown.set(el, el.getClientRects().length > 0 || Boolean(el.closest(TUCKED)));
           if (!shown.get(el)) continue;
           const range = document.createRange();
           try {
@@ -247,7 +250,7 @@ ${FIND_MODEL}
   // Nothing moves for a match that can already be seen.
   function bringIntoView(match) {
     const range = match.range;
-    // A match inside a closed :::details section opens it (DETAILS_SCRIPT).
+    // A match in a closed :::details section or a hidden tab shows it (BLOCKS_SCRIPT).
     if (typeof window.kb25Reveal === "function") window.kb25Reveal(range.startContainer.parentElement);
     const edge = topEdge();
     for (let el = range.startContainer.parentElement; el && el !== document.body; el = el.parentElement) {
