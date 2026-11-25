@@ -7,6 +7,7 @@ import {
   isGalleryImageSrc,
   locateQuote,
   noteSegments,
+  plainText,
   sourceBlocks,
 } from "./markdown.js";
 
@@ -1122,4 +1123,68 @@ test("an image shown as a link has its text and address escaped", () => {
   assert.doesNotMatch(html, /<img/);
   assert.doesNotMatch(html, /<b>/);
   assert.doesNotMatch(html, /" ?onerror=/);
+});
+
+test("plainText reads a body as its words, with no Markdown left in them", () => {
+  const body = [
+    "## Pages {#pages}",
+    "",
+    "The outermost electron's *spin*, **so** `s`, and a [link](https://example.com).",
+    "",
+    "- one item",
+    "1. another &amp; more",
+    "",
+    "| Year | Who |",
+    "|---|---|",
+    "| 1982 | Aspect, Dalibard and Roger |",
+    "",
+    "> quoted",
+  ].join("\n");
+  assert.equal(
+    plainText(body),
+    "Pages The outermost electron's spin, so s, and a link. one item another & more " +
+      "Year Who 1982 Aspect, Dalibard and Roger quoted"
+  );
+});
+
+test("plainText reads a [[link]] as the title the page shows for it", () => {
+  const titles = new Map([["qm/bell-tests", "Bell tests"], ["qm/spin", "Spin"]]);
+  const ids = new Map([["1jsq9b2ynumqz", "qm/bell-tests"]]);
+  const text = plainText(
+    "See [[id:1jsq9b2ynumqz]], [[spin]], [[spin|the spin page]] and [[id:gone]].",
+    (slug) => titles.get(slug),
+    "qm/entanglement",
+    (id) => ids.get(id)
+  );
+  assert.equal(text, "See Bell tests, Spin, the spin page and gone.");
+});
+
+test("plainText leaves out diagrams and display math, and keeps code and inline TeX", () => {
+  const body = [
+    "```mermaid",
+    "graph TD",
+    "  C --> E[Spin]",
+    "```",
+    "",
+    "$$",
+    "S = 2\\sqrt{2}",
+    "$$",
+    "",
+    "measured $S = 2.42 \\pm 0.20$ with spins",
+    "",
+    "```sh",
+    "kubectl rollout restart",
+    "```",
+    "",
+    "    indented code",
+  ].join("\n");
+  assert.equal(
+    plainText(body),
+    "measured S = 2.42 \\pm 0.20 with spins kubectl rollout restart indented code"
+  );
+});
+
+test("plainText keeps the quotes and dashes the source has", () => {
+  // A query typed with a straight apostrophe has to find its place in it.
+  assert.equal(plainText(`can't -- "so" (c)...`), `can't -- "so" (c)...`);
 });
