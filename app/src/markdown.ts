@@ -868,18 +868,22 @@ const DETAILS_OPEN_RE = /^:::[ \t]*details(?:[ \t]+(.*?))?[ \t]*$/;
 const CONTAINER_OPEN_RE = /^:::[ \t]*[A-Za-z]/;
 const CONTAINER_CLOSE_RE = /^:::[ \t]*$/;
 
-function kb25Details(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
-  if (state.sCount[startLine] - state.blkIndent >= 4) return false; // indented code
-  const open = DETAILS_OPEN_RE.exec(blockLine(state, startLine));
-  if (!open) return false;
-  if (silent) return true;
-
-  // The line that closes it, at the same depth: nested sections count up and
-  // down, and nothing inside a fenced code block counts at all.
+/**
+ * Where a `:::name` block that opens at `startLine` ends: the `:::` line at its
+ * own depth, past any nested `:::name` blocks and fenced code, or the line its
+ * enclosing block (a list item, say) ends at, or the end of the page. `split`
+ * also collects the lines at its own depth that match it, such as `@tab`.
+ */
+function scanContainer(
+  state: StateBlock,
+  startLine: number,
+  endLine: number,
+  split?: RegExp,
+): { end: number; closed: boolean; splits: number[] } {
+  const splits: number[] = [];
   let nextLine = startLine + 1;
   let depth = 0;
   let fence = "";
-  let closed = false;
   for (; nextLine < endLine; nextLine += 1) {
     // Outdented below the block it sits in (a list item, say): it ends there.
     if (!state.isEmpty(nextLine) && state.sCount[nextLine] < state.blkIndent) break;
@@ -896,16 +900,37 @@ function kb25Details(state: StateBlock, startLine: number, endLine: number, sile
       continue;
     }
     if (CONTAINER_CLOSE_RE.test(text)) {
-      if (depth === 0) {
-        closed = true;
-        break;
-      }
+      if (depth === 0) return { end: nextLine, closed: true, splits };
       depth -= 1;
     } else if (CONTAINER_OPEN_RE.test(text)) {
       depth += 1;
+    } else if (depth === 0 && split?.test(text)) {
+      splits.push(nextLine);
     }
   }
+  return { end: nextLine, closed: false, splits };
+}
 
+/** A one-line title: an inline token markdown-it fills in at the inline stage. */
+function pushTitle(state: StateBlock, tag: string, type: string, line: number, title: string, cls?: string): void {
+  const open = state.push(`${type}_open`, tag, 1);
+  open.block = true;
+  open.map = [line, line + 1];
+  if (cls) open.attrSet("class", cls);
+  const inline = state.push("inline", "", 0);
+  inline.content = title;
+  inline.map = [line, line + 1];
+  inline.children = [];
+  state.push(`${type}_close`, tag, -1).block = true;
+}
+
+function kb25Details(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
+  if (state.sCount[startLine] - state.blkIndent >= 4) return false; // indented code
+  const open = DETAILS_OPEN_RE.exec(blockLine(state, startLine));
+  if (!open) return false;
+  if (silent) return true;
+
+  const { end: nextLine, closed } = scanContainer(state, startLine, endLine);
   const title = (open[1] ?? "").trim() || "Details";
   const oldParent = state.parentType;
   const oldLineMax = state.lineMax;
@@ -919,18 +944,62 @@ function kb25Details(state: StateBlock, startLine: number, endLine: number, sile
   opener.map = [startLine, closed ? nextLine + 1 : nextLine];
   opener.attrSet("class", "details-block");
 
-  const summary = state.push("kb25_summary_open", "summary", 1);
-  summary.block = true;
-  summary.map = [startLine, startLine + 1];
-  const inline = state.push("inline", "", 0);
-  inline.content = title;
-  inline.map = [startLine, startLine + 1];
-  inline.children = [];
-  state.push("kb25_summary_close", "summary", -1).block = true;
+  pushTitle(state, "summary", "kb25_summary", startLine, title);
 
   state.md.block.tokenize(state, startLine + 1, nextLine);
 
   const closer = state.push("kb25_details_close", "details", -1);
+  closer.block = true;
+  closer.markup = ":::";
+
+  state.parentType = oldParent;
+  state.lineMax = oldLineMax;
+  state.line = closed ? nextLine + 1 : nextLine;
+  return true;
+}
+
+/**
+ * `:::tabs` … `:::`, versions of one thing side by side under tabs (feedback
+ * #30): each `@tab Title` line starts a panel, and the reader picks which one
+ * shows. The panels are rendered one after another, each under its title, and
+ * the page's script (views/blocks.ts) turns the titles into a row of tabs, so a
+ * page without it, and a printed page, still shows every panel with its title.
+ * Anything before the first `@tab` stays above the tabs. Like `:::details`, it
+ * is one top-level block for notes, and nests.
+ */
+const TABS_OPEN_RE = /^:::[ \t]*tabs[ \t]*$/;
+const TAB_RE = /^@tab(?:[ \t]+(.*?))?[ \t]*$/;
+
+function kb25Tabs(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
+  if (state.sCount[startLine] - state.blkIndent >= 4) return false; // indented code
+  if (!TABS_OPEN_RE.test(blockLine(state, startLine))) return false;
+  if (silent) return true;
+
+  const { end: nextLine, closed, splits } = scanContainer(state, startLine, endLine, TAB_RE);
+  const oldParent = state.parentType;
+  const oldLineMax = state.lineMax;
+  state.parentType = "kb25_tabs" as typeof state.parentType;
+  state.lineMax = nextLine;
+
+  const opener = state.push("kb25_tabs_open", "div", 1);
+  opener.block = true;
+  opener.markup = ":::";
+  opener.map = [startLine, closed ? nextLine + 1 : nextLine];
+  opener.attrSet("class", "tabs-block");
+
+  state.md.block.tokenize(state, startLine + 1, splits[0] ?? nextLine);
+  splits.forEach((line, index) => {
+    const panel = state.push("kb25_tab_open", "section", 1);
+    panel.block = true;
+    panel.map = [line, splits[index + 1] ?? nextLine];
+    panel.attrSet("class", "tabs-panel");
+    const title = (TAB_RE.exec(blockLine(state, line))?.[1] ?? "").trim() || `Tab ${index + 1}`;
+    pushTitle(state, "div", "kb25_tab_label", line, title, "tabs-label");
+    state.md.block.tokenize(state, line + 1, splits[index + 1] ?? nextLine);
+    state.push("kb25_tab_close", "section", -1).block = true;
+  });
+
+  const closer = state.push("kb25_tabs_close", "div", -1);
   closer.block = true;
   closer.markup = ":::";
 
@@ -1463,6 +1532,10 @@ export function createRenderer(
   });
   // Collapsible sections, `:::details Title` … `:::` (kb25Details).
   md.block.ruler.before("table", "kb25_details", kb25Details, {
+    alt: ["paragraph", "reference", "blockquote", "list"],
+  });
+  // Tabs, `:::tabs` with an `@tab Title` line per panel … `:::` (kb25Tabs).
+  md.block.ruler.before("table", "kb25_tabs", kb25Tabs, {
     alt: ["paragraph", "reference", "blockquote", "list"],
   });
   md.core.ruler.push("kb25_anchor", kb25Anchor);

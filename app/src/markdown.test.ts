@@ -1263,3 +1263,22 @@ test(":::details is one top-level block for notes, with its headings still secti
   assert.match(render(body), /<details class="details-block" data-src-line="0"/);
   assert.ok(extractSections(body).some((section) => section.text === "Step one"));
 });
+
+test(":::tabs renders a panel under its title for each @tab line", () => {
+  const html = render(":::tabs\nPick one:\n@tab Windows\nRun **this**.\n\n@tab macOS $x$\nRun that.\n@tab\nthird\n:::\nafter");
+  assert.match(html, /^<div class="tabs-block"[^>]*>\n<p>Pick one:<\/p>\n<section class="tabs-panel">\n<div class="tabs-label">Windows<\/div>\n<p>Run <strong>this<\/strong>\.<\/p>\n<\/section>/);
+  assert.match(html, /<div class="tabs-label">macOS <span class="katex">/);
+  assert.match(html, /<div class="tabs-label">Tab 3<\/div>\n<p>third<\/p>\n<\/section>\n<\/div>\n<p[^>]*>after<\/p>/);
+  assert.doesNotMatch(html, /@tab|:::/);
+});
+
+test(":::tabs splits only on its own @tab lines, not in code or a nested block", () => {
+  const html = render(":::tabs\n@tab One\n```\n@tab fake\n:::\n```\n:::details Inside\n@tab not mine\n:::\n@tab Two\ny\n:::");
+  assert.equal(html.match(/class="tabs-panel"/g)?.length, 2);
+  assert.match(html, /<code>@tab fake\n:::\n<\/code>/);
+  assert.match(html, /<p>@tab not mine<\/p>\n<\/details>\n<\/section>/);
+});
+
+test(":::tabs is one top-level block for notes", () => {
+  assert.deepEqual(sourceBlocks(":::tabs\n@tab A\na\n\n@tab B\nb\n:::\n\nAfter.").map((block) => block.line), [0, 8]);
+});
