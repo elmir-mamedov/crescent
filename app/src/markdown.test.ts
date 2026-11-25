@@ -1282,3 +1282,16 @@ test(":::tabs splits only on its own @tab lines, not in code or a nested block",
 test(":::tabs is one top-level block for notes", () => {
   assert.deepEqual(sourceBlocks(":::tabs\n@tab A\na\n\n@tab B\nb\n:::\n\nAfter.").map((block) => block.line), [0, 8]);
 });
+
+test(":::columns renders a column per @col line, titled only when given", () => {
+  const html = render(":::columns\n@col Before\n- a\n@col\nno title\n:::\nafter");
+  assert.match(html, /^<div class="columns-block"[^>]*>\n<section class="columns-col">\n<div class="columns-label">Before<\/div>\n<ul>/);
+  assert.match(html, /<section class="columns-col">\n<p>no title<\/p>\n<\/section>\n<\/div>\n<p[^>]*>after<\/p>/);
+  assert.doesNotMatch(html, /@col|:::/);
+});
+
+test(":::columns and :::tabs nest in each other", () => {
+  const html = render(":::columns\n@col Left\n:::tabs\n@tab A\na\n@col not mine\n:::\n@col Right\nb\n:::");
+  assert.equal(html.match(/class="columns-col"/g)?.length, 2);
+  assert.match(html, /<p>a\n@col not mine<\/p>\n<\/section>\n<\/div>\n<\/section>/);
+});

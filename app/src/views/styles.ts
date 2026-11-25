@@ -870,6 +870,15 @@ html.has-find.has-tabs .toc{padding-top:58px}
 .prose .tabs-tab:hover{color:var(--fg)}
 .prose .tabs-tab[aria-selected="true"]{color:var(--fg); border-bottom-color:var(--accent)}
 .prose .tabs-tab:focus-visible{outline:2px solid var(--focus-ring); outline-offset:-2px; border-radius:4px}
+/* Columns (:::columns, markdown.ts): side by side, as many to a row as fit at
+   14em or more each, so on a narrow window they stack. */
+.prose .columns-block{margin:1em 0; display:grid; gap:.6em 1.4em;
+  grid-template-columns:repeat(auto-fit, minmax(min(14em, 100%), 1fr))}
+.prose .columns-block > :not(.columns-col){grid-column:1 / -1; margin:0}
+.prose .columns-col{min-width:0}
+.prose .columns-col > :first-child{margin-top:0}
+.prose .columns-col > :last-child{margin-bottom:0}
+.prose .columns-label{font-weight:600; margin-bottom:.4em}
 /* A table wider than the column scrolls inside its own .table-scroll, which
    the renderer puts around every table (see markdown.ts for the .table-wrap
    around that). */

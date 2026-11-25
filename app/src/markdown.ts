@@ -964,50 +964,85 @@ function kb25Details(state: StateBlock, startLine: number, endLine: number, sile
  * shows. The panels are rendered one after another, each under its title, and
  * the page's script (views/blocks.ts) turns the titles into a row of tabs, so a
  * page without it, and a printed page, still shows every panel with its title.
- * Anything before the first `@tab` stays above the tabs. Like `:::details`, it
- * is one top-level block for notes, and nests.
+ *
+ * `:::columns` … `:::`, things to read side by side (feedback #30): each `@col`
+ * line, with an optional title, starts a column. The stylesheet sets them in a
+ * row, and stacks them where the page is too narrow for them.
+ *
+ * In both, anything before the first split line stays above the panels. Like
+ * `:::details`, each is one top-level block for notes, and nests.
  */
-const TABS_OPEN_RE = /^:::[ \t]*tabs[ \t]*$/;
-const TAB_RE = /^@tab(?:[ \t]+(.*?))?[ \t]*$/;
-
-function kb25Tabs(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
-  if (state.sCount[startLine] - state.blkIndent >= 4) return false; // indented code
-  if (!TABS_OPEN_RE.test(blockLine(state, startLine))) return false;
-  if (silent) return true;
-
-  const { end: nextLine, closed, splits } = scanContainer(state, startLine, endLine, TAB_RE);
-  const oldParent = state.parentType;
-  const oldLineMax = state.lineMax;
-  state.parentType = "kb25_tabs" as typeof state.parentType;
-  state.lineMax = nextLine;
-
-  const opener = state.push("kb25_tabs_open", "div", 1);
-  opener.block = true;
-  opener.markup = ":::";
-  opener.map = [startLine, closed ? nextLine + 1 : nextLine];
-  opener.attrSet("class", "tabs-block");
-
-  state.md.block.tokenize(state, startLine + 1, splits[0] ?? nextLine);
-  splits.forEach((line, index) => {
-    const panel = state.push("kb25_tab_open", "section", 1);
-    panel.block = true;
-    panel.map = [line, splits[index + 1] ?? nextLine];
-    panel.attrSet("class", "tabs-panel");
-    const title = (TAB_RE.exec(blockLine(state, line))?.[1] ?? "").trim() || `Tab ${index + 1}`;
-    pushTitle(state, "div", "kb25_tab_label", line, title, "tabs-label");
-    state.md.block.tokenize(state, line + 1, splits[index + 1] ?? nextLine);
-    state.push("kb25_tab_close", "section", -1).block = true;
-  });
-
-  const closer = state.push("kb25_tabs_close", "div", -1);
-  closer.block = true;
-  closer.markup = ":::";
-
-  state.parentType = oldParent;
-  state.lineMax = oldLineMax;
-  state.line = closed ? nextLine + 1 : nextLine;
-  return true;
+interface SplitBlock {
+  open: RegExp;
+  split: RegExp;
+  type: string;
+  block: string;
+  panel: string;
+  label: string;
+  /** The title of a split line that gives none, or null for no title. */
+  untitled: (index: number) => string | null;
 }
+
+function splitBlockRule(kind: SplitBlock) {
+  return (state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean => {
+    if (state.sCount[startLine] - state.blkIndent >= 4) return false; // indented code
+    if (!kind.open.test(blockLine(state, startLine))) return false;
+    if (silent) return true;
+
+    const { end: nextLine, closed, splits } = scanContainer(state, startLine, endLine, kind.split);
+    const oldParent = state.parentType;
+    const oldLineMax = state.lineMax;
+    state.parentType = kind.type as typeof state.parentType;
+    state.lineMax = nextLine;
+
+    const opener = state.push(`${kind.type}_open`, "div", 1);
+    opener.block = true;
+    opener.markup = ":::";
+    opener.map = [startLine, closed ? nextLine + 1 : nextLine];
+    opener.attrSet("class", kind.block);
+
+    state.md.block.tokenize(state, startLine + 1, splits[0] ?? nextLine);
+    splits.forEach((line, index) => {
+      const panel = state.push(`${kind.type}_panel_open`, "section", 1);
+      panel.block = true;
+      panel.map = [line, splits[index + 1] ?? nextLine];
+      panel.attrSet("class", kind.panel);
+      const title = (kind.split.exec(blockLine(state, line))?.[1] ?? "").trim() || kind.untitled(index);
+      if (title) pushTitle(state, "div", `${kind.type}_label`, line, title, kind.label);
+      state.md.block.tokenize(state, line + 1, splits[index + 1] ?? nextLine);
+      state.push(`${kind.type}_panel_close`, "section", -1).block = true;
+    });
+
+    const closer = state.push(`${kind.type}_close`, "div", -1);
+    closer.block = true;
+    closer.markup = ":::";
+
+    state.parentType = oldParent;
+    state.lineMax = oldLineMax;
+    state.line = closed ? nextLine + 1 : nextLine;
+    return true;
+  };
+}
+
+const kb25Tabs = splitBlockRule({
+  open: /^:::[ \t]*tabs[ \t]*$/,
+  split: /^@tab(?:[ \t]+(.*?))?[ \t]*$/,
+  type: "kb25_tabs",
+  block: "tabs-block",
+  panel: "tabs-panel",
+  label: "tabs-label",
+  untitled: (index) => `Tab ${index + 1}`,
+});
+
+const kb25Columns = splitBlockRule({
+  open: /^:::[ \t]*columns[ \t]*$/,
+  split: /^@col(?:[ \t]+(.*?))?[ \t]*$/,
+  type: "kb25_columns",
+  block: "columns-block",
+  panel: "columns-col",
+  label: "columns-label",
+  untitled: () => null,
+});
 
 /**
  * Where `kb25_table_pipes` parks the untouched source for `kb25_anchor`. On
@@ -1536,6 +1571,10 @@ export function createRenderer(
   });
   // Tabs, `:::tabs` with an `@tab Title` line per panel … `:::` (kb25Tabs).
   md.block.ruler.before("table", "kb25_tabs", kb25Tabs, {
+    alt: ["paragraph", "reference", "blockquote", "list"],
+  });
+  // Columns, `:::columns` with an `@col Title` line per column … `:::`.
+  md.block.ruler.before("table", "kb25_columns", kb25Columns, {
     alt: ["paragraph", "reference", "blockquote", "list"],
   });
   md.core.ruler.push("kb25_anchor", kb25Anchor);
