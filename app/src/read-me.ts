@@ -69,6 +69,7 @@ const MODULES: Record<ReadMeModule, string> = {
 - Write for a reader landing on the page cold, not as a reply to this conversation: lead with what they need first, under clear headings.
 - When a page rests on facts you looked up, cite the sources on the page.
 - Prose is Markdown. HTML in a page is not rendered: a figure that needs it is a widget (module \`figures\`). Formulas are module \`math\`.
+- Detail most readers can skip (a derivation, a long example, the answer to a side question) can fold away under a title the reader clicks to open: a line \`:::details <title>\`, the Markdown inside, then a line \`:::\`. Use it for that kind of aside only, never for the page's main content.
 - A page shows only images in its own space's \`_assets/\`. Add an image file with kb_add_image and use the link it returns: an image from the web shows only as a link, and a \`data:\` image only as its alt text.
 
 ## Linking

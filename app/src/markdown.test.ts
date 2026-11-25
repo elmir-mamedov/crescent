@@ -1231,3 +1231,35 @@ test("plainText keeps the quotes and dashes the source has", () => {
   // A query typed with a straight apostrophe has to find its place in it.
   assert.equal(plainText(`can't -- "so" (c)...`), `can't -- "so" (c)...`);
 });
+
+test(":::details renders a collapsible section with its title and Markdown body", () => {
+  const html = render(":::details How do I *install* it?\nRun the **command**.\n\n- a\n- b\n:::\n\nAfter.");
+  assert.match(html, /^<details class="details-block"[^>]*>\n<summary>How do I <em>install<\/em> it\?<\/summary>\n<p>Run the <strong>command<\/strong>\.<\/p>/);
+  assert.match(html, /<li>b<\/li>\n<\/ul>\n<\/details>\n<p[^>]*>After\.<\/p>/);
+  assert.doesNotMatch(html, /:::/);
+});
+
+test(":::details with no title is titled Details, and one left open runs to the end", () => {
+  assert.match(render(":::details\nhidden\n:::"), /<summary>Details<\/summary>\n<p>hidden<\/p>\n<\/details>/);
+  assert.match(render("before\n\n:::details Open\nrest of page"), /<summary>Open<\/summary>\n<p>rest of page<\/p>\n<\/details>\n?$/);
+});
+
+test(":::details nests, and a ::: inside a code fence does not close it", () => {
+  const nested = render(":::details Outer\nouter\n\n:::details Inner\ninner\n:::\n\nback in outer\n:::\n\nafter");
+  assert.match(nested, /<summary>Inner<\/summary>\n<p>inner<\/p>\n<\/details>\n<p>back in outer<\/p>\n<\/details>\n<p[^>]*>after<\/p>/);
+  const fenced = render(":::details Example\n```markdown\n:::details Not real\n:::\n```\nstill inside\n:::\nafter");
+  assert.match(fenced, /:::details Not real\n:::\n<\/code><\/pre>\n<p>still inside<\/p>\n<\/details>/);
+});
+
+test(":::details interrupts a paragraph, and only the details keyword opens one", () => {
+  assert.match(render("a paragraph\n:::details T\nx\n:::"), /<p[^>]*>a paragraph<\/p>\n<details/);
+  assert.doesNotMatch(render(":::detailsX\nplain\n:::"), /<details/);
+  assert.doesNotMatch(render("    :::details indented code\n    :::"), /<details/);
+});
+
+test(":::details is one top-level block for notes, with its headings still sections", () => {
+  const body = ":::details Derivation\n## Step one\n\ntext\n:::\n\nAfter.";
+  assert.deepEqual(sourceBlocks(body).map((block) => block.line), [0, 6]);
+  assert.match(render(body), /<details class="details-block" data-src-line="0"/);
+  assert.ok(extractSections(body).some((section) => section.text === "Step one"));
+});

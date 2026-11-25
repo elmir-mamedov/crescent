@@ -838,6 +838,21 @@ html.has-find.has-tabs .toc{padding-top:58px}
 .prose .math-block .katex-display{margin:0}
 .prose blockquote{margin:1em 0; padding:.4em 1em; color:var(--muted);
   border-left:3px solid var(--line)}
+/* A collapsible section (:::details, markdown.ts): a bordered box whose title
+   row opens it. Its body keeps the page's own spacing, inside a margin. */
+.prose details.details-block{margin:1em 0; border:1px solid var(--line); border-radius:8px}
+.prose details.details-block > summary{cursor:pointer; padding:.5em .9em; font-weight:600;
+  list-style:none; display:block; border-radius:7px}
+.prose details.details-block > summary::-webkit-details-marker{display:none}
+.prose details.details-block > summary::before{content:""; display:inline-block; margin-right:.7em; width:.45em; height:.45em;
+  border:solid var(--muted); border-width:0 2px 2px 0; transform:translateY(-.1em) rotate(-45deg);
+  transition:transform .15s}
+.prose details.details-block[open] > summary::before{transform:translateY(-.25em) rotate(45deg)}
+.prose details.details-block > summary:hover{background:var(--surface-hover)}
+.prose details.details-block[open] > summary{border-bottom:1px solid var(--line); border-radius:7px 7px 0 0}
+.prose details.details-block > :not(summary){margin-left:.9em; margin-right:.9em}
+.prose details.details-block > summary + *{margin-top:.7em}
+.prose details.details-block > :last-child:not(summary){margin-bottom:.7em}
 /* A table wider than the column scrolls inside its own .table-scroll, which
    the renderer puts around every table (see markdown.ts for the .table-wrap
    around that). */
