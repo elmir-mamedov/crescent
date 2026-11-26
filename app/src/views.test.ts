@@ -135,7 +135,7 @@ function dashboardsView(overrides: Partial<DashboardsView> = {}): DashboardsView
     tree: [],
     titles: new Map([["kb25", "KB25"]]),
     spaceTitle: "KB25",
-    overview: { pages: 12, images: 4 },
+    overview: { pages: 12, diagrams: 3, images: 4, widgets: 2 },
     cards: [
       {
         href: "/_dashboard/tasks?space=kb25",
@@ -1308,21 +1308,31 @@ test("dashboards: the hub lists each report as a card with its number", () => {
   assert.match(html, /<span class="hub-desc">Task notes left on pages\.<\/span>/);
 });
 
-test("dashboards: the hub opens with the space's page and image counts", () => {
+test("dashboards: the hub opens with the space's page, diagram, image and widget counts", () => {
   const html = dashboardsLayout(dashboardsView());
   const stat = (value: string, label: string) =>
     new RegExp(`<div class="stat-card">\\s*<span class="stat-value">${value}</span>\\s*<span class="stat-label">${label}</span>`);
   assert.match(html, stat("12", "pages"));
+  assert.match(html, stat("3", "diagrams"));
   assert.match(html, stat("4", "images"));
-  // Above the report cards, as the space at a glance.
+  assert.match(html, stat("2", "widgets"));
+  // In that order, above the report cards, as the space at a glance.
+  const order = ["pages", "diagrams", "images", "widgets"].map((label) =>
+    html.indexOf(`<span class="stat-label">${label}</span>`)
+  );
+  assert.deepEqual(order, [...order].sort((a, b) => a - b));
   assert.ok(html.indexOf('class="stat-row"') < html.indexOf('class="hub-grid"'));
 
-  const one = dashboardsLayout(dashboardsView({ overview: { pages: 1, images: 1 } }));
+  const one = dashboardsLayout(dashboardsView({ overview: { pages: 1, diagrams: 1, images: 1, widgets: 1 } }));
   assert.match(one, stat("1", "page"));
+  assert.match(one, stat("1", "diagram"));
   assert.match(one, stat("1", "image"));
-  const none = dashboardsLayout(dashboardsView({ overview: { pages: 0, images: 0 } }));
+  assert.match(one, stat("1", "widget"));
+  const none = dashboardsLayout(dashboardsView({ overview: { pages: 0, diagrams: 0, images: 0, widgets: 0 } }));
   assert.match(none, stat("0", "pages"));
+  assert.match(none, stat("0", "diagrams"));
   assert.match(none, stat("0", "images"));
+  assert.match(none, stat("0", "widgets"));
 });
 
 test("dashboards: a card's link and words are escaped", () => {

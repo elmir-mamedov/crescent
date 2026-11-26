@@ -1118,13 +1118,29 @@ export function extractSections(body: string): Section[] {
   // the whole highlight.js wiring up with it. The rule is stateless — every id
   // is reserved against a set created inside the pass — so one instance is safe
   // to reuse across bodies.
-  sectionRenderer ??= createRenderer(() => undefined);
+  sharedParser ??= createRenderer(() => undefined);
   const env: Record<string, unknown> = {};
-  sectionRenderer.parse(body.replace(/\r\n?/g, "\n"), env);
+  sharedParser.parse(body.replace(/\r\n?/g, "\n"), env);
   return (env.kb25Sections as Section[] | undefined) ?? [];
 }
 
-let sectionRenderer: MarkdownIt | undefined;
+/** One renderer for the readers that only parse a body, built on first use. */
+let sharedParser: MarkdownIt | undefined;
+
+/** A ```mermaid fence, which a page draws as a diagram rather than showing as code. */
+function isMermaidFence(token: Token): boolean {
+  return token.type === "fence" && token.info.trim().split(/\s+/)[0] === "mermaid";
+}
+
+/**
+ * How many Mermaid diagrams a body draws. The real parser finds its fences, so
+ * a diagram in a list or a quote counts, and a ```mermaid quoted inside a
+ * longer fence, or in an indented code block, shows as code and does not.
+ */
+export function countDiagrams(body: string): number {
+  sharedParser ??= createRenderer(() => undefined);
+  return sharedParser.parse(body.replace(/\r\n?/g, "\n"), {}).filter(isMermaidFence).length;
+}
 
 /**
  * A body's text as a reader sees it, for a search excerpt: the words of its
@@ -1151,9 +1167,7 @@ export function plainText(
   for (const token of md.parse(body.replace(/\r\n?/g, "\n"), {})) {
     if (token.type === "inline") parts.push(inlineText(token));
     else if (token.type === "code_block") parts.push(token.content);
-    else if (token.type === "fence" && token.info.trim().split(/\s+/)[0] !== "mermaid") {
-      parts.push(token.content);
-    }
+    else if (token.type === "fence" && !isMermaidFence(token)) parts.push(token.content);
   }
   return parts.join(" ").replace(/\s+/g, " ").trim();
 }
@@ -1235,7 +1249,7 @@ function blockTexts(md: MarkdownIt, body: string): { line: number; text: string 
     } else if (token.type === "fence" || token.type === "code_block") {
       // A mermaid fence's text belongs to the diagram, and `markQuote` steps
       // around those nodes, so a quote there could only ever read as drifted.
-      if (token.info.trim().split(/\s+/)[0] !== "mermaid") current.parts.push(token.content);
+      if (!isMermaidFence(token)) current.parts.push(token.content);
     }
   }
 
@@ -1323,9 +1337,8 @@ export function createRenderer(
   const defaultFence = md.renderer.rules.fence!;
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
-    const lang = token.info.trim().split(/\s+/)[0];
     const html =
-      lang === "mermaid"
+      isMermaidFence(token)
         ? // Mermaid reads the element's textContent, so escape for valid HTML;
           // the browser decodes it back to the raw diagram source before
           // Mermaid runs.

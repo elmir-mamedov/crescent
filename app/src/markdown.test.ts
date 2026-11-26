@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  countDiagrams,
   createRenderer,
   extractSections,
   headingSlug,
@@ -33,6 +34,48 @@ test("mermaid diagram source is HTML-escaped inside the container", () => {
   // Escaped for valid HTML; the browser decodes it back to text for Mermaid.
   assert.match(html, /&lt;br\/&gt;/);
   assert.doesNotMatch(html, /<br\/>/);
+});
+
+test("countDiagrams counts the fences a page draws as diagrams, and no others", () => {
+  const body = [
+    "```mermaid",
+    "flowchart LR",
+    "  a --> b",
+    "```",
+    "",
+    "~~~mermaid",
+    "sequenceDiagram",
+    "~~~",
+    "",
+    "- In a list:",
+    "",
+    "  ```mermaid",
+    "  pie",
+    "  ```",
+    "",
+    "> ```mermaid",
+    "> graph TD",
+    "> ```",
+    "",
+    "````md",
+    "```mermaid",
+    "quoted, so shown as code",
+    "```",
+    "````",
+    "",
+    "    ```mermaid",
+    "    an indented code block",
+    "    ```",
+    "",
+    "```ts",
+    "const x = 1;",
+    "```",
+  ].join("\n");
+  assert.equal(countDiagrams(body), 4);
+  // Each one counted is one the page draws.
+  assert.equal(render(body).match(/class="mermaid"/g)?.length, 4);
+  assert.equal(countDiagrams(body.replace(/\n/g, "\r\n")), 4);
+  assert.equal(countDiagrams("No diagrams here.\n"), 0);
 });
 
 test("non-mermaid code fences are still syntax-highlighted", () => {

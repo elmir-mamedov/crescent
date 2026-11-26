@@ -46,10 +46,11 @@ export interface DashboardsView {
   titles: Map<string, string>;
   spaceTitle: string;
   /**
-   * The space at a glance: its pages (folders are not pages) and the images in
-   * its `_assets`, the same ones its gallery shows.
+   * The space at a glance: its pages (folders are not pages), the Mermaid
+   * diagrams they draw, and the images and widgets in its `_assets`, the images
+   * being the ones its gallery shows.
    */
-  overview: { pages: number; images: number };
+  overview: { pages: number; diagrams: number; images: number; widgets: number };
   cards: DashboardCard[];
   username?: string | null;
 }
@@ -244,10 +245,12 @@ function dashboardsBackLink(spaceKey: string): string {
  * anything waiting?" before a report is even opened.
  */
 export function dashboardsLayout(v: DashboardsView): string {
-  const { pages, images } = v.overview;
+  const { pages, diagrams, images, widgets } = v.overview;
   const overview = [
     statCard(String(pages), pages === 1 ? "page" : "pages"),
+    statCard(String(diagrams), diagrams === 1 ? "diagram" : "diagrams"),
     statCard(String(images), images === 1 ? "image" : "images"),
+    statCard(String(widgets), widgets === 1 ? "widget" : "widgets"),
   ].join("\n    ");
   const cards = v.cards
     .map(
