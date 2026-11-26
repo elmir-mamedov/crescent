@@ -94,30 +94,41 @@ export async function isRealDir(dir: string): Promise<boolean> {
 }
 
 /**
- * Every image in a space's `_assets`, its subfolders included, newest first.
- * A space with no `_assets` folder has none. Dot-files and anything that is
- * not a plain file are left out, exactly as `/<space>/_assets/*` refuses them.
+ * The files in a space's `_assets` whose names `keep` takes, its subfolders
+ * included. A space with no `_assets` folder has none. Dot-files and anything
+ * that is not a plain file are left out, exactly as `/<space>/_assets/*`
+ * refuses them.
  */
-export async function listImages(content: Content, spaceKey: string): Promise<GalleryImage[]> {
+export async function assetFiles(
+  content: Content,
+  spaceKey: string,
+  keep: (name: string) => boolean
+): Promise<{ path: string; fsPath: string }[]> {
   const root = assetsDir(content, spaceKey);
   if (!root || !(await isRealDir(path.dirname(root))) || !(await isRealDir(root))) return [];
 
-  const images: GalleryImage[] = [];
+  const files: { path: string; fsPath: string }[] = [];
   async function walk(dir: string, rel: string): Promise<void> {
     // A Dirent describes the entry itself, so a link is neither a file nor a folder.
     for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
       if (entry.name.startsWith(".")) continue;
       const fsPath = path.join(dir, entry.name);
       const entryRel = rel ? `${rel}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        await walk(fsPath, entryRel);
-      } else if (entry.isFile() && isImageName(entry.name)) {
-        const stat = await fs.lstat(fsPath);
-        images.push({ path: entryRel, size: stat.size, modified: stat.mtimeMs });
-      }
+      if (entry.isDirectory()) await walk(fsPath, entryRel);
+      else if (entry.isFile() && keep(entry.name)) files.push({ path: entryRel, fsPath });
     }
   }
   await walk(root, "");
+  return files;
+}
+
+/** Every image in a space's `_assets`, its subfolders included, newest first. */
+export async function listImages(content: Content, spaceKey: string): Promise<GalleryImage[]> {
+  const images: GalleryImage[] = [];
+  for (const file of await assetFiles(content, spaceKey, isImageName)) {
+    const stat = await fs.lstat(file.fsPath);
+    images.push({ path: file.path, size: stat.size, modified: stat.mtimeMs });
+  }
 
   return images.sort((a, b) => b.modified - a.modified || a.path.localeCompare(b.path));
 }
