@@ -231,6 +231,20 @@ test("images go in the same message, before the text, as base64 JPEGs", () => {
   });
 });
 
+test("feedback #57: PDFs go in the same message, after the images and before the text, as titled documents", () => {
+  assert.deepEqual(JSON.parse(turnInput("summarise", ["AAA"], [{ name: "a.pdf", data: "UERG" }])), {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAA" } },
+        { type: "document", source: { type: "base64", media_type: "application/pdf", data: "UERG" }, title: "a.pdf" },
+        { type: "text", text: "summarise" },
+      ],
+    },
+  });
+});
+
 test("stream-json lines become init, text, tool and result events", () => {
   assert.deepEqual(parseLine(INIT), [
     { type: "init", sessionId: "s-1" },

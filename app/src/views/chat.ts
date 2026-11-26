@@ -17,8 +17,8 @@ export const CHAT_BUTTON = `<button type="button" class="chat-button" data-chat-
  * viewed, sent with each message so "this page" means something to Claude.
  * The drawer starts hidden; CHAT_SCRIPT opens it before first paint when it
  * was open on the last page, so moving between pages does not make it jump.
- * Images go with a message from the paperclip under the box, or dropped
- * anywhere on the drawer.
+ * Images and PDFs go with a message from the paperclip under the box, or
+ * dropped anywhere on the drawer.
  */
 export function chatDrawer(slug: string): string {
   return `<section class="chat-drawer" data-chat data-chat-slug="${escapeHtml(slug)}" aria-label="Chat" hidden>
@@ -39,16 +39,16 @@ export function chatDrawer(slug: string): string {
   <div class="chat-setup" data-chat-setup hidden></div>
   <div class="chat-log" data-chat-log></div>
   <div class="chat-activity" data-chat-activity role="status" hidden></div>
-  <div class="chat-drop" data-chat-drop hidden>Drop images to attach them</div>
+  <div class="chat-drop" data-chat-drop hidden>Drop images or PDFs to attach them</div>
   <form class="chat-form" data-chat-form>
     <div class="chat-composer">
       <div class="chat-attachments" data-chat-attachments hidden></div>
       <textarea class="chat-input" data-chat-input rows="1" aria-label="Message" placeholder="Ask anything, or ask for a page…"></textarea>
       <div class="chat-toolbar">
-        <button type="button" class="chat-icon-button" data-chat-attach aria-label="Attach images" title="Attach images, or drop them onto the chat">
+        <button type="button" class="chat-icon-button" data-chat-attach aria-label="Attach images or PDFs" title="Attach images or PDFs, or drop them onto the chat">
           <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
         </button>
-        <input type="file" data-chat-file accept="${IMAGE_ACCEPT}" multiple hidden />
+        <input type="file" data-chat-file accept="${IMAGE_ACCEPT},.pdf,application/pdf" multiple hidden />
         <label class="chat-pages" title="Write the answer into the knowledge base as pages, not into the chat"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.38 3.62a1 1 0 0 1 3 3L7.37 18.64a2 2 0 0 1-.86.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.85z" /></svg><input type="checkbox" data-chat-pages /> Write to KB</label>
         <button type="button" class="chat-send chat-stop" data-chat-stop aria-label="Stop" title="Stop" hidden>
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor" /></svg>
@@ -177,10 +177,12 @@ export const CHAT_SCRIPT = `
   // engine, or null while the chat is new and its engine can still be picked.
   let engines = [];
   let threadEngine = null;
-  // The images going with the next message: each file, a URL to show it by,
-  // and the copy for the model (a promise of a JPEG, or of null).
+  // The images and PDFs going with the next message: each file, whether it is
+  // a PDF, and for an image a URL to show it by and the copy for the model (a
+  // promise of a JPEG, or of null).
   let attachments = [];
   const MAX_IMAGES = 10;
+  const MAX_DOCUMENTS = 5;
 
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
@@ -432,6 +434,19 @@ export const CHAT_SCRIPT = `
         }
         bubble.append(row);
       }
+      if (message.documents && message.documents.length) {
+        const row = el("div", "chat-user-documents");
+        for (const document of message.documents) {
+          const link = el("a", "chat-document");
+          link.href = document.href;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.title = document.name;
+          link.append(el("span", "chat-document-badge", "PDF"), el("span", "chat-document-name", document.name));
+          row.append(link);
+        }
+        bubble.append(row);
+      }
       if (message.text) bubble.append(el("div", "chat-user-text", message.text));
       log.append(bubble);
     } else if (message.role === "assistant") {
@@ -543,9 +558,16 @@ export const CHAT_SCRIPT = `
   }
 
   const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/svg+xml"];
-  const IMAGE_EXTENSIONS = fileInput.accept.split(",");
+  const IMAGE_EXTENSIONS = fileInput.accept.split(",").filter((ext) => ext.startsWith(".") && ext !== ".pdf");
   const isImage = (file) =>
     IMAGE_TYPES.includes(file.type) || IMAGE_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext));
+  const isPdf = (file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+  // A picked or restored file as an attachment: a PDF goes as it is.
+  function attachment(file) {
+    if (isPdf(file)) return { file, pdf: true, url: null, copy: Promise.resolve(null) };
+    const url = URL.createObjectURL(file);
+    return { file, pdf: false, url, copy: modelCopy(url) };
+  }
 
   // The copy the model is shown: no more than 1568 pixels on its longer side,
   // which is as much as Claude looks at, drawn on white as a JPEG. Null when
@@ -575,11 +597,16 @@ export const CHAT_SCRIPT = `
   function renderAttachments() {
     strip.replaceChildren(
       ...attachments.map((item) => {
-        const chip = el("div", "chat-attachment");
+        const chip = el("div", item.pdf ? "chat-attachment chat-document" : "chat-attachment");
         chip.title = item.file.name;
-        const img = el("img");
-        img.src = item.url;
-        img.alt = item.file.name;
+        if (item.pdf) {
+          chip.append(el("span", "chat-document-badge", "PDF"), el("span", "chat-document-name", item.file.name));
+        } else {
+          const img = el("img");
+          img.src = item.url;
+          img.alt = item.file.name;
+          chip.append(img);
+        }
         const remove = el("button", "chat-attachment-remove", "×");
         remove.type = "button";
         remove.setAttribute("aria-label", "Remove " + item.file.name);
@@ -587,7 +614,7 @@ export const CHAT_SCRIPT = `
           dropAttachments([item]);
           input.focus();
         });
-        chip.append(img, remove);
+        chip.append(remove);
         return chip;
       })
     );
@@ -595,7 +622,7 @@ export const CHAT_SCRIPT = `
   }
 
   function dropAttachments(items) {
-    for (const item of items) URL.revokeObjectURL(item.url);
+    for (const item of items) if (item.url) URL.revokeObjectURL(item.url);
     attachments = attachments.filter((item) => !items.includes(item));
     renderAttachments();
     draftImages.set(attachments.map((item) => item.file));
@@ -610,8 +637,7 @@ export const CHAT_SCRIPT = `
     for (const item of stored) {
       if (!item || !(item.blob instanceof Blob)) continue;
       const file = new File([item.blob], item.name || "image", { type: item.type || item.blob.type });
-      const url = URL.createObjectURL(file);
-      restored.push({ file, url, copy: modelCopy(url) });
+      restored.push(attachment(file));
     }
     const since = attachments;
     attachments = restored.concat(since);
@@ -619,23 +645,29 @@ export const CHAT_SCRIPT = `
     if (since.length) draftImages.set(attachments.map((item) => item.file));
   }
 
-  // Take what was picked or dropped: images, up to the limit, and say what was left out.
+  // Take what was picked or dropped: images and PDFs, each up to its limit,
+  // and say what was left out.
   function attachFiles(files) {
     const list = Array.from(files || []);
-    const images = list.filter(isImage);
-    const others = list.filter((file) => !isImage(file));
-    const room = Math.max(0, MAX_IMAGES - attachments.length);
-    for (const file of images.slice(0, room)) {
-      const url = URL.createObjectURL(file);
-      attachments.push({ file, url, copy: modelCopy(url) });
-    }
+    const pdfs = list.filter(isPdf);
+    const images = list.filter((file) => !isPdf(file) && isImage(file));
+    const others = list.filter((file) => !isPdf(file) && !isImage(file));
+    // Codex can't read a PDF, so a Codex chat leaves them out (feedback #57).
+    const codex = (threadEngine || chosenEngine()) === "codex";
+    const imageRoom = Math.max(0, MAX_IMAGES - attachments.filter((item) => !item.pdf).length);
+    const pdfRoom = codex ? 0 : Math.max(0, MAX_DOCUMENTS - attachments.filter((item) => item.pdf).length);
+    for (const file of images.slice(0, imageRoom).concat(pdfs.slice(0, pdfRoom))) attachments.push(attachment(file));
     renderAttachments();
     draftImages.set(attachments.map((item) => item.file));
+    const problems = [];
     if (others.length) {
       const names = others.map((file) => file.name).join(", ");
-      showError("Only images can be attached; " + names + (others.length === 1 ? " is not one." : " are not."));
+      problems.push("Only images and PDFs can be attached; " + names + (others.length === 1 ? " is neither." : " are neither."));
     }
-    if (images.length > room) showError("A message can take " + MAX_IMAGES + " images at most.");
+    if (images.length > imageRoom) problems.push("A message can take " + MAX_IMAGES + " images at most.");
+    if (codex && pdfs.length) problems.push("PDFs work only with Claude Code for now, so they were left out.");
+    else if (pdfs.length > pdfRoom) problems.push("A message can take " + MAX_DOCUMENTS + " PDFs at most.");
+    if (problems.length) showError(problems.join(" "));
   }
 
   function autosize() {
@@ -654,7 +686,7 @@ export const CHAT_SCRIPT = `
     const engine = threadEngine || chosenEngine();
     const sending = attachments.slice();
     setBusy(true);
-    setActivity(sending.length ? "Sending the images…" : "Thinking…");
+    setActivity(sending.length ? "Sending the attachments…" : "Thinking…");
     // A new chat says which engine to run on; a thread keeps its own.
     // Model and effort go with every message, unless left to the engine.
     const data = new FormData();
@@ -665,9 +697,13 @@ export const CHAT_SCRIPT = `
     if (modelPicker.value) data.append("model", modelPicker.value);
     if (effortPicker.value) data.append("effort", effortPicker.value);
     const copies = await Promise.all(sending.map((item) => item.copy));
-    sending.forEach((item, n) => {
+    // The n-th image's copy is "view-<n>", counting images only.
+    let n = 0;
+    sending.forEach((item, at) => {
+      if (item.pdf) return data.append("document", item.file, item.file.name);
       data.append("image", item.file, item.file.name);
-      if (copies[n]) data.append("view-" + n, copies[n], "view.jpg");
+      if (copies[at]) data.append("view-" + n, copies[at], "view.jpg");
+      n += 1;
     });
     let res = null;
     try {

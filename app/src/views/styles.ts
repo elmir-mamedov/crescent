@@ -1664,6 +1664,16 @@ body.chat-open .tab-strip{right:400px}
 .chat-attachments{display:flex; flex-wrap:wrap; gap:8px; padding:4px 4px 6px}
 .chat-attachment{position:relative; width:56px; height:56px; border:1px solid var(--line); border-radius:10px; background:var(--surface-hover)}
 .chat-attachment img{display:block; width:100%; height:100%; border-radius:9px; object-fit:cover}
+/* A PDF: a badge and its name, in a chip as tall as an image's. */
+.chat-attachment.chat-document{width:auto; max-width:200px; display:flex; align-items:center; gap:8px; padding:0 12px 0 10px}
+.chat-document-badge{flex:none; font-size:10px; font-weight:700; letter-spacing:.04em; color:#fff;
+  background:var(--error-fg); border-radius:4px; padding:2px 5px}
+.chat-document-name{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; color:var(--fg-secondary)}
+.chat-user-documents{display:flex; flex-wrap:wrap; gap:6px; margin:3px 0 6px}
+.chat-user-documents:last-child{margin-bottom:3px}
+.chat-user-documents .chat-document{display:flex; align-items:center; gap:8px; max-width:100%; padding:8px 12px 8px 10px;
+  border-radius:10px; background:var(--surface); text-decoration:none}
+.chat-user-documents .chat-document:hover{background:var(--surface-hover)}
 .chat-attachment-remove{
   position:absolute; top:-6px; right:-6px; display:inline-flex; align-items:center; justify-content:center;
   width:20px; height:20px; padding:0 0 1px; border:2px solid var(--bg); border-radius:50%;
