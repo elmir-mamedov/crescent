@@ -75,6 +75,11 @@ later, or Windows 10 or 11 with the Microsoft Edge WebView2 Runtime, which
 comes with Edge; without WebView2, crescent opens in your default browser
 instead and quits with the power button.
 
+**Getting started.** On first launch, a short animated tour walks around the
+example space, showing where everything is; **Take the tour** in Help runs it
+again. **Help**, in the top-right corner, also has a short guide to crescent,
+read-only and up to date with each version.
+
 **Writing pages.** Create a space from the spaces page, then add pages and
 folders from the sidebar. **Edit** opens a page's Markdown. Saved changes are
 committed to the space's git repository, so earlier versions stay available.

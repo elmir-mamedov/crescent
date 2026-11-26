@@ -13,6 +13,7 @@ import { Content, flatten } from "./content.js";
 import { ChangeFeed } from "./changes.js";
 import { examplesRoot, offerExampleSpace } from "./example-space.js";
 import { makeGit } from "./git.js";
+import { guideRoot } from "./guide.js";
 import { makeKbWrites } from "./kb-writes.js";
 import { makeSeenPages } from "./seen.js";
 import { isLoopbackHost } from "./loopback.js";
@@ -35,6 +36,7 @@ import { registerDashboardRoutes } from "./server/dashboards.js";
 import { registerDesktopRoutes } from "./server/desktop.js";
 import { registerFeedbackRoutes } from "./server/feedback.js";
 import { registerGalleryRoutes } from "./server/gallery.js";
+import { registerGuideRoutes } from "./server/guide.js";
 import { registerPagePolicy } from "./server/page-policy.js";
 import { registerFormParser } from "./server/http.js";
 import { registerLabelRoutes } from "./server/labels.js";
@@ -120,12 +122,13 @@ const seen = makeSeenPages(KB_DIR, async () =>
 const sync = syncFromEnv(KB_DIR);
 const kbGit = makeGit(KB_DIR, sync ? (repoRoot) => sync.notifyCommit(repoRoot) : undefined);
 // A knowledge base with no spaces, opened for the first time, gets the
-// example space (example-space.ts). A failure here leaves the person an empty
-// knowledge base, which is where they would have started anyway.
+// example space (example-space.ts), and the tour of it starts with the first
+// page (server/guide.ts). A failure here leaves the person an empty knowledge
+// base, which is where they would have started anyway; Help has the guide.
+let exampleAdded = false;
 try {
-  if (await offerExampleSpace(KB_DIR, examplesRoot(path.join(__dirname, "..")), kbGit)) {
-    console.error("Added the Quantum Field Theory example space.");
-  }
+  exampleAdded = (await offerExampleSpace(KB_DIR, examplesRoot(path.join(__dirname, "..")), kbGit)) !== null;
+  if (exampleAdded) console.error("Added the Quantum Field Theory example space.");
 } catch (err) {
   console.error(`Could not add the example space: ${err instanceof Error ? err.message : String(err)}`);
 }
@@ -225,6 +228,7 @@ registerAuth(app, {
 });
 await registerStaticRoutes(app, { kbDir: KB_DIR, content, appDir: path.join(__dirname, "..") });
 registerWidgetRoutes(app, ctx);
+registerGuideRoutes(app, { guideDir: guideRoot(path.join(__dirname, "..")), startTour: exampleAdded });
 registerSpaceRoutes(app, ctx);
 registerPageRoutes(app, ctx);
 registerArchiveRoutes(app, ctx);

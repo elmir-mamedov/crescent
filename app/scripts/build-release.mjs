@@ -9,7 +9,7 @@
 //
 // The zip needs nothing but Node to run: the server and the MCP server are
 // each bundled into one file, laid out so the paths the server resolves from
-// its entry's folder (../public, ../examples, ../node_modules/mermaid/dist,
+// its entry's folder (../public, ../examples, ../guide, ../node_modules/mermaid/dist,
 // ../node_modules/katex/dist, ../node_modules/@elmir-mamedov/feedback/dist,
 // ../../.env) resolve unchanged.
 //
@@ -65,6 +65,8 @@ const copy = (from, to) => fs.cpSync(from, path.join(out, to), { recursive: true
 copy(path.join(appDir, "public"), "public");
 // The example space (src/example-space.ts), copied into a new knowledge base.
 copy(path.join(appDir, "examples"), "examples");
+// The getting-started guide (src/guide.ts), which Help shows.
+copy(path.join(appDir, "guide"), "guide");
 // The only Mermaid file the viewer serves (views/diagrams.ts loads /_vendor/mermaid/mermaid.min.js).
 copy(
   path.join(appDir, "node_modules", "mermaid", "dist", "mermaid.min.js"),
