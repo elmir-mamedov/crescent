@@ -141,6 +141,17 @@ test("a chat thread keeps its read_me token across turns, until the guide change
   assert.notEqual(threadReadMeToken("thread-a"), threadReadMeToken("thread-b"));
 });
 
+test("feedback #91: read_me has a diagram drawn as an SVG, and in Mermaid only when asked", async () => {
+  // Mermaid still renders, for the person who asks for it and the pages that
+  // have it; it is no longer what an agent reaches for first.
+  const { readMe } = await import("./read-me.js");
+  const figures = readMe({ modules: ["figures"], withCore: false, token: "t", via: "mcp" });
+  assert.match(figures, /An SVG drawing, for a still figure: a flowchart/);
+  assert.match(figures, /write one only when the person asks for Mermaid by name, or the space's instructions do/);
+  assert.match(figures, /already draws in Mermaid stays in Mermaid/);
+  assert.doesNotMatch(figures, /^\d+\. A ```mermaid/m);
+});
+
 test("feedback #76: a page write puts its math into $…$ and refuses math that won't render", async () => {
   const kb = await makeTempKb();
   const client = new Client({ name: "mcp.test", version: "0" });

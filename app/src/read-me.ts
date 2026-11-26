@@ -106,12 +106,13 @@ What a write does with it: kb_create_page and kb_update_page convert \`\\(…\\)
 
   figures: `# Module: figures
 
-Prose stays Markdown. To show what words can't, reach for these, in this order:
+Prose stays Markdown. To show what words can't, reach for these:
 
-1. A \`\`\`mermaid diagram: flowcharts, sequences, state machines, timelines. It renders in the page and follows the reader's theme.
-2. Math (module \`math\`).
-3. An SVG drawing, for a still picture that neither can make. Write it with kb_write_asset as \`<name>.svg\` and show it with \`![caption](_assets/name.svg)\`. Draw it dark on a light background, since the dark theme shows every image on a light panel, and put no \`prefers-color-scheme\` in it.
-4. An HTML widget, only for a figure that has to move or respond: an animation, sliders, a chart that shows values on hover, a quiz. One file per figure, named for what it shows, written with kb_write_asset as \`<name>.html\` and embedded like an image, \`![caption](_assets/name.html =x400)\`.
+1. Math, for a formula (module \`math\`).
+2. An SVG drawing, for a still figure: a flowchart, a sequence, a state machine, a timeline, a structure, a plot. Write it with kb_write_asset as \`<name>.svg\` and show it with \`![caption](_assets/name.svg)\`. Draw it dark on a light background, since the dark theme shows every image on a light panel, and put no \`prefers-color-scheme\` in it.
+3. An HTML widget, only for a figure that has to move or respond: an animation, sliders, a chart that shows values on hover, a quiz. One file per figure, named for what it shows, written with kb_write_asset as \`<name>.html\` and embedded like an image, \`![caption](_assets/name.html =x400)\`.
+
+A \`\`\`mermaid code block draws a diagram too, but Mermaid lays it out rather than you, and it rarely reads as well as a drawing made for what it shows. So write one only when the person asks for Mermaid by name, or the space's instructions do. A diagram a page already draws in Mermaid stays in Mermaid: change it there when asked to, and redraw it as an SVG only when the person asks for that.
 
 A table of data to download or open elsewhere is a CSV, written with kb_write_asset and linked, \`[text](_assets/name.csv)\`. An image file already on this machine (a PNG, a screenshot) goes in with kb_add_image. Use the \`link\` either tool returns rather than one made from the file name. To change a file later, read it with kb_get_asset and write it again under the same name; the page needs no edit.
 
