@@ -1,0 +1,16 @@
+{
+  "labels": [
+    {
+      "name": "Start here",
+      "color": "green"
+    },
+    {
+      "name": "Key idea",
+      "color": "blue"
+    },
+    {
+      "name": "Going further",
+      "color": "purple"
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import { Content, flatten } from "./content.js";
 import { ChangeFeed } from "./changes.js";
+import { examplesRoot, offerExampleSpace } from "./example-space.js";
 import { makeGit } from "./git.js";
 import { makeKbWrites } from "./kb-writes.js";
 import { makeSeenPages } from "./seen.js";
@@ -118,6 +119,16 @@ const seen = makeSeenPages(KB_DIR, async () =>
 // debounced push; failures never reach the request that triggered them.
 const sync = syncFromEnv(KB_DIR);
 const kbGit = makeGit(KB_DIR, sync ? (repoRoot) => sync.notifyCommit(repoRoot) : undefined);
+// A knowledge base with no spaces, opened for the first time, gets the
+// example space (example-space.ts). A failure here leaves the person an empty
+// knowledge base, which is where they would have started anyway.
+try {
+  if (await offerExampleSpace(KB_DIR, examplesRoot(path.join(__dirname, "..")), kbGit)) {
+    console.error("Added the Quantum Field Theory example space.");
+  }
+} catch (err) {
+  console.error(`Could not add the example space: ${err instanceof Error ? err.message : String(err)}`);
+}
 // Every write this server makes ends in one of these commits, with the paths it
 // wrote. The page that made the write already shows it, so the change feed
 // leaves those paths out rather than reload that page over what it has open.
