@@ -7,6 +7,7 @@ import { countPages, type SpaceInfo } from "../content.js";
 import { listImages } from "../gallery.js";
 import { filterLabelled, knownLabels, spaceNodes } from "../labels.js";
 import { collectNotes, groupNotesByPage, summarizeNotes } from "../note-index.js";
+import { countSpaceDiagrams, countWidgets } from "../space-overview.js";
 import { dashboardLayout, dashboardsLayout, labelsHref } from "../views.js";
 import type { ServerContext } from "./context.js";
 
@@ -50,21 +51,25 @@ export function registerDashboardRoutes(app: FastifyInstance, ctx: ServerContext
   }
 
   /**
-   * The Dashboards hub for one space: how many pages and images it holds, then
-   * a card per report, each carrying the number that sums it up. Same
-   * archived-space widening as the reports, so an archived space counts its
-   * archived pages and a live one leaves them out.
+   * The Dashboards hub for one space: how many pages, diagrams, images and
+   * widgets it holds, then a card per report, each carrying the number that
+   * sums it up. Same archived-space widening as the reports, so an archived
+   * space counts its archived pages, and the diagrams on them, and a live one
+   * leaves them out. The diagrams on the space's home page count, though the
+   * home page is not one of its pages.
    */
   async function renderDashboardsHub(space: SpaceInfo): Promise<string> {
     const filter = space.archived ? "all" : "live";
-    const [spaces, { tree, labelSet }, titles, tasks, nodes, images] = await Promise.all([
+    const [spaces, { tree, labelSet }, titles, tasks, nodes, images, widgets] = await Promise.all([
       content.spaces(),
       spaceChrome(space.key, filter),
       content.titleIndex(),
       collectNotes(content, filter, { space: space.key, kind: "task" }),
       spaceNodes(content, space.key, filter),
       listImages(content, space.key),
+      countWidgets(content, space.key),
     ]);
+    const diagrams = await countSpaceDiagrams(content, nodes);
     const query = `?space=${encodeURIComponent(space.key)}`;
     const taskCount = summarizeNotes(tasks).total;
     const labelledCount = filterLabelled(nodes, []).length;
@@ -78,7 +83,7 @@ export function registerDashboardRoutes(app: FastifyInstance, ctx: ServerContext
       labelSet,
       titles,
       spaceTitle: space.title,
-      overview: { pages: countPages(tree), images: images.length },
+      overview: { pages: countPages(tree), diagrams, images: images.length, widgets },
       cards: [
         {
           href: `/_dashboard/tasks${query}`,
