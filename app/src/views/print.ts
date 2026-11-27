@@ -9,13 +9,21 @@ import { slugPath } from "./html.js";
  * macOS window, which writes it into Downloads itself (shell/mac/KB25.swift).
  */
 
-/** The page header's Download menu. */
-export function downloadMenu(slug: string): string {
+/**
+ * The page header's Download menu. `site` adds the website, the page and the
+ * pages under it (site-export.ts), which is for live pages only; a folder,
+ * which has no text of its own, offers only that.
+ */
+export function downloadMenu(slug: string, { folder = false, site = true } = {}): string {
+  const page = folder
+    ? ""
+    : `<a href="/_download${slugPath(slug)}" download>Markdown (.md / .zip)</a>
+      <button type="button" data-download-pdf>PDF (.pdf)</button>
+      `;
   return `<details class="download-menu" data-download-menu>
     <summary class="button secondary">Download</summary>
     <div class="download-menu-pop">
-      <a href="/_download${slugPath(slug)}" download>Markdown (.md / .zip)</a>
-      <button type="button" data-download-pdf>PDF (.pdf)</button>
+      ${page}${site ? `<a href="/_site${slugPath(slug)}" download>Website (.zip)</a>` : ""}
     </div>
   </details>`;
 }
@@ -118,14 +126,26 @@ export const PRINT_SCRIPT = `
   };
   addEventListener("beforeprint", () => { if (!own) unlink(); });
   addEventListener("afterprint", () => { if (!own) relink(); });
+})();
+`;
 
+/**
+ * The Download menu: it closes once something in it is picked, on a click
+ * outside it, and on Escape. A page's has PDF too, which PRINT_SCRIPT,
+ * before this, makes; a folder's offers only the website.
+ */
+export const DOWNLOAD_MENU_SCRIPT = `
+(() => {
   const menu = document.querySelector("[data-download-menu]");
   if (!menu) return;
   const close = () => { menu.open = false; };
-  menu.querySelector("[data-download-pdf]").addEventListener("click", () => {
-    close();
-    window.kb25Print("pdf");
-  });
+  const pdf = menu.querySelector("[data-download-pdf]");
+  if (pdf) {
+    pdf.addEventListener("click", () => {
+      close();
+      window.kb25Print("pdf");
+    });
+  }
   for (const link of menu.querySelectorAll("a")) link.addEventListener("click", close);
   document.addEventListener("click", (event) => {
     if (menu.open && !menu.contains(event.target)) close();

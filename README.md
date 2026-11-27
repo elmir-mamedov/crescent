@@ -16,7 +16,9 @@ and Claude Code can work with the same pages through an MCP connection.
   Every heading has a link, and longer pages get an outline beside the text.
 - **Editing and history.** Pages are edited in the browser as Markdown, and
   each save is committed to the space's repository. The Diff view shows a
-  page's past revisions, and a page can be downloaded as a Markdown file.
+  page's past revisions. A page can be downloaded as a Markdown file or a
+  PDF, and a page with the pages under it, or a whole space, as a website to
+  put online or open from disk.
 - **Organising.** Labels mark pages with coloured tags such as "Draft". Search
   covers the current space and can be narrowed by label. Pages can be
   archived and restored, and pages you haven't opened yet are marked in the

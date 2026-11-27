@@ -43,6 +43,7 @@ import { registerNoteRoutes } from "./server/notes.js";
 import { registerPageRoutes } from "./server/pages.js";
 import { makeRender } from "./server/render.js";
 import { registerSearchRoutes } from "./server/search.js";
+import { registerSiteExportRoutes } from "./server/site-export.js";
 import { registerSpaceRoutes } from "./server/spaces.js";
 import { registerStaticRoutes } from "./server/static.js";
 import { registerUnreadRoutes } from "./server/unread.js";
@@ -216,6 +217,7 @@ await registerStaticRoutes(app, { kbDir: KB_DIR, content, appDir: path.join(__di
 registerWidgetRoutes(app, ctx);
 registerSpaceRoutes(app, ctx);
 registerPageRoutes(app, ctx);
+registerSiteExportRoutes(app, ctx, path.join(__dirname, ".."));
 registerArchiveRoutes(app, ctx);
 registerMoveRoutes(app, ctx);
 registerNoteRoutes(app, ctx);

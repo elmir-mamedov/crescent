@@ -240,6 +240,55 @@ test("feedback #32: Download in the page header is a menu: the Markdown file or 
   );
 });
 
+test("feedback #81: Download offers the page and the pages under it as a website, unless archived", () => {
+  assert.match(layout(pageView()), /<a href="\/_site\/kb25\/notes" download>Website \(\.zip\)<\/a>/);
+  assert.doesNotMatch(layout(pageView({ isArchived: true })), /_site\//);
+  const folder = folderLayout(folderView());
+  assert.match(folder, /<a href="\/_site\/[^"]+" download>Website \(\.zip\)<\/a>/);
+  assert.doesNotMatch(folder, /_download\/|<button[^>]*data-download-pdf/);
+  assert.doesNotMatch(folderLayout(folderView({ isArchived: true })), /_site\//);
+  // Under an archived page or folder, the live tree the website comes from leaves it out.
+  assert.doesNotMatch(layout(pageView({ underArchived: true })), /_site\//);
+  assert.match(layout(pageView({ underArchived: true })), /_download\/kb25\/notes/);
+  assert.doesNotMatch(folderLayout(folderView({ underArchived: true })), /<details class="download-menu"/);
+});
+
+test("feedback #81: a folder's Download menu closes on a pick, a click outside it, and Escape", () => {
+  const html = folderLayout(folderView());
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes("[data-download-menu]"));
+  assert.ok(script, "the folder carries the menu's script");
+  type Handler = (event: { target?: unknown; key?: string; stopPropagation?: () => void }) => void;
+  const on = (handlers: Map<string, Handler>) => (type: string, fn: Handler) => handlers.set(type, fn);
+  const linkHandlers = new Map<string, Handler>();
+  const menuHandlers = new Map<string, Handler>();
+  const docHandlers = new Map<string, Handler>();
+  const inside = {};
+  const menu = {
+    open: true,
+    querySelector: (selector: string) => (selector === "summary" ? { focus: () => {} } : null),
+    querySelectorAll: (selector: string) => (selector === "a" ? [{ addEventListener: on(linkHandlers) }] : []),
+    addEventListener: on(menuHandlers),
+    contains: (target: unknown) => target === inside,
+  };
+  const doc = {
+    querySelector: (selector: string) => (selector === "[data-download-menu]" ? menu : null),
+    addEventListener: on(docHandlers),
+  };
+  new Function("window", "document", script)({}, doc);
+  docHandlers.get("click")!({ target: inside });
+  assert.equal(menu.open, true, "a click inside leaves it open");
+  docHandlers.get("click")!({ target: {} });
+  assert.equal(menu.open, false);
+  menu.open = true;
+  menuHandlers.get("keydown")!({ key: "Escape", stopPropagation: () => {} });
+  assert.equal(menu.open, false);
+  menu.open = true;
+  linkHandlers.get("click")!({});
+  assert.equal(menu.open, false);
+});
+
 /** A link as PRINT_SCRIPT sees one: its attributes. */
 class FakeLink {
   private readonly attrs: Map<string, string>;
