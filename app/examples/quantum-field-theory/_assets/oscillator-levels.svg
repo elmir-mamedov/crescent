@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 330" width="480" height="330" font-family="-apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif" fill="#1f2328">
+  <title>The quantum harmonic oscillator: a parabola with five evenly spaced energy levels</title>
+  <rect width="480" height="330" fill="#ffffff"/>
+  <line x1="30" y1="290" x2="440" y2="290" stroke="#57606a" stroke-width="1.5"/>
+  <line x1="230" y1="298" x2="230" y2="22" stroke="#57606a" stroke-width="1.5"/>
+  <path d="M225,28 L230,18 L235,28" fill="none" stroke="#57606a" stroke-width="1.5"/>
+  <text x="238" y="24" font-size="15" font-style="italic">E</text>
+  <text x="436" y="310" font-size="15" font-style="italic">x</text>
+  <polyline points="50.0,40.0 56.0,56.4 62.0,72.2 68.0,87.5 74.0,102.2 80.0,116.4 86.0,130.0 92.0,143.1 98.0,155.6 104.0,167.5 110.0,178.9 116.0,189.7 122.0,200.0 128.0,209.7 134.0,218.9 140.0,227.5 146.0,235.6 152.0,243.1 158.0,250.0 164.0,256.4 170.0,262.2 176.0,267.5 182.0,272.2 188.0,276.4 194.0,280.0 200.0,283.1 206.0,285.6 212.0,287.5 218.0,288.9 224.0,289.7 230.0,290.0 236.0,289.7 242.0,288.9 248.0,287.5 254.0,285.6 260.0,283.1 266.0,280.0 272.0,276.4 278.0,272.2 284.0,267.5 290.0,262.2 296.0,256.4 302.0,250.0 308.0,243.1 314.0,235.6 320.0,227.5 326.0,218.9 332.0,209.7 338.0,200.0 344.0,189.7 350.0,178.9 356.0,167.5 362.0,155.6 368.0,143.1 374.0,130.0 380.0,116.4 386.0,102.2 392.0,87.5 398.0,72.2 404.0,56.4 410.0,40.0" fill="none" stroke="#1f2328" stroke-width="2"/>
+  <line x1="173.1" y1="265.0" x2="286.9" y2="265.0" stroke="#1f6feb" stroke-width="2.5"/>
+  <text x="296.9" y="270.0" font-size="15">n = 0</text>
+  <line x1="131.4" y1="215.0" x2="328.6" y2="215.0" stroke="#1f6feb" stroke-width="2.5"/>
+  <text x="338.6" y="220.0" font-size="15">n = 1</text>
+  <line x1="102.7" y1="165.0" x2="357.3" y2="165.0" stroke="#1f6feb" stroke-width="2.5"/>
+  <text x="367.3" y="170.0" font-size="15">n = 2</text>
+  <line x1="79.4" y1="115.0" x2="380.6" y2="115.0" stroke="#1f6feb" stroke-width="2.5"/>
+  <text x="390.6" y="120.0" font-size="15">n = 3</text>
+  <line x1="59.2" y1="65.0" x2="400.8" y2="65.0" stroke="#1f6feb" stroke-width="2.5"/>
+  <text x="410.8" y="70.0" font-size="15">n = 4</text>
+  <line x1="58" y1="265.0" x2="58" y2="215.0" stroke="#cf222e" stroke-width="1.5"/>
+  <line x1="52" y1="265.0" x2="64" y2="265.0" stroke="#cf222e" stroke-width="1.5"/>
+  <line x1="52" y1="215.0" x2="64" y2="215.0" stroke="#cf222e" stroke-width="1.5"/>
+  <text x="70" y="245.0" font-size="15" fill="#cf222e">ħω</text>
+  <line x1="98" y1="290.0" x2="98" y2="265.0" stroke="#57606a" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <text x="104" y="282.0" font-size="13" fill="#57606a">½ħω</text>
+</svg>

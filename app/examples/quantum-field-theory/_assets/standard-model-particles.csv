@@ -1,0 +1,18 @@
+name,kind,generation,charge,spin,mass_mev
+up,quark,1,2/3,1/2,2.2
+down,quark,1,-1/3,1/2,4.7
+charm,quark,2,2/3,1/2,1270
+strange,quark,2,-1/3,1/2,94
+top,quark,3,2/3,1/2,173000
+bottom,quark,3,-1/3,1/2,4180
+electron,lepton,1,-1,1/2,0.511
+muon,lepton,2,-1,1/2,105.7
+tau,lepton,3,-1,1/2,1777
+electron neutrino,lepton,1,0,1/2,
+muon neutrino,lepton,2,0,1/2,
+tau neutrino,lepton,3,0,1/2,
+photon,gauge boson,,0,1,0
+gluon,gauge boson,,0,1,0
+W,gauge boson,,±1,1,80400
+Z,gauge boson,,0,1,91190
+Higgs,scalar boson,,0,0,125200

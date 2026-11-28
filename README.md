@@ -11,6 +11,8 @@ and Claude Code can work with the same pages through an MCP connection.
 - **Spaces and pages.** Each space is a folder of Markdown files and its own
   git repository. Folders group pages into sections, and the sidebar shows the
   tree; pages are moved and reordered by dragging them.
+  A new knowledge base starts with an example space, on quantum field theory,
+  that shows what pages can hold; it can be changed or deleted like any other.
 - **Reading.** Pages render with code highlighting, math (KaTeX) and Mermaid
   diagrams. Links between pages keep working when a page is moved or renamed.
   Every heading has a link, and longer pages get an outline beside the text.
