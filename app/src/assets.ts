@@ -17,9 +17,11 @@ import path from "node:path";
  * images, audio and video are shown by the browser's own viewers, plain text
  * as text, and a PDF by the PDF viewer. Everything else, SVG and HTML above
  * all, is downloaded instead. A download stays a download in KB25's own
- * windows too, which save every `attachment` rather than show it.
+ * windows too, which save every `attachment` rather than show it. The
+ * website export (site-export.ts) copies only these, since a static host
+ * sends no headers to keep anything else from running.
  */
-const INLINE_EXTENSIONS = new Set([
+export const INLINE_EXTENSIONS: ReadonlySet<string> = new Set([
   ".png",
   ".jpg",
   ".jpeg",

@@ -97,6 +97,24 @@ export function releaseComponents(options: {
   return components(shipped, places);
 }
 
+/**
+ * The notices for some of the packages a release copies as they are
+ * (COPIED), with what their prebuilt files carry inside them, read from
+ * `appDir`'s node_modules: what a checkout, which has no
+ * THIRD_PARTY_NOTICES.txt, gives an exported website (site-export.ts).
+ */
+export function copiedNotices(appDir: string, names: string[]): string {
+  const places = { nodeModules: path.join(appDir, "node_modules"), vendored: path.join(appDir, "licenses") };
+  const shipped: Shipped[] = [];
+  for (const { name, maps = [] } of COPIED) {
+    if (!names.includes(name)) continue;
+    const dir = packageDir(places.nodeModules, name);
+    shipped.push({ name, dir });
+    for (const map of maps) shipped.push(...packagesInSourceMap(path.join(dir, map), dir, places.nodeModules));
+  }
+  return renderNotices(components(shipped, places));
+}
+
 /** The packages esbuild folded into a bundle, from its metafile, whose paths are relative to `baseDir`. */
 export function bundledPackages(metafile: Metafile, baseDir: string): Shipped[] {
   const shipped = new Map<string, Shipped>();

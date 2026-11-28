@@ -118,6 +118,11 @@ export function makeRender({ siteTitle, username, content, git, seen }: Site) {
 
     const spaceKey = content.spaceKeyOf(page.slug);
     const { tree, labelSet } = await spaceChrome(spaceKey);
+    // The live tree leaves out what an archived page or folder holds, and so
+    // does the website download, which works from it.
+    const underArchived =
+      page.data.archived !== true &&
+      (page.slug === spaceKey ? !spaces.some((s) => s.key === spaceKey) : !findNode(tree, page.slug));
     await markVisited(tree, page.slug);
 
     // A folder is a pure container: render its contents listing, never prose.
@@ -135,6 +140,7 @@ export function makeRender({ siteTitle, username, content, git, seen }: Site) {
         children: node?.children ?? [],
         isArchived: page.data.archived === true,
         archivedAt: page.data.archivedAt,
+        underArchived,
         notice: options.notice,
         username: username,
       });
@@ -181,6 +187,7 @@ export function makeRender({ siteTitle, username, content, git, seen }: Site) {
       updated,
       isArchived: page.data.archived === true,
       archivedAt: page.data.archivedAt,
+      underArchived,
       notice: options.notice,
       username: username,
     });

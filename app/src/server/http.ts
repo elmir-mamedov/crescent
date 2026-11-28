@@ -88,3 +88,16 @@ export function pagePath(slug: string): string {
   if (!slug) return "/";
   return "/" + slug.split("/").map(encodeURIComponent).join("/");
 }
+
+/**
+ * A Content-Disposition that downloads a file as `filename`. A header can
+ * carry only Latin-1, so a name past it ("částice-website.zip") goes in
+ * `filename*` as UTF-8, with an ASCII stand-in in `filename` for a client
+ * that doesn't read that.
+ */
+export function attachment(filename: string): string {
+  const ascii = filename.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7e]|["\\]/g, "_");
+  if (ascii === filename) return `attachment; filename="${filename}"`;
+  const encoded = encodeURIComponent(filename).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}

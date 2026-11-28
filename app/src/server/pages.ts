@@ -10,7 +10,7 @@ import { parseWordDiff } from "../diff.js";
 import type { PageSave, Written } from "../kb-writes.js";
 import { deleteLayout, diffLayout, notFound, type ViewNotice } from "../views.js";
 import type { ServerContext } from "./context.js";
-import { errorMessage, formString, pagePath, queryString } from "./http.js";
+import { attachment, errorMessage, formString, pagePath, queryString } from "./http.js";
 
 export function registerPageRoutes(app: FastifyInstance, ctx: ServerContext): void {
   const { siteTitle, username, content, git, writes } = ctx;
@@ -284,7 +284,7 @@ export function registerPageRoutes(app: FastifyInstance, ctx: ServerContext): vo
       resolveIdSlug: (id) => ids.get(id),
     });
     return reply
-      .header("content-disposition", `attachment; filename="${download.filename}"`)
+      .header("content-disposition", attachment(download.filename))
       .type(download.contentType)
       .send(download.body);
   });

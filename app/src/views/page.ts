@@ -10,7 +10,7 @@ import { renderHead } from "./head.js";
 import { escapeHtml, slugPath } from "./html.js";
 import { labelChips } from "./labels.js";
 import { NOTES_SCRIPT } from "./notes.js";
-import { downloadMenu, PRINT_SCRIPT } from "./print.js";
+import { DOWNLOAD_MENU_SCRIPT, downloadMenu, PRINT_SCRIPT } from "./print.js";
 import { SIDEBAR_RENDER_HOLD, sidebarHtml } from "./sidebar.js";
 import { tabStrip } from "./tabs.js";
 import { FOLDER_ICON, MOVE_SCRIPT, renderTree } from "./tree.js";
@@ -66,6 +66,11 @@ export interface PageView {
   canEdit?: boolean;
   isArchived?: boolean;
   archivedAt?: string;
+  /**
+   * True when an archived page or folder holds it: it is live itself, but out
+   * of normal navigation, so it has no website to download.
+   */
+  underArchived?: boolean;
   /** A space's archive: the sidebar marks its Archive link, and no page is open. */
   isArchiveView?: boolean;
   notice?: ViewNotice;
@@ -160,7 +165,7 @@ export function layout(v: PageView): string {
       ? ""
       : `<a class="button secondary" href="/_diff${slugPath(v.activeSlug)}">Diff</a>`;
   const downloadLink =
-    v.canEdit === false || !v.activeSlug ? "" : downloadMenu(v.activeSlug);
+    v.canEdit === false || !v.activeSlug ? "" : downloadMenu(v.activeSlug, { site: !v.isArchived && !v.underArchived });
   const copyLink =
     v.canEdit === false || !v.activeSlug ? "" : copyLinkButton(v.activeSlug);
   const archiveAction =
@@ -223,6 +228,7 @@ ${/class="(details|tabs)-block"/.test(v.contentHtml) ? `<script>${BLOCKS_SCRIPT}
 <script>${EDIT_SHORTCUT_SCRIPT}</script>
 <script>${COPY_LINK_SCRIPT}</script>
 <script>${PRINT_SCRIPT}</script>
+<script>${DOWNLOAD_MENU_SCRIPT}</script>
 ${toc ? `<script>${TOC_SCRIPT}</script>` : ""}
 ${v.contentHtml.includes('class="section-link"') ? `<script>${SECTION_FLASH_SCRIPT}</script>` : ""}
 ${notesData ? `<script>${NOTES_SCRIPT}</script>` : ""}
@@ -247,12 +253,18 @@ export interface FolderView {
   children: PageNode[];
   isArchived?: boolean;
   archivedAt?: string;
+  /**
+   * True when an archived page or folder holds it: it is live itself, but out
+   * of normal navigation, so it has no website to download.
+   */
+  underArchived?: boolean;
   notice?: ViewNotice;
   username?: string | null;
 }
 
 /**
- * A folder is a pure container: no prose body, no Edit/Download. This renders
+ * A folder is a pure container: no prose body, no Edit, and only the website
+ * to download (feedback #81), since it has no text of its own. This renders
  * its contents as a listing plus controls to create items inside it, rename it
  * (display name only), archive, or delete. Moving a folder is done by dragging
  * it in the sidebar, the same as pages. Its location is shown in the breadcrumb.
@@ -311,7 +323,7 @@ ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.
       <h1>${escapeHtml(v.title)}</h1>
       <div class="meta"><span class="folder-tag">Folder</span></div>
     </div>
-    <div class="actions">${copyLink}${renameControl}${archiveAction}${deleteAction}${restoreAction}</div>
+    <div class="actions">${v.isArchived || v.underArchived ? "" : downloadMenu(v.activeSlug, { folder: true })}${copyLink}${renameControl}${archiveAction}${deleteAction}${restoreAction}</div>
   </header>
   ${notice}${archivedBanner}
   <section class="folder-view">
@@ -321,6 +333,7 @@ ${sidebarHtml(v.siteTitle, v.spaces, v.spaceKey, v.tree, v.activeSlug, false, v.
 </main>
 <script>${MOVE_SCRIPT}</script>
 <script>${COPY_LINK_SCRIPT}</script>
+<script>${DOWNLOAD_MENU_SCRIPT}</script>
 </body>
 </html>`;
 }
