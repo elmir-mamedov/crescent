@@ -81,6 +81,8 @@ export interface EngineTurnOptions {
   text: string;
   /** JPEG files to show the model with the text: copies of the images attached to it. */
   images?: string[];
+  /** PDFs attached to it, each with its name, for an engine that `readsDocuments`. */
+  documents?: { name: string; file: string }[];
   onEvent: (event: AgentEvent) => void;
   spawnImpl?: SpawnImpl;
 }
@@ -112,6 +114,8 @@ export interface Engine {
   startTurn(options: EngineTurnOptions): Promise<Turn>;
   /** Whether a turn can show the model the image at this path; every one when absent. */
   canShow?(file: string): boolean;
+  /** True when a turn can hand the model a PDF whole; it can't when absent. */
+  readsDocuments?: boolean;
   /** True when a resume failed because the engine no longer has the session. */
   lostSession(stderr: string): boolean;
 }

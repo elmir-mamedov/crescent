@@ -9,13 +9,14 @@
  * engine keeps the conversation itself under its own session id, which every
  * later turn resumes, so these files only hold what the drawer shows.
  *
- * The images a person attaches to a message are kept with its thread, under
- * `images/<id>/`, and go when it goes. They are not in any space: one reaches
- * the KB only when the agent adds it to a page's space with kb_add_image.
+ * The images and PDFs a person attaches to a message are kept with its
+ * thread, under `images/<id>/`, and go when it goes. They are not in any
+ * space: an image reaches the KB only when the agent adds it to a page's
+ * space with kb_add_image, and a PDF is there for the agent to read.
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { imageFileName, isImageName } from "./gallery.js";
+import { cleanFileBase, imageFileName, isImageName } from "./gallery.js";
 import type { EngineId } from "./agent-cli.js";
 
 /**
@@ -36,8 +37,19 @@ export interface PageChange {
 }
 
 export type ChatMessage =
-  /** `images` names the images attached to it, as {@link ChatStore.saveImages} saved them. */
-  | { role: "user"; text: string; at: string; forcePages: boolean; slug?: string; images?: string[] }
+  /**
+   * `images` names the images attached to it, as {@link ChatStore.saveImages}
+   * saved them, and `documents` the PDFs, as {@link ChatStore.saveDocuments} did.
+   */
+  | {
+      role: "user";
+      text: string;
+      at: string;
+      forcePages: boolean;
+      slug?: string;
+      images?: string[];
+      documents?: string[];
+    }
   | { role: "assistant"; text: string; at: string }
   | { role: "report"; changes: PageChange[]; at: string }
   | { role: "error"; text: string; at: string };
@@ -73,6 +85,24 @@ export interface IncomingImage {
   view?: Uint8Array;
 }
 
+/** A PDF attached to a message, as it arrives. */
+export interface IncomingDocument {
+  name: string;
+  bytes: Uint8Array;
+}
+
+/** Whether a file is a PDF: by the `%PDF-` every one starts with, whatever it is called. */
+export function isPdf(bytes: Uint8Array): boolean {
+  return bytes.length >= 5 && Buffer.from(bytes.subarray(0, 5)).toString("latin1") === "%PDF-";
+}
+
+/** The clean name a PDF is kept under: `Lecture 3.PDF` is `lecture-3.pdf`. */
+export function documentFileName(name: string): string {
+  const plain = path.basename(name.replace(/\\/g, "/"));
+  const base = cleanFileBase(plain.replace(/\.pdf$/i, ""));
+  return `${base || "document"}.pdf`;
+}
+
 export interface ChatStore {
   /** `<KB_DIR>/.kb25/chat`: the threads, and the files a turn runs with. */
   readonly dir: string;
@@ -93,6 +123,10 @@ export interface ChatStore {
   imageFile(id: string, name: string): Promise<string | null>;
   /** Where the model's copy of a thread's image is, or null when there is none. */
   imageView(id: string, name: string): Promise<string | null>;
+  /** Save a message's PDFs with thread `id`, named as images are. The names, in order. */
+  saveDocuments(id: string, documents: readonly IncomingDocument[]): Promise<string[]>;
+  /** Where a thread's PDF is, or null when it has no PDF by that name. */
+  documentFile(id: string, name: string): Promise<string | null>;
 }
 
 const THREAD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -128,6 +162,27 @@ export function makeChatStore(kbDir: string): ChatStore {
     }
   }
   const imageName = (id: string, name: string) => isThreadId(id) && IMAGE_NAME.test(name) && isImageName(name);
+  const documentName = (id: string, name: string) => isThreadId(id) && IMAGE_NAME.test(name) && name.endsWith(".pdf");
+
+  /**
+   * Write `bytes` into `folder` as `fileName`, or, when that is taken, as
+   * `<base>-2<ext>` and so on. The name it went under.
+   */
+  async function writeNew(folder: string, fileName: string, bytes: Uint8Array): Promise<string> {
+    const ext = path.extname(fileName);
+    const base = fileName.slice(0, -ext.length);
+    for (let n = 1; n <= 1000; n += 1) {
+      const candidate = n === 1 ? fileName : `${base}-${n}${ext}`;
+      try {
+        // `wx`: never over a file already there, or through a link.
+        await fs.writeFile(path.join(folder, candidate), bytes, { flag: "wx" });
+        return candidate;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      }
+    }
+    throw new Error(`Too many files are named like ${fileName}.`);
+  }
 
   async function read(id: string): Promise<ChatThread | null> {
     if (!isThreadId(id)) return null;
@@ -192,20 +247,7 @@ export function makeChatStore(kbDir: string): ChatStore {
       for (const image of images) {
         const fileName = imageFileName(image.name, image.type);
         if (!fileName) throw new Error(`${image.name} is not an image.`);
-        const ext = path.extname(fileName);
-        const base = fileName.slice(0, -ext.length);
-        let saved: string | null = null;
-        for (let n = 1; n <= 1000 && !saved; n += 1) {
-          const candidate = n === 1 ? fileName : `${base}-${n}${ext}`;
-          try {
-            // `wx`: never over an image already there, or through a link.
-            await fs.writeFile(path.join(folder, candidate), image.bytes, { flag: "wx" });
-            saved = candidate;
-          } catch (err) {
-            if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-          }
-        }
-        if (!saved) throw new Error(`Too many images are named like ${fileName}.`);
+        const saved = await writeNew(folder, fileName, image.bytes);
         if (image.view) await fs.writeFile(viewOf(id, saved), image.view, { flag: "wx" });
         names.push(saved);
       }
@@ -216,6 +258,20 @@ export function makeChatStore(kbDir: string): ChatStore {
     },
     async imageView(id, name) {
       return imageName(id, name) ? plainFile(viewOf(id, name)) : null;
+    },
+    async saveDocuments(id, documents) {
+      if (!isThreadId(id)) throw new Error(`Not a thread id: ${id}`);
+      const folder = imagesOf(id);
+      await fs.mkdir(folder, { recursive: true });
+      const names: string[] = [];
+      for (const document of documents) {
+        if (!isPdf(document.bytes)) throw new Error(`${document.name} is not a PDF.`);
+        names.push(await writeNew(folder, documentFileName(document.name), document.bytes));
+      }
+      return names;
+    },
+    async documentFile(id, name) {
+      return documentName(id, name) ? plainFile(path.join(imagesOf(id), name)) : null;
     },
   };
 }

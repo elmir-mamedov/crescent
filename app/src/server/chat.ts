@@ -6,7 +6,7 @@
 import { createReadStream } from "node:fs";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { assetHeaders } from "../assets.js";
-import type { ChatMessage, IncomingImage } from "../chat-store.js";
+import type { ChatMessage, IncomingDocument, IncomingImage } from "../chat-store.js";
 import { messageView, type Chat, type ChatMessageView, type RunEvent, type SendInput } from "../chat.js";
 import { flatten } from "../content.js";
 import { GALLERY_BODY_LIMIT, imageType } from "../gallery.js";
@@ -24,18 +24,24 @@ function imagePath(id: string, name: string): string {
   return `/_chat/threads/${id}/images/${encodeURIComponent(name)}`;
 }
 
-type MessageFields = Omit<SendInput, "images"> & { images: IncomingImage[] };
+/** Where a PDF attached to a message of thread `id` is served. */
+function documentPath(id: string, name: string): string {
+  return `/_chat/threads/${id}/documents/${encodeURIComponent(name)}`;
+}
+
+type MessageFields = Omit<SendInput, "images" | "documents"> & { images: IncomingImage[]; documents: IncomingDocument[] };
 
 /**
  * A message as the drawer sends it: a multipart form, its images as `image`
- * files and the model's copy of the n-th as `view-<n>`; or, from a page loaded
+ * files and the model's copy of the n-th as `view-<n>`, and its PDFs as
+ * `document` files; or, from a page loaded
  * before images could be attached, JSON. Null when the form cannot be read.
  */
 async function readMessage(req: FastifyRequest): Promise<MessageFields | null> {
   const type = req.headers["content-type"] ?? "";
   if (!type.startsWith("multipart/form-data")) {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    return { ...messageFields((key) => body[key]), forcePages: body.forcePages === true, images: [] };
+    return { ...messageFields((key) => body[key]), forcePages: body.forcePages === true, images: [], documents: [] };
   }
   let form: FormData;
   try {
@@ -58,11 +64,22 @@ async function readMessage(req: FastifyRequest): Promise<MessageFields | null> {
       };
     })
   );
-  return { ...messageFields((key) => form.get(key) ?? undefined), forcePages: form.get("forcePages") === "true", images };
+  const documents = await Promise.all(
+    form
+      .getAll("document")
+      .filter((entry): entry is File => typeof entry !== "string" && (entry.name !== "" || entry.size > 0))
+      .map(async (file): Promise<IncomingDocument> => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }))
+  );
+  return {
+    ...messageFields((key) => form.get(key) ?? undefined),
+    forcePages: form.get("forcePages") === "true",
+    images,
+    documents,
+  };
 }
 
-/** A message's fields other than the toggle and the images, each only when it is a string. */
-function messageFields(field: (key: string) => unknown): Omit<SendInput, "forcePages" | "images"> {
+/** A message's fields other than the toggle and the attachments, each only when it is a string. */
+function messageFields(field: (key: string) => unknown): Omit<SendInput, "forcePages" | "images" | "documents"> {
   const text = (key: string) => {
     const value = field(key);
     return typeof value === "string" && value ? value : undefined;
@@ -100,6 +117,7 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: ServerContex
         href: pagePath,
         gallery: galleryHref,
         image: (name) => imagePath(id, name),
+        document: (name) => documentPath(id, name),
       })
     );
   }
@@ -134,7 +152,7 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: ServerContex
     scope.setErrorHandler(async (err, _req, reply) => {
       if (err.code !== "FST_ERR_CTP_BODY_TOO_LARGE") throw err;
       const limit = Math.round(GALLERY_BODY_LIMIT / (1024 * 1024));
-      return reply.code(413).send({ error: `Those images are over ${limit} MB together. Attach fewer, or smaller ones.` });
+      return reply.code(413).send({ error: `The attachments are over ${limit} MB together. Attach fewer, or smaller ones.` });
     });
 
     scope.post("/_chat/threads/:id/messages", { bodyLimit: GALLERY_BODY_LIMIT }, async (req, reply) => {
@@ -159,6 +177,22 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: ServerContex
       .headers(assetHeaders(name))
       .header("cache-control", "private, max-age=3600")
       .type(imageType(name) ?? "application/octet-stream")
+      .send(createReadStream(file));
+  });
+
+  /**
+   * A PDF attached to a message, for the drawer to open. Sent with an asset's
+   * headers, as a PDF in a space is: the browser's PDF viewer shows it, and
+   * its scripts run there, never as crescent.
+   */
+  app.get("/_chat/threads/:id/documents/:name", async (req, reply) => {
+    const { id, name } = req.params as { id: string; name: string };
+    const file = await chat.documentFile(id, name);
+    if (!file) return reply.code(404).send({ error: "No such PDF." });
+    return reply
+      .headers(assetHeaders(name))
+      .header("cache-control", "private, max-age=3600")
+      .type("application/pdf")
       .send(createReadStream(file));
   });
 

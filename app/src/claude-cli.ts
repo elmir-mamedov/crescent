@@ -135,15 +135,26 @@ export function mcpConfig(command: string, args: string[], env: Record<string, s
 
 /**
  * The stdin of a turn: one stream-json user message. Images, each a base64
- * JPEG, go before the text, as the API advises.
+ * JPEG, and PDFs, each a base64 document titled with its name, go before the
+ * text, as the API advises.
  */
-export function turnInput(text: string, images: readonly string[] = []): string {
-  const content = images.length
-    ? [
-        ...images.map((data) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } })),
-        { type: "text", text },
-      ]
-    : text;
+export function turnInput(
+  text: string,
+  images: readonly string[] = [],
+  documents: readonly { name: string; data: string }[] = []
+): string {
+  const content =
+    images.length || documents.length
+      ? [
+          ...images.map((data) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } })),
+          ...documents.map(({ name, data }) => ({
+            type: "document",
+            source: { type: "base64", media_type: "application/pdf", data },
+            title: name,
+          })),
+          { type: "text", text },
+        ]
+      : text;
   return `${JSON.stringify({ type: "user", message: { role: "user", content } })}\n`;
 }
 
@@ -308,6 +319,8 @@ export interface TurnOptions {
   text: string;
   /** Base64 JPEGs to show the model with the text. */
   images?: string[];
+  /** Base64 PDFs to hand the model with the text, each with its name. */
+  documents?: { name: string; data: string }[];
   onEvent: (event: AgentEvent) => void;
   spawnImpl?: SpawnImpl;
 }
@@ -318,7 +331,7 @@ export function startTurn(options: TurnOptions): Turn {
     command: options.claudePath,
     args: turnArgs(options),
     cwd: options.cwd,
-    input: turnInput(options.text, options.images),
+    input: turnInput(options.text, options.images, options.documents),
     readLine: parseLine,
     onEvent: options.onEvent,
     spawnImpl: options.spawnImpl,
@@ -356,9 +369,14 @@ export const claudeEngine: Engine = {
       cwd,
       text: options.text,
       images: await Promise.all((options.images ?? []).map(async (file) => (await fs.readFile(file)).toString("base64"))),
+      documents: await Promise.all(
+        (options.documents ?? []).map(async ({ name, file }) => ({ name, data: (await fs.readFile(file)).toString("base64") }))
+      ),
       onEvent: options.onEvent,
       spawnImpl: options.spawnImpl,
     });
   },
+  // `claude -p --input-format stream-json` takes a document block (#57).
+  readsDocuments: true,
   lostSession: (stderr) => /no conversation found/i.test(stderr),
 };

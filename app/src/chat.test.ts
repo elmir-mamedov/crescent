@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { AgentEvent, AgentStatus, Engine, EngineTurnOptions, ModelOption, Turn } from "./agent-cli.js";
-import { makeChatStore } from "./chat-store.js";
+import { documentFileName, isPdf, makeChatStore } from "./chat-store.js";
 import {
   CHAT_PROMPT,
+  MAX_DOCUMENTS,
+  MAX_DOCUMENT_BYTES,
   MAX_IMAGES,
   activityText,
   attachmentsBlock,
+  documentsRefusal,
   contextBlock,
   makeChat,
   messageView,
@@ -349,14 +352,15 @@ async function withChat(
   scripts: Parameters<typeof fakeTurns>[0],
   body: (ctx: { chat: ReturnType<typeof makeChat>; fake: ReturnType<typeof fakeTurns>; kbDir: string }) => Promise<void>,
   status: AgentStatus = OK,
-  canShow?: Engine["canShow"]
+  canShow?: Engine["canShow"],
+  extra: Partial<Engine> = {}
 ) {
   const kb = await makeTempKb();
   try {
     const fake = fakeTurns(scripts);
     const chat = makeChat({
       store: makeChatStore(kb.dir),
-      engines: [{ ...fakeEngine(fake, status), ...(canShow && { canShow }) }],
+      engines: [{ ...fakeEngine(fake, status), ...(canShow && { canShow }), ...extra }],
       workDir: path.join(kb.dir, "work"),
       mcp: { command: "/usr/bin/node", args: ["mcp.mjs"], env: { KB_DIR: kb.dir, KB25_COMMIT_VIA: "chat" } },
       pages: async () => PAGES,
@@ -652,6 +656,98 @@ test("the model is shown only a JPEG copy, and only one its engine can show", as
     OK,
     () => false
   );
+});
+
+const PDF = new Uint8Array(Buffer.from("%PDF-1.7\n%fake\n"));
+
+test("feedback #57: a PDF goes whole to an engine that reads them, and is kept with the thread", async () => {
+  await withChat(
+    [{ events: [INIT, result("")] }],
+    async ({ chat, fake }) => {
+      const sent = await chat.send(ID, { text: "", forcePages: false, documents: [{ name: "Lecture 3.PDF", bytes: PDF }] });
+      assert.equal(sent.ok && sent.thread.title, "Lecture 3.PDF");
+      await finished(chat, ID);
+      const documents = fake.calls[0].documents ?? [];
+      assert.deepEqual(documents.map((document) => document.name), ["lecture-3.pdf"]);
+      assert.deepEqual(new Uint8Array(await fs.readFile(documents[0].file)), PDF);
+      assert.match(fake.calls[0].text, /lecture-3\.pdf \(a PDF\)\n<\/kb25-attachments>/);
+      const user = (await chat.thread(ID))?.messages[0];
+      assert.deepEqual(user?.role === "user" && user.documents, ["lecture-3.pdf"]);
+      assert.equal(await chat.documentFile(ID, "lecture-3.pdf"), documents[0].file);
+    },
+    OK,
+    undefined,
+    { readsDocuments: true }
+  );
+});
+
+test("feedback #57: an engine that can't read PDFs, Codex today, is sent none, and nothing is saved", async () => {
+  await withEngines({ scripts: [], status: OK }, { scripts: [], status: OK }, async ({ chat, claude, codex }) => {
+    const sent = await chat.send(ID, {
+      text: "summarise",
+      forcePages: false,
+      engine: "codex",
+      documents: [{ name: "a.pdf", bytes: PDF }],
+    });
+    assert.equal(sent.ok ? "" : sent.error, "PDFs work only with Claude Code for now; Codex can't read them.");
+    assert.equal(sent.ok ? 0 : sent.status, 400);
+    assert.equal(claude.calls.length + codex.calls.length, 0);
+    assert.equal(await chat.thread(ID), null);
+  });
+});
+
+test("feedback #57: too many PDFs, an empty one, one that isn't a PDF or too much together is refused", async () => {
+  const pdf = { name: "a.pdf", bytes: PDF };
+  assert.equal(documentsRefusal([]), null);
+  assert.equal(documentsRefusal([pdf]), null);
+  assert.equal(documentsRefusal(Array(MAX_DOCUMENTS + 1).fill(pdf)), `Attach at most ${MAX_DOCUMENTS} PDFs to one message.`);
+  assert.equal(documentsRefusal([{ name: "b.pdf", bytes: new Uint8Array() }]), "b.pdf is empty.");
+  assert.equal(documentsRefusal([pdf, { name: "notes.pdf", bytes: PNG }]), "notes.pdf is not a PDF.");
+  const big = new Uint8Array(MAX_DOCUMENT_BYTES + 1);
+  big.set(PDF);
+  assert.match(documentsRefusal([{ name: "big.pdf", bytes: big }]) ?? "", /^The PDFs are over 20 MB together/);
+  await withChat([], async ({ chat, fake, kbDir }) => {
+    const sent = await chat.send(ID, { text: "hi", forcePages: false, documents: [{ name: "x.pdf", bytes: PNG }] });
+    assert.equal(sent.ok ? "" : sent.error, "x.pdf is not a PDF.");
+    assert.equal(fake.calls.length, 0);
+    await assert.rejects(fs.access(path.join(kbDir, ".kb25", "chat", "images")));
+  });
+});
+
+test("feedback #57: a PDF is known by how it starts, and kept under a clean name", () => {
+  assert.equal(isPdf(PDF), true);
+  assert.equal(isPdf(PNG), false);
+  assert.equal(documentFileName("Lecture 3.PDF"), "lecture-3.pdf");
+  assert.equal(documentFileName("C:\\notes\\Week 2.pdf"), "week-2.pdf");
+  assert.equal(documentFileName(".pdf"), "document.pdf");
+});
+
+test("feedback #57: the store keeps PDFs beside the images, never over one, and serves only PDFs by their names", async () => {
+  const kb = await makeTempKb();
+  try {
+    const store = makeChatStore(kb.dir);
+    assert.deepEqual(await store.saveDocuments(ID, [{ name: "a.pdf", bytes: PDF }, { name: "A.pdf", bytes: PDF }]), ["a.pdf", "a-2.pdf"]);
+    await assert.rejects(store.saveDocuments(ID, [{ name: "b.pdf", bytes: PNG }]), /b\.pdf is not a PDF/);
+    assert.ok(await store.documentFile(ID, "a-2.pdf"));
+    assert.equal(await store.documentFile(ID, "../a.pdf"), null);
+    assert.equal(await store.documentFile(ID, "missing.pdf"), null);
+    assert.equal(await store.imageFile(ID, "a.pdf"), null);
+    await store.saveImages(ID, [{ name: "c.png", type: "image/png", bytes: PNG }]);
+    assert.equal(await store.documentFile(ID, "c.png"), null);
+  } finally {
+    await kb.cleanup();
+  }
+});
+
+test("feedback #57: the attachments block names PDFs, and what the agent can do with images and with PDFs", () => {
+  assert.equal(
+    attachmentsBlock([
+      { file: "/kb/a.png", shown: true },
+      { file: "/kb/b.pdf", shown: true, kind: "document" },
+    ]),
+    "<kb25-attachments>\nThe person attached these files to the message. To put an image on a page, add it to the page's space with kb_add_image and its path here, then link what that returns. A PDF is for you to read: no space can take one.\n- /kb/a.png\n- /kb/b.pdf (a PDF)\n</kb25-attachments>"
+  );
+  assert.match(attachmentsBlock([{ file: "/kb/b.pdf", shown: true, kind: "document" }]), /^<kb25-attachments>\nThe person attached this PDF to the message\. A PDF is for you to read/);
 });
 
 test("the attachments block lists each path, and says which the model was not shown", () => {
@@ -998,6 +1094,57 @@ test("GET /_chat/threads/:id: an image from another site in a reply is a link, n
     assert.equal(reply.role, "assistant");
     assert.doesNotMatch(reply.html ?? "", /<img/);
     assert.match(reply.html ?? "", /<a class="outside-image" href="https:\/\/attacker\.example\/p\.png\?d=SECRET">status<\/a>/);
+  } finally {
+    await app.close();
+    await kb.cleanup();
+  }
+});
+
+test("feedback #57: POST takes a message's PDFs as `document` files, and GET serves one as a PDF", async () => {
+  const { default: Fastify } = await import("fastify");
+  const { Content } = await import("./content.js");
+  const { registerChatRoutes } = await import("./server/chat.js");
+  const kb = await makeTempKb();
+  const app = Fastify();
+  try {
+    const file = path.join(kb.dir, "a.pdf");
+    await fs.writeFile(file, PDF);
+    let received: { documents?: { name: string; bytes: Uint8Array }[]; images?: unknown[] } | null = null;
+    const chat = {
+      send: async (_id: string, message: typeof received) => {
+        received = message;
+        return { ok: true, thread: { title: "t" } };
+      },
+      documentFile: async (id: string, name: string) => (id === ID && name === "a.pdf" ? file : null),
+    };
+    await registerChatRoutes(
+      app,
+      { content: new Content(kb.dir) } as unknown as Parameters<typeof registerChatRoutes>[1],
+      chat as unknown as Parameters<typeof registerChatRoutes>[2]
+    );
+    const form = new FormData();
+    form.append("text", "summarise");
+    form.append("document", new Blob([PDF], { type: "application/pdf" }), "a.pdf");
+    const request = new Request("http://kb.test/", { method: "POST", body: form });
+    const posted = await app.inject({
+      method: "POST",
+      url: `/_chat/threads/${ID}/messages`,
+      headers: { "content-type": request.headers.get("content-type") ?? "" },
+      payload: Buffer.from(await request.arrayBuffer()),
+    });
+    assert.equal(posted.statusCode, 202);
+    assert.deepEqual(received!.images, []);
+    assert.deepEqual(
+      received!.documents?.map((document) => [document.name, Buffer.from(document.bytes).toString()]),
+      [["a.pdf", Buffer.from(PDF).toString()]]
+    );
+
+    const served = await app.inject({ url: `/_chat/threads/${ID}/documents/a.pdf` });
+    assert.equal(served.statusCode, 200);
+    assert.equal(served.headers["content-type"], "application/pdf");
+    assert.equal(served.headers["x-content-type-options"], "nosniff");
+    assert.equal(served.body, Buffer.from(PDF).toString());
+    assert.equal((await app.inject({ url: `/_chat/threads/${ID}/documents/b.pdf` })).statusCode, 404);
   } finally {
     await app.close();
     await kb.cleanup();

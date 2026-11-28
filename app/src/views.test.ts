@@ -3290,11 +3290,14 @@ test("views: every page with the corner has the chat, told which page is open", 
   assert.doesNotMatch(loginLayout({ siteTitle: "KB", next: "/" } as LoginView), /data-chat/);
 });
 
-test("views: images are attached from the paperclip, which picks images only, or dropped on the drawer", () => {
+test("views: images and PDFs are attached from the paperclip, which picks only those, or dropped on the drawer", () => {
   const html = layout(pageView());
-  assert.match(html, /<button type="button" class="chat-icon-button" data-chat-attach aria-label="Attach images"/);
-  assert.match(html, /<input type="file" data-chat-file accept="\.png,\.jpg,\.jpeg,\.gif,\.webp,\.avif,\.svg" multiple hidden \/>/);
-  assert.match(html, /<div class="chat-drop" data-chat-drop hidden>Drop images to attach them<\/div>/);
+  assert.match(html, /<button type="button" class="chat-icon-button" data-chat-attach aria-label="Attach images or PDFs"/);
+  assert.match(
+    html,
+    /<input type="file" data-chat-file accept="\.png,\.jpg,\.jpeg,\.gif,\.webp,\.avif,\.svg,\.pdf,application\/pdf" multiple hidden \/>/
+  );
+  assert.match(html, /<div class="chat-drop" data-chat-drop hidden>Drop images or PDFs to attach them<\/div>/);
   assert.match(html, /<form class="chat-form" data-chat-form>\s*<div class="chat-composer">\s*<div class="chat-attachments" data-chat-attachments hidden><\/div>/);
   const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
   assert.match(script, /drawer\.addEventListener\("drop", \(event\) => \{\s*if \(!carriesFiles\(event\)\) return;\s*event\.preventDefault\(\);/);
@@ -3337,8 +3340,13 @@ test("views: the chat posts to its thread and follows the turn's event stream", 
   const script = html.slice(html.indexOf('const drawer = document.querySelector("[data-chat]")'));
   assert.match(script, /fetch\("\/_chat\/threads\/" \+ threadId \+ "\/messages", \{ method: "POST", body: data \}\)/);
   assert.match(script, /data\.append\("text", text\);\s*if \(pages\.checked\) data\.append\("forcePages", "true"\);\s*data\.append\("slug", slug\);\s*if \(!threadEngine && engine\) data\.append\("engine", engine\);/);
-  // Each image goes as it is, with the copy made for the model beside it.
-  assert.match(script, /data\.append\("image", item\.file, item\.file\.name\);\s*if \(copies\[n\]\) data\.append\("view-" \+ n, copies\[n\], "view\.jpg"\);/);
+  // Each image goes as it is, with the copy made for the model beside it,
+  // numbered among the images; a PDF goes as it is.
+  assert.match(script, /if \(item\.pdf\) return data\.append\("document", item\.file, item\.file\.name\);/);
+  // A Codex chat leaves PDFs out, and says why (feedback #57).
+  assert.match(script, /const pdfRoom = codex \? 0 :/);
+  assert.match(script, /PDFs work only with Claude Code for now, so they were left out\./);
+  assert.match(script, /data\.append\("image", item\.file, item\.file\.name\);\s*if \(copies\[at\]\) data\.append\("view-" \+ n, copies\[at\], "view\.jpg"\);\s*n \+= 1;/);
   assert.match(script, /new EventSource\("\/_chat\/threads\/" \+ threadId \+ "\/events"\)/);
   assert.match(script, /"\/_chat\/status" \+ \(fresh \? "\?fresh=1" : ""\)/);
   // The report links every page the turn wrote, and server text stays text.
