@@ -24,6 +24,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
@@ -44,6 +45,10 @@ namespace KB25
         static void Main()
         {
             var home = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", ".."));
+            // .NET Framework gives a desktop app two connections to the server at
+            // a time, and the window keeps one open for GET /_window: a second one
+            // stuck after a long sleep left no way to send the quit (feedback #88).
+            ServicePointManager.DefaultConnectionLimit = Math.Max(ServicePointManager.DefaultConnectionLimit, 8);
             // The window belongs to whoever owns this mutex. KB25 0.22.0 and earlier
             // took it with `new Mutex(true, name, out first)`, which owns it only
             // when it creates it, so either way round one of them forwards.
@@ -129,7 +134,7 @@ namespace KB25
         /// Add a line to kb25.log, where the server writes. Opened for appending
         /// only, so each line lands at the end however the two interleave.
         /// </summary>
-        static void Log(string home, string message)
+        internal static void Log(string home, string message)
         {
             try
             {
@@ -157,6 +162,12 @@ namespace KB25
         internal static readonly Color Background = Color.FromArgb(0x0d, 0x11, 0x17);
         readonly WebView2 web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Background };
         readonly HttpClient http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        // The quit sent on closing has a client of its own, which gives up when
+        // closing does: on the one above it could wait behind the /_window
+        // stream, left half-open by a long sleep (feedback #88).
+        readonly HttpClient quitHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        // How long closing may take before this process ends itself.
+        static readonly TimeSpan ClosingLimit = TimeSpan.FromSeconds(8);
         Uri server;
         Uri requested;
         // The server quit first (its power button), so there is nothing to stop.
@@ -431,20 +442,53 @@ namespace KB25
 
         void OnClosing(object sender, FormClosingEventArgs e)
         {
+            if (closing) return;
             closing = true;
             // A window never shown is where it was put, maximized or not.
             if (revealed) SaveBounds();
+            // From here the window only has to go. After a long idle its web view
+            // can take a long time to let go, or never does, which left the
+            // window frozen on screen, or KB25.exe running with no window, until
+            // Task Manager ended it (feedback #88). So the process is made sure to
+            // end, and the window leaves the screen at once, before the quit
+            // below waits on the server.
+            ExitWithin(ClosingLimit);
+            Hide();
             if (serverQuit || server == null) return;
             try
             {
-                Task.Run(() => http.PostAsync(new Uri(server, "/_quit?when=idle"), new StringContent("")))
+                Task.Run(() => quitHttp.PostAsync(new Uri(server, "/_quit?when=idle"), new StringContent("")))
                     .Wait(TimeSpan.FromSeconds(3));
             }
             catch (Exception) { }
         }
 
+        /// <summary>
+        /// End this process if it is still running `limit` after closing began.
+        /// It ends of its own accord once Application.Run returns, and this
+        /// thread with it; the window's mutex, left unreleased when it doesn't,
+        /// is taken by the next KB25.exe as abandoned (Program.Own).
+        /// </summary>
+        void ExitWithin(TimeSpan limit)
+        {
+            var watchdog = new Thread(() =>
+            {
+                Thread.Sleep(limit);
+                Program.Log(home, $"KB25 window: still closing after {limit.TotalSeconds:0} s, so it ended itself");
+                // Not Environment.Exit, which runs the finalizers, and so may
+                // wait on the very web view that is holding things up.
+                try { Process.GetCurrentProcess().Kill(); } catch (Exception) { }
+            });
+            watchdog.IsBackground = true;
+            watchdog.Start();
+        }
+
         void BringForward()
         {
+            // A window on its way out has nothing to bring forward. Saying so
+            // would send the new KB25.exe away with no window on screen; without
+            // it, the new one ends this one and opens its own (TakeOver).
+            if (closing) return;
             if (!revealed)
             {
                 splash.Activate();
