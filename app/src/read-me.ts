@@ -18,6 +18,19 @@ import { createHash } from "node:crypto";
 export const READ_ME_MODULES = ["pages", "math", "figures", "notes"] as const;
 export type ReadMeModule = (typeof READ_ME_MODULES)[number];
 
+/**
+ * How crescent's agents write: the pages module gives it for every page, and
+ * the chat drawer's prompt for its answers too, so that a page and the chat
+ * beside it read alike. A space's instructions still come first, as the
+ * core's section on them says of every default. "Writer-responsible" alone is
+ * a term an agent may read several ways, so it says what that asks of a
+ * sentence.
+ */
+export const PROSE_STYLE =
+  "Write expository prose in a semi-formal register, and make yourself understood rather than leaving the work to the reader: " +
+  "state the point before the detail, define a term where it first appears, and say how each step follows from the last instead of leaving the reader to infer it. " +
+  "Semi-formal means complete sentences in a plain, neutral voice: no chattiness, hype or asides to the reader, and no academic stiffness either.";
+
 /** What the core says about the token: the sentence an agent acts on, so it comes first. */
 function tokenLine(token: string): string {
   return (
@@ -37,7 +50,7 @@ ${tokenLine(token)}
 
 This is the core, which every conversation reads first. Before you start a kind of work, load its module by calling read_me again with \`modules\`, and with your token, so the core is not sent again:
 
-- \`pages\`: before you write or change a page. When to write one, where to file it, how to link it, and how to hand it back to the person.
+- \`pages\`: before you write or change a page. When to write one, the register to write it in, where to file it, how to link it, and how to hand it back to the person.
 - \`math\`: before you write a formula.
 - \`figures\`: before you add a diagram, a drawing, an interactive widget or a data table.
 - \`notes\`: before you read, address or leave the inline notes on pages.
@@ -67,6 +80,7 @@ const MODULES: Record<ReadMeModule, string> = {
 - File it beside similar pages (kb_list_pages, kb_search) rather than inventing new structure. A big topic can deserve a folder of several pages (kb_create_folder).
 - A new page is one kb_create_page call with its title and full body, never an empty page filled in afterwards. To change a page, read it with kb_get_page (format: raw) and send the whole replacement with kb_update_page, keeping its frontmatter and its \`id\`.
 - Write for a reader landing on the page cold, not as a reply to this conversation: lead with what they need first, under clear headings.
+- ${PROSE_STYLE}
 - When a page rests on facts you looked up, cite the sources on the page.
 - Prose is Markdown. HTML in a page is not rendered: a figure that needs it is a widget (module \`figures\`). Formulas are module \`math\`.
 - Detail most readers can skip (a derivation, a long example, the answer to a side question) can fold away under a title the reader clicks to open: a line \`:::details <title>\`, the Markdown inside, then a line \`:::\`. Use it for that kind of aside only, never for the page's main content.

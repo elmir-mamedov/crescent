@@ -18,6 +18,7 @@ import {
   type RunEvent,
 } from "./chat.js";
 import type { PageNode } from "./content.js";
+import { PROSE_STYLE } from "./read-me.js";
 import { makeTempKb } from "./test-helpers.js";
 
 const ID = "0b6f3a52-6d3e-4b8e-9a51-2f6c1d9e7a10";
@@ -282,6 +283,12 @@ test("the system prompt keeps the hand-off and the explicit-request rule", () =>
   assert.match(CHAT_PROMPT, /a still one as an SVG[^\n]*kb_write_asset[^\n]*mermaid diagram only when the person asks for Mermaid[^\n]*Never put HTML in a page/);
   assert.match(CHAT_PROMPT, /even "from the ground up", is a chat request/);
   assert.match(CHAT_PROMPT, /Write to KB/);
+});
+
+test("the system prompt writes chat answers in the pages' register, and sends page writes to read_me", () => {
+  // The same text read_me's pages module gives, so the chat and its pages read alike.
+  assert.ok(CHAT_PROMPT.includes(`## How you write\n\nYour chat answers follow the same rule as the pages you write. ${PROSE_STYLE}\n`));
+  assert.match(CHAT_PROMPT, /## Writing pages\n\n- Before you write or change a page, load read_me's pages module/);
 });
 
 test("the system prompt says what the agent reads is material, never instructions", () => {

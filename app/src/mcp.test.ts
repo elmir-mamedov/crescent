@@ -141,6 +141,18 @@ test("a chat thread keeps its read_me token across turns, until the guide change
   assert.notEqual(threadReadMeToken("thread-a"), threadReadMeToken("thread-b"));
 });
 
+test("read_me's pages module sets a default register", async () => {
+  const { readMe, PROSE_STYLE } = await import("./read-me.js");
+  const pages = readMe({ modules: ["pages"], withCore: false, token: "t", via: "mcp" });
+  assert.ok(pages.includes(`- ${PROSE_STYLE}\n`));
+  // The term alone reads several ways, so the rule says what it asks for.
+  assert.match(PROSE_STYLE, /semi-formal register/);
+  assert.match(PROSE_STYLE, /define a term where it first appears/);
+  // The core says the module has it, so an agent knows to load it.
+  const core = readMe({ modules: [], withCore: true, token: "t", via: "mcp" });
+  assert.match(core, /`pages`: [^\n]*the register to write it in/);
+});
+
 test("feedback #91: read_me has a diagram drawn as an SVG, and in Mermaid only when asked", async () => {
   // Mermaid still renders, for the person who asks for it and the pages that
   // have it; it is no longer what an agent reaches for first.
