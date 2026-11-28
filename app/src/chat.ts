@@ -14,7 +14,7 @@
  * so its own text after a write is only ever a caveat.
  */
 import type { PageNode } from "./content.js";
-import { threadReadMeToken } from "./read-me.js";
+import { PROSE_STYLE, threadReadMeToken } from "./read-me.js";
 import { IMAGE_FORMATS, imageFileName } from "./gallery.js";
 import {
   isEffortName,
@@ -64,8 +64,13 @@ Write to the knowledge base only when the person asks for it in so many words ("
 
 Delete pages, create or delete spaces, and move or rename things only when the current message asks for exactly that.
 
+## How you write
+
+Your chat answers follow the same rule as the pages you write. ${PROSE_STYLE}
+
 ## Writing pages
 
+- Before you write or change a page, load read_me's pages module: it holds the rest of how pages are written here, and the points below add to it.
 - Put new pages in the space the person is viewing unless they name another. Look at that space first (kb_list_pages, kb_search) and file the page beside similar ones rather than inventing new structure. A big topic can deserve a folder of several pages.
 - A new page is one kb_create_page call with the full body. To change a page, read it with kb_get_page (format: raw) first, then send the complete replacement with kb_update_page, keeping its frontmatter and id.
 - Write for a reader arriving cold, not as a reply to this conversation: lead with what they need first, use clear headings, and link related pages by id ([[id:<id>]]).
