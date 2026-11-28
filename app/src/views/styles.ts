@@ -807,25 +807,30 @@ html.has-find.has-tabs .toc{padding-top:58px}
   color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
 }
 .diagram-viewer[open]{display:flex; flex-direction:column}
+/* An image has no level nor hint, and sized to a narrow one the viewer keeps room for its buttons. */
+.diagram-viewer.is-image{min-width:min-content}
+.diagram-viewer.is-image :is(.diagram-viewer-hint,.diagram-level){display:none}
 .diagram-viewer::backdrop{background:var(--backdrop)}
 .diagram-viewer:focus{outline:none}
 .diagram-viewer-head{
   display:flex; align-items:center; gap:12px; padding:10px 14px 10px 20px; border-bottom:1px solid var(--line);
 }
 .diagram-viewer-hint{flex:1; min-width:0; margin:0; color:var(--muted); font-size:13px}
-.diagram-viewer-tools{display:flex; align-items:center; gap:4px}
+.diagram-viewer-tools{display:flex; align-items:center; gap:4px; margin-left:auto}
 .diagram-tool{
   display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 8px;
   border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--fg-secondary);
   font-family:inherit; font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; cursor:pointer;
 }
-.diagram-tool:hover{background:var(--surface-hover-2); color:var(--fg)}
+.diagram-tool:not([aria-disabled="true"]):hover{background:var(--surface-hover-2); color:var(--fg)}
+.diagram-tool[aria-disabled="true"]{opacity:.4; cursor:default}
 .diagram-level{min-width:64px}
 .diagram-viewer-stage{
   position:relative; flex:1; min-height:0; overflow:hidden; background:var(--bg);
   cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none;
 }
 .diagram-viewer-stage.is-dragging{cursor:grabbing}
+.diagram-viewer-stage.is-still{cursor:default}
 .diagram-viewer-canvas{position:absolute; left:0; top:0; transform-origin:0 0}
 .diagram-viewer-canvas svg{display:block}
 .diagram-viewer-canvas img{display:block; width:100%; height:100%; box-sizing:border-box; object-fit:contain; -webkit-user-drag:none}

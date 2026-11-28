@@ -1800,7 +1800,7 @@ test("feedback #33: a page with a diagram gets the viewer that opens it large", 
   assert.match(script, /frame\.className = "mermaid-frame";\s*pre\.before\(frame\);\s*frame\.append\(pre, template\.content\.firstElementChild\.cloneNode\(true\)\);/);
   // A copy at the diagram's own size, fitted to the window.
   assert.match(script, /const copy = svg\.cloneNode\(true\);/);
-  assert.match(script, /viewer\.showModal\(\);\s*\/\/[^\n]*\n\s*viewer\.focus\(\);\s*fit\(\);/);
+  assert.match(script, /viewer\.showModal\(\);\s*\/\/[^\n]*\n\s*viewer\.focus\(\);\s*if \(isImage\) hug\(\);\s*fit\(\);/);
   // Scrolling, a pinch from either engine, and a drag are all its own.
   assert.match(script, /stage\.addEventListener\(\s*"wheel",[\s\S]*?event\.preventDefault\(\);[\s\S]*?\{ passive: false \}/);
   for (const name of ["gesturestart", "gesturechange", "gestureend"]) {
@@ -1833,7 +1833,7 @@ test("feedback #37: the diagram viewer zooms from 30% to 150% and stays on the d
   assert.equal(diagramBound(-5000, 2000, 1000), -1032);
 
   const html = layout(pageView({ contentHtml: MERMAID_PAGE }));
-  assert.match(html, /x = diagramBound\(x, width \* scale, stage\.clientWidth\);\s*y = diagramBound\(y, height \* scale, stage\.clientHeight\);/);
+  assert.match(html, /const bound = image \? imageBound : diagramBound;\s*x = bound\(x, width \* scale, stage\.clientWidth\);\s*y = bound\(y, height \* scale, stage\.clientHeight\);/);
   assert.match(html, /return image \? imageScale\(next, fits\) : diagramScale\(next\);/);
   assert.match(html, /scale = bounded\(fits\);/);
   assert.match(html, /next = bounded\(next\);/);
@@ -1876,14 +1876,62 @@ test("feedback #79: an image opens fitted to the window, and zooms in past it ho
   // A drawing that fits at 215% opens there, and zooms in to 150% of that.
   assert.equal(imageScale(2.15, 2.15), 2.15);
   assert.equal(imageScale(10, 2), 3);
-  assert.equal(imageScale(0.01, 2), 0.3);
-  // A screenshot that fits at 42% zooms from 30% to 150%, as a diagram does.
+  // A screenshot that fits at 42% zooms in to 150%, as a diagram does.
   assert.equal(imageScale(0.42, 0.42), 0.42);
   assert.equal(imageScale(10, 0.42), 1.5);
-  assert.equal(imageScale(0.01, 0.42), 0.3);
-  // A photo too big to be seen whole at 30% can still be.
-  assert.equal(imageScale(0.2, 0.2), 0.2);
+  // None zooms out past where it opens.
+  assert.equal(imageScale(0.01, 2), 2);
+  assert.equal(imageScale(0.3, 0.42), 0.42);
   assert.equal(imageScale(0.01, 0.2), 0.2);
+});
+
+test("an image is still until zoomed in, and then moves only within its own edges", () => {
+  const { imageBound } = new Function(`${DIAGRAM_MODEL}\nreturn { imageBound };`)() as {
+    imageBound(at: number, size: number, room: number): number;
+  };
+  // One that fits stays in the middle, wherever it is dragged.
+  assert.equal(imageBound(0, 900, 1000), 50);
+  assert.equal(imageBound(-500, 900, 1000), 50);
+  assert.equal(imageBound(500, 1000, 1000), 0);
+  // A bigger one moves until its edge meets the stage's, with no empty space past it.
+  assert.equal(imageBound(-300, 2000, 1000), -300);
+  assert.equal(imageBound(40, 2000, 1000), 0);
+  assert.equal(imageBound(-5000, 2000, 1000), -1000);
+
+  const html = layout(pageView({ contentHtml: IMAGE_PAGE }));
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('document.querySelector("[data-diagram-viewer]")'));
+  assert.ok(script);
+  assert.match(script, /const bound = image \? imageBound : diagramBound;\s*x = bound\(x, width \* scale, stage\.clientWidth\);\s*y = bound\(y, height \* scale, stage\.clientHeight\);/);
+  // Where it can't move, it doesn't look as if it could.
+  assert.match(script, /stage\.classList\.toggle\("is-still", image && width \* scale <= stage\.clientWidth && height \* scale <= stage\.clientHeight\);/);
+  assert.match(html, /\.diagram-viewer-stage\.is-still\{cursor:default\}/);
+});
+
+test("the viewer takes an image's shape, with no zoom level, no hint, and no zooming out", () => {
+  const html = layout(pageView({ contentHtml: IMAGE_PAGE }));
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1])
+    .find((s) => s.includes('document.querySelector("[data-diagram-viewer]")'));
+  assert.ok(script);
+  // Sized to the image fitted to the window, ROOM clear of each side, and back to the window's size for a diagram.
+  assert.match(script, /viewer\.style\.width = "";\s*viewer\.style\.height = "";\s*const box = measure\(\);\s*const head = viewer\.clientHeight - box\.height;\s*viewer\.style\.width = width \* fits \+ ROOM \* 2 \+ "px";\s*viewer\.style\.height = height \* fits \+ ROOM \* 2 \+ head \+ "px";/);
+  assert.match(script, /viewer\.classList\.toggle\("is-image", isImage\);\s*viewer\.style\.width = "";\s*viewer\.style\.height = "";/);
+  assert.match(script, /viewer\.focus\(\);\s*if \(isImage\) hug\(\);\s*fit\(\);/);
+  // The level and the hint are a diagram's alone, and a narrow image leaves room for the buttons; 0 still fits an image.
+  assert.match(html, /\.diagram-viewer\.is-image :is\(\.diagram-viewer-hint,\.diagram-level\)\{display:none\}/);
+  assert.match(html, /\.diagram-viewer\.is-image\{min-width:min-content\}/);
+  assert.match(html, /\.diagram-viewer-tools\{[^}]*margin-left:auto\}/);
+  assert.match(script, /else if \(event\.key === "0"\) fit\(\);/);
+  // Zoomed or resized back to where it opened, it is in the middle again, and keeps fitting the window.
+  assert.match(script, /next = bounded\(next\);\s*\/\/[^\n]*\n\s*if \(image && next <= fits\) return fit\(\);/);
+  assert.match(script, /if \(image\) hug\(\);\s*else measure\(\);\s*\/\/[^\n]*\n\s*if \(fitted \|\| \(image && scale <= fits\)\) fit\(\);\s*else draw\(\);/);
+  // − and + are dimmed where they would do nothing, for a diagram too, and stay focusable.
+  assert.match(script, /zoomOut\.setAttribute\("aria-disabled", String\(bounded\(scale \/ STEP\) >= scale\)\);/);
+  assert.match(script, /zoomIn\.setAttribute\("aria-disabled", String\(bounded\(scale \* STEP\) <= scale\)\);/);
+  assert.match(html, /\.diagram-tool\[aria-disabled="true"\]\{opacity:\.4; cursor:default\}/);
+  assert.match(html, /\.diagram-tool:not\(\[aria-disabled="true"\]\):hover\{/);
 });
 
 test("views: every inline script in every layout parses as JavaScript", () => {

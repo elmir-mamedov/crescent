@@ -71,13 +71,16 @@ export const MERMAID_SCRIPT = `<script src="/_vendor/mermaid/mermaid.min.js"></s
  * The diagram viewer's limits, as functions of plain numbers so the tests can
  * run them. diagramScale holds a zoom level between MIN and MAX. imageScale
  * does the same for an image, given the level `fits` that fits it to the
- * window, which is where it opens: a photo too big to be seen whole at MIN
- * goes down to that, and a small drawing, which MAX would stop before it
- * filled the window, can be zoomed to MAX times that. diagramBound places one
+ * window, which is where it opens and as far out as it goes: there is nothing
+ * to see in an image smaller than the window shows it. It zooms in to MAX, or
+ * for a small drawing, which MAX would stop before it filled the window, to
+ * MAX times the level that fits it. diagramBound places one
  * axis of the diagram, `size` long, in a stage `room` long: one that fits
  * stays wholly in view, at least ROOM from either side, and a bigger one can
  * be moved until its edge is ROOM inside the stage's, and no further, so the
- * reader is never left looking at empty space.
+ * reader is never left looking at empty space. imageBound does the same for
+ * an image, more strictly: one that fits stays in the middle, and a bigger one
+ * moves only until its edge meets the stage's.
  */
 export const DIAGRAM_MODEL = `
   const MIN = 0.3;
@@ -87,11 +90,15 @@ export const DIAGRAM_MODEL = `
     return Math.min(MAX, Math.max(MIN, level));
   }
   function imageScale(level, fits) {
-    return Math.min(Math.max(MAX, fits * MAX), Math.max(Math.min(MIN, fits), level));
+    return Math.min(Math.max(MAX, fits * MAX), Math.max(fits, level));
   }
   function diagramBound(at, size, room) {
     const far = room - size - ROOM;
     return Math.min(Math.max(ROOM, far), Math.max(Math.min(ROOM, far), at));
+  }
+  function imageBound(at, size, room) {
+    if (size <= room) return (room - size) / 2;
+    return Math.min(0, Math.max(room - size, at));
   }
 `;
 
@@ -114,8 +121,15 @@ export const DIAGRAM_MODEL = `
  * the level between them fits it again. Until the reader zooms or drags, the
  * diagram keeps fitting the window as it resizes.
  *
- * Zoom stays between 30% and 150% (feedback #37), and the view stays on the
- * diagram (DIAGRAM_MODEL): dragging past its edge stops there.
+ * A diagram's zoom stays between 30% and 150% (feedback #37), and the view
+ * stays on the diagram (DIAGRAM_MODEL): dragging past its edge stops there.
+ * An image only zooms in from where it opens, and back out to there, where it
+ * is fitted again. The viewer takes its shape there, rather than the
+ * window's, so no empty bands frame it, and it stays put until zoomed in,
+ * and then moves only within its own edges. It shows no level, which only
+ * measures it against a size of its own that the reader never sees, nor the
+ * hint, which tells mostly of what an image can't do; − and + are dimmed at
+ * either end.
  */
 const DIAGRAM_VIEWER_SCRIPT = `
 (() => {
@@ -125,6 +139,8 @@ const DIAGRAM_VIEWER_SCRIPT = `
   const stage = viewer.querySelector("[data-diagram-stage]");
   const canvas = viewer.querySelector("[data-diagram-canvas]");
   const level = viewer.querySelector("[data-diagram-fit]");
+  const zoomOut = viewer.querySelector('[data-diagram-zoom="out"]');
+  const zoomIn = viewer.querySelector('[data-diagram-zoom="in"]');
   const article = document.querySelector("article.prose");
 ${DIAGRAM_MODEL}
   const STEP = 1.25;
@@ -154,11 +170,25 @@ ${DIAGRAM_MODEL}
     fits = Math.min((box.width - ROOM * 2) / width, (box.height - ROOM * 2) / height);
     return box;
   }
+  // Size the viewer to an image fitted to the window, ROOM clear of each side.
+  function hug() {
+    viewer.style.width = "";
+    viewer.style.height = "";
+    const box = measure();
+    const head = viewer.clientHeight - box.height;
+    viewer.style.width = width * fits + ROOM * 2 + "px";
+    viewer.style.height = height * fits + ROOM * 2 + head + "px";
+  }
   function draw() {
-    x = diagramBound(x, width * scale, stage.clientWidth);
-    y = diagramBound(y, height * scale, stage.clientHeight);
+    const bound = image ? imageBound : diagramBound;
+    x = bound(x, width * scale, stage.clientWidth);
+    y = bound(y, height * scale, stage.clientHeight);
+    stage.classList.toggle("is-still", image && width * scale <= stage.clientWidth && height * scale <= stage.clientHeight);
     canvas.style.transform = "translate(" + x + "px, " + y + "px) scale(" + scale + ")";
     level.textContent = Math.round(scale * 100) + "%";
+    // Dimmed rather than disabled, which would drop the focus out of the dialog.
+    zoomOut.setAttribute("aria-disabled", String(bounded(scale / STEP) >= scale));
+    zoomIn.setAttribute("aria-disabled", String(bounded(scale * STEP) <= scale));
   }
   function fit() {
     const box = measure();
@@ -171,6 +201,8 @@ ${DIAGRAM_MODEL}
   // Zoom to next, keeping the point (px, py) of the stage where it is.
   function zoom(next, px, py) {
     next = bounded(next);
+    // Back out to where it opened, an image is fitted again, in the middle.
+    if (image && next <= fits) return fit();
     x = px - (px - x) * (next / scale);
     y = py - (py - y) * (next / scale);
     scale = next;
@@ -191,6 +223,9 @@ ${DIAGRAM_MODEL}
     width = w;
     height = h;
     image = isImage;
+    viewer.classList.toggle("is-image", isImage);
+    viewer.style.width = "";
+    viewer.style.height = "";
     canvas.style.width = width + "px";
     canvas.style.height = height + "px";
     canvas.replaceChildren(copy);
@@ -198,6 +233,7 @@ ${DIAGRAM_MODEL}
     viewer.showModal();
     // Not its close button, which would wear a focus ring until clicked away.
     viewer.focus();
+    if (isImage) hug();
     fit();
   }
   function openDiagram(frame) {
@@ -271,12 +307,11 @@ ${DIAGRAM_MODEL}
   });
   window.addEventListener("resize", () => {
     if (!viewer.open) return;
-    if (fitted) {
-      fit();
-    } else {
-      measure();
-      draw();
-    }
+    if (image) hug();
+    else measure();
+    // An image the window has grown to show larger than this is fitted again.
+    if (fitted || (image && scale <= fits)) fit();
+    else draw();
   });
 
   let drag = null;
