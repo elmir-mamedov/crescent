@@ -2,6 +2,7 @@ import { CHAT_BUTTON, CHAT_SCRIPT, chatDrawer } from "./chat.js";
 import { changeCursor, desktop } from "./config.js";
 import { dashboardsHref, escapeHtml, galleryHref } from "./html.js";
 import { SIDEBAR_SHOW_BUTTON } from "./sidebar.js";
+import { TOUR_HELP_BUTTON } from "./tour.js";
 
 /**
  * The tools pinned to the top-right corner of every page past sign-in (Show
@@ -109,6 +110,11 @@ const HELP_DIALOG = `<dialog class="help-dialog" data-help-dialog tabindex="-1">
     <h2>crescent help</h2>
     <button class="help-close" aria-label="Close help" value="close">&times;</button>
   </form>
+  <section class="help-section">
+    <h3>New to crescent?</h3>
+    <p><a href="/_guide" data-help-guide><strong>Read the getting-started guide</strong></a>: a few short pages on spaces and pages, links, formulas and diagrams, notes and labels, the chat, and using crescent from Claude. It is always here, and up to date with this version of crescent.</p>
+    ${TOUR_HELP_BUTTON}
+  </section>
   <section class="help-section">
     <h3>About crescent</h3>
     <p>crescent is a lean Markdown knowledge base. Content is organized into <strong>spaces</strong> &mdash; the top-level containers shown on the home page &mdash; and each space holds a tree of pages in the sidebar. Open any page and press <strong>Edit</strong> to change its Markdown; every save is committed to Git automatically. Drag pages in the sidebar to re-organize them: drop a page <em>onto</em> another one to nest it inside, or onto the line that appears <em>between</em> two pages to put it there &mdash; including the line at the top level, which lifts a child page back out to the space root. To keep several pages open at once, <kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click a page in the sidebar, or any link to one: each opens in a <strong>tab</strong> along the top, and the button at its left end closes all but the one you are on. The arrows at the top left go back and forward between the pages you have opened, as in a browser. The panel button at the top right of the sidebar hides it, to give the page, and the chat beside it, the whole window; the same button in the corner brings it back, and crescent remembers which you chose. A page in a tab, like each of the last few pages you read, opens again where you left it. Use the <strong>&ctdot;</strong> menu next to a page to add a child, edit, download, label, copy its link, mark it unread, or delete it. <strong>Labels</strong> are coloured markers such as &ldquo;Draft&rdquo; or &ldquo;Needs review&rdquo;; they show as chips at the top of a page, and the <strong>Dashboards</strong> button in the corner lists and searches pages by label. The <strong>Gallery</strong> button beside the chat shows every image in the space and uploads new ones; to put one on a page, write <code>![](_assets/name.png)</code> in the page's Markdown. A glowing blue dot beside a page in the sidebar means it is new and has not been opened yet, whether an agent or a person added it; a ring on a closed group means such a page is inside. Opening the page clears it; to put it back, choose <strong>Mark as unread</strong> in the page's <strong>&ctdot;</strong> menu. <strong>Folders</strong> are pure containers &mdash; they hold pages and other folders but have no content of their own, so you rename them instead of editing them.</p>

@@ -4,6 +4,7 @@ import type { RenderedNote, Section } from "../markdown.js";
 import { sessionCorner } from "./corner.js";
 import { BLOCKS_SCRIPT } from "./blocks.js";
 import { DIAGRAM_VIEWER, MERMAID_SCRIPT } from "./diagrams.js";
+import { TOUR_DEMOS, TOUR_SCRIPT } from "./tour.js";
 import { FIND_BAR, FIND_SCRIPT } from "./find.js";
 import { newFolderButton, renameFolderButton } from "./folders.js";
 import { renderHead } from "./head.js";
@@ -230,6 +231,8 @@ ${notesData ? `<script>${NOTES_SCRIPT}</script>` : ""}
 ${hasDiagram || v.contentHtml.includes("<img ") ? DIAGRAM_VIEWER : ""}
 ${hasDiagram ? MERMAID_SCRIPT : ""}
 ${v.contentHtml.includes('class="widget-frame"') ? `<script>${WIDGETS_SCRIPT}</script>` : ""}
+${TOUR_DEMOS}
+<script>${TOUR_SCRIPT}</script>
 </body>
 </html>`;
 }

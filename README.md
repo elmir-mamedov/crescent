@@ -11,6 +11,8 @@ and Claude Code can work with the same pages through an MCP connection.
 - **Spaces and pages.** Each space is a folder of Markdown files and its own
   git repository. Folders group pages into sections, and the sidebar shows the
   tree; pages are moved and reordered by dragging them.
+  A new knowledge base starts with an example space, on quantum field theory,
+  that shows what pages can hold; it can be changed or deleted like any other.
 - **Reading.** Pages render with code highlighting, math (KaTeX) and Mermaid
   diagrams. Links between pages keep working when a page is moved or renamed.
   Every heading has a link, and longer pages get an outline beside the text.
@@ -72,6 +74,11 @@ links to other sites open in your default browser. It needs macOS 13 or
 later, or Windows 10 or 11 with the Microsoft Edge WebView2 Runtime, which
 comes with Edge; without WebView2, crescent opens in your default browser
 instead and quits with the power button.
+
+**Getting started.** On first launch, a short animated tour walks around the
+example space, showing where everything is; **Take the tour** in Help runs it
+again. **Help**, in the top-right corner, also has a short guide to crescent,
+read-only and up to date with each version.
 
 **Writing pages.** Create a space from the spaces page, then add pages and
 folders from the sidebar. **Edit** opens a page's Markdown. Saved changes are

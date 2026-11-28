@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A chain of masses on springs, in one normal mode at a time</title>
+<style>
+  body { margin: 0; font-family: var(--kb-font); color: var(--kb-fg); }
+  .wrap { padding: 4px 2px 8px; }
+  canvas { display: block; width: 100%; height: 220px; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 10px; }
+  label { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--kb-muted); }
+  input[type="range"] { width: 160px; accent-color: var(--kb-accent); }
+  .mode { font-family: var(--kb-mono); color: var(--kb-fg); min-width: 2ch; }
+  button {
+    font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--kb-line); background: var(--kb-surface); color: var(--kb-fg);
+  }
+  button[aria-pressed="true"] { background: var(--kb-accent); color: var(--kb-on-accent); border-color: var(--kb-accent); }
+  .readout { font-size: 14px; color: var(--kb-muted); margin-top: 8px; min-height: 1.4em; }
+  .readout b { color: var(--kb-fg); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="chain" aria-label="Twelve masses on springs between two fixed walls"></canvas>
+  <div class="controls">
+    <label>Mode <input id="mode" type="range" min="1" max="12" step="1" value="1"> <span class="mode" id="modeValue">1</span></label>
+    <button type="button" id="pluck" aria-pressed="false">Pluck instead</button>
+    <button type="button" id="pause" aria-pressed="false">Pause</button>
+  </div>
+  <div class="readout" id="readout"></div>
+</div>
+<script>
+(() => {
+  const N = 12;
+  const W0 = 7; // ω₀ in radians per second, for the animation.
+  const canvas = document.getElementById("chain");
+  const draw2d = canvas.getContext("2d");
+  const modeInput = document.getElementById("mode");
+  const modeValue = document.getElementById("modeValue");
+  const pluckButton = document.getElementById("pluck");
+  const pauseButton = document.getElementById("pause");
+  const readout = document.getElementById("readout");
+
+  // Mode k: mass j moves as sin(jkπ/(N+1)), at ω_k = 2ω₀ sin(kπ/(2(N+1))).
+  const shape = (k, j) => Math.sin((j * k * Math.PI) / (N + 1));
+  const omega = (k) => 2 * W0 * Math.sin((k * Math.PI) / (2 * (N + 1)));
+
+  // A pluck: mass 3 pulled aside, the rest following in a straight line to
+  // each wall, let go from rest. Its share of each mode, by the sine series.
+  const pluckStart = Array.from({ length: N }, (_, i) => {
+    const j = i + 1;
+    return j <= 3 ? j / 3 : (N + 1 - j) / (N - 2);
+  });
+  const pluckShare = Array.from({ length: N }, (_, i) => {
+    const k = i + 1;
+    let sum = 0;
+    for (let j = 1; j <= N; j++) sum += pluckStart[j - 1] * shape(k, j);
+    return (2 / (N + 1)) * sum;
+  });
+
+  let mode = 1;
+  let plucked = false;
+  let paused = false;
+  let t = 0;
+  let last = null;
+  let colors = {};
+
+  function readColors() {
+    const style = getComputedStyle(document.documentElement);
+    const get = (name) => style.getPropertyValue(name).trim();
+    colors = { fg: get("--kb-fg"), muted: get("--kb-muted"), line: get("--kb-line"), accent: get("--kb-accent"), wall: get("--kb-gray") || get("--kb-muted") };
+  }
+
+  function displacement(j) {
+    if (!plucked) return shape(mode, j) * Math.cos(omega(mode) * t);
+    let y = 0;
+    for (let k = 1; k <= N; k++) y += pluckShare[k - 1] * shape(k, j) * Math.cos(omega(k) * t);
+    return y;
+  }
+
+  function resize() {
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(canvas.clientWidth * ratio);
+    canvas.height = Math.round(canvas.clientHeight * ratio);
+    draw2d.setTransform(ratio, 0, 0, ratio, 0, 0);
+  }
+
+  function draw() {
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    draw2d.clearRect(0, 0, width, height);
+    const left = 18;
+    const right = width - 18;
+    const mid = height / 2;
+    const amp = height * 0.36;
+    const gap = (right - left) / (N + 1);
+
+    // The rest line, and the two walls.
+    draw2d.strokeStyle = colors.line;
+    draw2d.lineWidth = 1;
+    draw2d.setLineDash([4, 4]);
+    draw2d.beginPath();
+    draw2d.moveTo(left, mid);
+    draw2d.lineTo(right, mid);
+    draw2d.stroke();
+    draw2d.setLineDash([]);
+    draw2d.strokeStyle = colors.wall;
+    draw2d.lineWidth = 4;
+    for (const x of [left, right]) {
+      draw2d.beginPath();
+      draw2d.moveTo(x, mid - amp - 14);
+      draw2d.lineTo(x, mid + amp + 14);
+      draw2d.stroke();
+    }
+
+    // The springs, wall to mass to mass to wall.
+    const points = [[left, mid]];
+    for (let j = 1; j <= N; j++) points.push([left + j * gap, mid - amp * displacement(j)]);
+    points.push([right, mid]);
+    draw2d.strokeStyle = colors.muted;
+    draw2d.lineWidth = 1.5;
+    draw2d.beginPath();
+    points.forEach(([x, y], i) => (i ? draw2d.lineTo(x, y) : draw2d.moveTo(x, y)));
+    draw2d.stroke();
+
+    // The masses.
+    const radius = Math.max(5, Math.min(10, gap * 0.28));
+    draw2d.fillStyle = colors.accent;
+    for (let j = 1; j <= N; j++) {
+      const [x, y] = points[j];
+      draw2d.beginPath();
+      draw2d.arc(x, y, radius, 0, Math.PI * 2);
+      draw2d.fill();
+    }
+  }
+
+  function describe() {
+    modeValue.textContent = String(mode);
+    modeInput.disabled = plucked;
+    pluckButton.setAttribute("aria-pressed", String(plucked));
+    if (plucked) {
+      readout.innerHTML = "<b>A pluck</b>: all 12 modes at once, each swinging at its own frequency.";
+    } else {
+      const ratio = (omega(mode) / W0).toFixed(2);
+      readout.innerHTML = "<b>Mode " + mode + " of 12</b>: every mass at one frequency, ω = " + ratio + " ω₀.";
+    }
+  }
+
+  function frame(now) {
+    if (last !== null && !paused) t += (now - last) / 1000;
+    last = now;
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  modeInput.addEventListener("input", () => {
+    mode = Number(modeInput.value);
+    t = 0;
+    describe();
+  });
+  pluckButton.addEventListener("click", () => {
+    plucked = !plucked;
+    t = 0;
+    describe();
+  });
+  pauseButton.addEventListener("click", () => {
+    paused = !paused;
+    pauseButton.setAttribute("aria-pressed", String(paused));
+    pauseButton.textContent = paused ? "Play" : "Pause";
+  });
+  addEventListener("kb25-theme", () => {
+    readColors();
+    draw();
+  });
+  new ResizeObserver(() => {
+    resize();
+    draw();
+  }).observe(canvas);
+
+  readColors();
+  resize();
+  describe();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -377,7 +377,8 @@ body.dragging-page .space-current{
   background:linear-gradient(to right, var(--sidebar-fade) 0, var(--sidebar) 18px);
 }
 .tree-menu summary::-webkit-details-marker{display:none}
-.tree-row:hover .tree-menu summary,.tree-row:focus-within .tree-menu summary,.tree-menu[open] summary{
+.tree-row:hover .tree-menu summary,.tree-row:focus-within .tree-menu summary,.tree-menu[open] summary,
+.tree-row.tour-target .tree-menu summary{
   opacity:1; pointer-events:auto;
 }
 .tree-row:hover .tree-menu summary,.tree-row:focus-within .tree-menu summary{
@@ -615,6 +616,151 @@ html.kb-arrived main,html.kb-arrived .toc{animation:kb-fade-in .14s ease-out}
   padding:0; color:var(--fg); background:var(--surface); box-shadow:var(--shadow-lg);
 }
 .help-dialog::backdrop{background:var(--backdrop)}
+/* The tour (views/tour.ts). The spotlight is a box whose huge shadow dims
+   everything around it, so it can glide between parts of the page as its box
+   moves; the card beside it fades in at each stop. */
+.tour-spot{
+  position:fixed; z-index:2000; pointer-events:none; border-radius:10px;
+  box-shadow:0 0 0 200vmax rgba(8,10,16,.62);
+  transition:left .45s cubic-bezier(.2,.7,.2,1), top .45s cubic-bezier(.2,.7,.2,1),
+    width .45s cubic-bezier(.2,.7,.2,1), height .45s cubic-bezier(.2,.7,.2,1), border-radius .45s;
+}
+.tour-spot::after{
+  content:""; position:absolute; inset:-4px; border-radius:12px;
+  border:2px solid var(--accent); animation:tour-pulse 1.6s ease-out infinite;
+}
+.tour-spot.is-closed{border-radius:50%}
+.tour-spot.is-closed::after{display:none}
+@keyframes tour-pulse{
+  0%{opacity:.9; transform:scale(1)}
+  70%{opacity:0; transform:scale(1.06)}
+  100%{opacity:0; transform:scale(1.06)}
+}
+.tour-card{
+  position:fixed; z-index:2001; width:min(340px,calc(100vw - 24px)); padding:16px 18px 14px;
+  border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--fg);
+  box-shadow:var(--shadow-lg); opacity:0; transform:translateY(6px);
+  transition:opacity .25s ease, transform .25s ease, left .45s cubic-bezier(.2,.7,.2,1), top .45s cubic-bezier(.2,.7,.2,1);
+}
+.tour-card.is-in{opacity:1; transform:none}
+.tour-count{margin:0 0 4px; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted)}
+.tour-title{margin:0 0 6px; font-size:17px}
+.tour-text{margin:0 0 12px; font-size:14px; line-height:1.5}
+.tour-dots{display:flex; gap:5px; margin:0 0 12px}
+.tour-dot{width:6px; height:6px; border-radius:50%; background:var(--line); transition:background .25s, width .25s}
+.tour-dot.is-done{background:var(--muted)}
+.tour-dot.is-current{width:16px; border-radius:3px; background:var(--accent)}
+.tour-buttons{display:flex; align-items:center; gap:8px; justify-content:flex-end}
+.tour-skip{margin-right:auto; padding:0; border:0; background:none; color:var(--muted); font:inherit; font-size:13px; cursor:pointer}
+.tour-skip:hover{color:var(--fg); text-decoration:underline}
+body.touring{overflow:hidden}
+/* The tour cards' small animations (DEMOS in views/tour.ts): each a scene
+   of a few boxes that loops on its own, in the theme's colours. */
+.tour-demo{
+  position:relative; height:112px; margin:2px 0 12px; padding:12px; overflow:hidden;
+  border:1px solid var(--line); border-radius:8px; background:var(--bg); font-size:12px; color:var(--fg);
+}
+.tour-demo *{box-sizing:border-box}
+.td-tree{display:flex; flex-direction:column; gap:4px; width:180px}
+.td-row{height:24px; padding:3px 8px; border-radius:5px; background:var(--surface)}
+.td-drag{animation:td-drag 4s ease-in-out infinite}
+.td-make-room{animation:td-room 4s ease-in-out infinite}
+@keyframes td-drag{
+  0%,15%{transform:none; box-shadow:none}
+  25%{transform:scale(1.04); box-shadow:var(--shadow-md); background:var(--active-bg)}
+  55%,70%{transform:translateY(28px) scale(1.04); box-shadow:var(--shadow-md); background:var(--active-bg)}
+  78%,88%{transform:translateY(28px); box-shadow:none}
+  100%{transform:none}
+}
+@keyframes td-room{0%,25%{transform:none} 55%,88%{transform:translateY(-28px)} 100%{transform:none}}
+.td-spaces{display:flex; gap:8px}
+.td-space{flex:1; height:70px; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--surface);
+  opacity:0; animation:td-pop 4s ease-out infinite}
+.td-space:nth-child(2){animation-delay:.2s}
+.td-space:nth-child(3){animation-delay:.4s}
+.td-space-pick{animation:td-pop 4s ease-out .2s infinite, td-pick 4s ease-in-out .2s infinite}
+@keyframes td-pop{0%{opacity:0; transform:translateY(6px)} 12%,90%{opacity:1; transform:none} 100%{opacity:0}}
+@keyframes td-pick{0%,40%{box-shadow:none} 55%,85%{box-shadow:0 0 0 2px var(--accent)} 100%{box-shadow:none}}
+.td-search{width:220px}
+.td-input{display:flex; align-items:center; height:26px; padding:0 8px; border:1px solid var(--accent); border-radius:6px; background:var(--surface)}
+.td-typed{display:inline-block; overflow:hidden; white-space:nowrap; width:0; animation:td-type 4s steps(5) infinite}
+.td-caret{width:1px; height:14px; margin-left:1px; background:var(--fg); animation:td-blink .8s step-end infinite}
+@keyframes td-type{0%,10%{width:0} 40%,90%{width:5ch} 100%{width:0}}
+@keyframes td-blink{50%{opacity:0}}
+.td-results{margin-top:6px; border:1px solid var(--line); border-radius:6px; background:var(--surface); opacity:0; animation:td-show 4s ease infinite}
+.td-result{padding:4px 8px}
+.td-result mark{background:var(--mark-bg); color:var(--mark-fg); border-radius:2px}
+@keyframes td-show{0%,38%{opacity:0; transform:translateY(-4px)} 46%,90%{opacity:1; transform:none} 100%{opacity:0}}
+.td-page{position:relative; height:86px; border:1px solid var(--line); border-radius:6px; background:var(--surface); padding:8px}
+.td-page-bar{display:flex; justify-content:flex-end}
+.td-btn{padding:2px 8px; border:1px solid var(--line); border-radius:5px; animation:td-press 5s ease infinite}
+@keyframes td-press{0%,22%{transform:none; background:none} 26%{transform:scale(.92); background:var(--active-bg)} 32%,100%{transform:none; background:none}}
+.td-page-view,.td-page-md{position:absolute; left:8px; right:8px; top:34px}
+.td-page-view{animation:td-out 5s ease infinite}
+.td-page-md{display:flex; flex-direction:column; gap:4px; opacity:0; animation:td-in 5s ease infinite}
+.td-page-md code{font-size:11px; color:var(--muted)}
+.td-line{height:7px; margin-bottom:6px; border-radius:4px; background:var(--line)}
+.td-line-h{width:45%; height:10px; background:var(--muted)}
+.td-line-short{width:60%}
+@keyframes td-out{0%,28%{opacity:1} 36%,88%{opacity:0} 100%{opacity:1}}
+@keyframes td-in{0%,30%{opacity:0} 38%,86%{opacity:1} 96%,100%{opacity:0}}
+.td-menu{position:relative; width:200px}
+.td-menu-row{display:flex; justify-content:space-between; height:24px; padding:3px 8px; border-radius:5px; background:var(--active-bg)}
+.td-menu-dots{padding:0 4px; border-radius:4px; animation:td-press 4s ease infinite}
+.td-menu-pop{position:absolute; right:0; top:28px; width:110px; padding:4px; border:1px solid var(--line); border-radius:6px;
+  background:var(--surface); box-shadow:var(--shadow-md); transform-origin:top right; animation:td-drop 4s ease infinite}
+.td-menu-pop div{padding:2px 6px; border-radius:4px}
+.td-menu-pop div:nth-child(2){animation:td-hover 4s ease infinite}
+@keyframes td-drop{0%,25%{opacity:0; transform:scale(.9)} 33%,88%{opacity:1; transform:none} 100%{opacity:0}}
+@keyframes td-hover{0%,45%{background:none} 55%,85%{background:var(--surface-hover)} 100%{background:none}}
+.td-notes p{margin:0 0 10px; line-height:1.6}
+.td-hl{background:linear-gradient(var(--mark-bg),var(--mark-bg)) no-repeat 0 0 / 0% 100%; animation:td-sweep 4.5s ease infinite}
+@keyframes td-sweep{0%,10%{background-size:0% 100%} 35%,90%{background-size:100% 100%} 100%{background-size:0% 100%}}
+.td-chips{display:flex; gap:6px}
+.td-chips span{padding:2px 8px; border:1px solid var(--line); border-radius:10px; background:var(--surface); opacity:0; animation:td-pop2 4.5s ease infinite}
+.td-chips span:nth-child(1){animation-delay:.0s; border-color:var(--accent)}
+.td-chips span:nth-child(2){animation-delay:.12s}
+.td-chips span:nth-child(3){animation-delay:.24s}
+@keyframes td-pop2{0%,38%{opacity:0; transform:translateY(4px)} 46%,90%{opacity:1; transform:none} 100%{opacity:0}}
+.td-chat{display:flex; flex-direction:column; gap:6px}
+.td-ask,.td-answer{max-width:80%; padding:5px 9px; border-radius:10px}
+.td-ask{align-self:flex-end; background:var(--accent); color:var(--on-accent); opacity:0; animation:td-msg 5s ease infinite}
+.td-typing{display:flex; gap:3px; padding:6px 9px; width:max-content; border-radius:10px; background:var(--surface); opacity:0; animation:td-wait 5s ease infinite}
+.td-typing i{width:5px; height:5px; border-radius:50%; background:var(--muted); animation:td-blink 1s ease infinite}
+.td-typing i:nth-child(2){animation-delay:.2s}
+.td-typing i:nth-child(3){animation-delay:.4s}
+.td-answer{background:var(--surface); opacity:0; animation:td-reply 5s ease infinite; margin-top:-28px}
+@keyframes td-msg{0%,5%{opacity:0; transform:translateY(6px)} 12%,90%{opacity:1; transform:none} 100%{opacity:0}}
+@keyframes td-wait{0%,18%{opacity:0} 24%,44%{opacity:1} 50%,100%{opacity:0}}
+@keyframes td-reply{0%,48%{opacity:0; transform:translateY(6px)} 56%,90%{opacity:1; transform:none} 100%{opacity:0}}
+.td-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; width:200px}
+.td-grid i{height:38px; border-radius:6px; background:var(--accent); opacity:0; animation:td-tile 4s ease infinite}
+.td-grid i:nth-child(2){animation-delay:.1s; filter:hue-rotate(60deg)}
+.td-grid i:nth-child(3){animation-delay:.2s; filter:hue-rotate(120deg)}
+.td-grid i:nth-child(4){animation-delay:.3s; filter:hue-rotate(180deg)}
+.td-grid i:nth-child(5){animation-delay:.4s; filter:hue-rotate(240deg)}
+.td-grid i:nth-child(6){animation-delay:.5s; filter:hue-rotate(300deg)}
+@keyframes td-tile{0%{opacity:0; transform:scale(.6)} 15%,88%{opacity:.75; transform:none} 100%{opacity:0}}
+.td-tasks{display:flex; flex-direction:column; gap:6px}
+.td-task{position:relative; padding-left:22px; line-height:16px}
+.td-task::before{content:""; position:absolute; left:0; top:0; width:14px; height:14px; border:1px solid var(--muted); border-radius:4px}
+.td-task::after{content:"\\2713"; position:absolute; left:2px; top:-1px; color:var(--accent); font-weight:700; opacity:0; animation:td-tick 4.5s ease infinite}
+.td-task:nth-child(2)::after{animation-delay:.6s}
+.td-task:nth-child(3)::after{animation-delay:1.2s}
+@keyframes td-tick{0%,15%{opacity:0; transform:scale(.4)} 22%,85%{opacity:1; transform:none} 100%{opacity:0}}
+.td-orders{padding:8px 10px; border-left:3px solid var(--accent); border-radius:6px; background:var(--surface)}
+.td-orders-head{margin-bottom:4px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted)}
+.td-orders-text{overflow:hidden; white-space:nowrap; width:0; border-right:1px solid var(--fg); animation:td-write 5s steps(28) infinite}
+@keyframes td-write{0%,8%{width:0} 55%,90%{width:28ch} 100%{width:0}}
+@media (prefers-reduced-motion: reduce){
+  .tour-demo *{animation:none !important; opacity:1 !important}
+  .td-typed{width:5ch} .td-orders-text{width:28ch; border-right:0} .td-page-md{display:none} .td-hl{background-size:100% 100%}
+  .td-typing{display:none} .td-answer{margin-top:0}
+}
+@media (prefers-reduced-motion: reduce){
+  .tour-spot,.tour-card,.tour-dot{transition:none}
+  .tour-spot::after{animation:none}
+}
 /* An opened dialog holds the focus itself (HELP_SCRIPT, GALLERY_SCRIPT), so
    Tab and Esc work at once; the frame needs no ring for it. */
 .help-dialog:focus,.gallery-viewer:focus{outline:none}
